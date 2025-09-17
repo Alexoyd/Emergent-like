@@ -62,12 +62,12 @@ class StepStatus(str, Enum):
     RETRYING = "retrying"
 
 class RunCreate(BaseModel):
-    goal: str
-    project_path: Optional[str] = None
-    stack: Optional[str] = "laravel"
-    max_steps: int = 20
-    max_retries_per_step: int = 2
-    daily_budget_eur: float = 5.0
+    goal: str = Field(..., min_length=10, max_length=2000, description="Detailed description of what the AI should accomplish")
+    project_path: Optional[str] = Field(None, description="Optional path to existing project")
+    stack: str = Field("laravel", regex="^(laravel|react|vue|python|node)$", description="Technology stack to use")
+    max_steps: int = Field(20, ge=1, le=50, description="Maximum number of steps to execute")
+    max_retries_per_step: int = Field(2, ge=0, le=5, description="Maximum retries per step")
+    daily_budget_eur: float = Field(5.0, ge=0.1, le=100.0, description="Daily budget limit in EUR")
 
 class Run(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
