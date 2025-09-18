@@ -204,6 +204,42 @@ backend:
           agent: "testing"
           comment: "Support complet des 5 stacks testé: Laravel, React, Python, Node.js, Vue.js. Auto-génération des structures de projet fonctionnelle. Chaque stack génère les fichiers appropriés (composer.json, package.json, requirements.txt, etc.). Configuration AUTO_CREATE_STRUCTURES=true active."
 
+  - task: "Système de Prompt Caching avec PromptCacheManager"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/prompt_cache.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "PromptCacheManager complètement implémenté et fonctionnel. Cache SHA256 des system prompts constants avec TTL 24h. Gestion des deltas (conversation history). Support natif OpenAI et Anthropic caching. Tests montrent: 2 entrées cache, 6 utilisations totales, hit rate 100%, 2000 tokens économisés, €0.0085 d'économies (66.7% de réduction). Cleanup automatique implémenté."
+
+  - task: "LLMRouter amélioré avec intégration cache"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/llm_router.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "LLMRouter intègre parfaitement le prompt caching. Méthodes _generate_openai() et _generate_anthropic() utilisent le cache via prepare_openai_messages() et prepare_anthropic_messages(). Gestion de l'historique des conversations par run_id. Calcul des économies de coûts (30-50% d'économies avec cache_used=True). Support des APIs natives de cache GPT-4o et Claude 3.5."
+
+  - task: "Nouvelles routes API admin avec cache stats"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Routes API admin étendues avec succès. /api/admin/stats inclut maintenant cache_stats (total_entries, total_usage, hit_rate, most_used, cache_size_limit, ttl_hours) et cost_savings (tokens_saved, cost_saved_eur, savings_percentage, cache_hits, total_requests). /api/admin/cache/clear fonctionne parfaitement - teste avec 'Cleared 2 cached prompts'. Toutes les nouvelles métriques de cache sont présentes et fonctionnelles."
+
 frontend:
   - task: "Créer section Admin dans l'interface"
     implemented: false
