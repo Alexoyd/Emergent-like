@@ -41,6 +41,8 @@ llm_router = LLMRouter()
 tool_manager = ToolManager()
 state_manager = StateManager(db)
 rag_system = RAGSystem()
+project_manager = ProjectManager()
+github_integration = GitHubIntegration()
 
 # Create the main app without a prefix
 app = FastAPI(title="AI Agent Orchestrator", version="1.0.0")
