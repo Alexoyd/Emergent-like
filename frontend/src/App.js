@@ -369,7 +369,7 @@ const Dashboard = () => {
 
                 {/* Tabs */}
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid w-full grid-cols-4 bg-white/70 backdrop-blur-sm">
+                  <TabsList className="grid w-full grid-cols-5 bg-white/70 backdrop-blur-sm">
                     <TabsTrigger value="overview" className="flex items-center">
                       <TrendingUp className="w-4 h-4 mr-2" />
                       Timeline
@@ -385,6 +385,10 @@ const Dashboard = () => {
                     <TabsTrigger value="files" className="flex items-center">
                       <FileText className="w-4 h-4 mr-2" />
                       Files
+                    </TabsTrigger>
+                    <TabsTrigger value="admin" className="flex items-center">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Admin
                     </TabsTrigger>
                   </TabsList>
 
