@@ -1,0 +1,15 @@
+{
+  "id": "a20fa8e0-e0c7-4316-be05-721b13fd7a83",
+  "name": "Run a20fa8e0",
+  "stack": "laravel",
+  "created_at": "2025-09-18T22:24:29.712526+00:00",
+  "directories": {
+    "code": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/code",
+    "logs": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/logs",
+    "tests": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/tests",
+    "patches": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/patches",
+    "backups": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/backups",
+    "git": "/app/projects/a20fa8e0-e0c7-4316-be05-721b13fd7a83/git"
+  },
+  "status": "initialized"
+}

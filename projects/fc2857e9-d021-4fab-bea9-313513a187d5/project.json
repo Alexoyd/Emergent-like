@@ -1,0 +1,15 @@
+{
+  "id": "fc2857e9-d021-4fab-bea9-313513a187d5",
+  "name": "Run fc2857e9",
+  "stack": "laravel",
+  "created_at": "2025-09-18T22:25:10.068585+00:00",
+  "directories": {
+    "code": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/code",
+    "logs": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/logs",
+    "tests": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/tests",
+    "patches": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/patches",
+    "backups": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/backups",
+    "git": "/app/projects/fc2857e9-d021-4fab-bea9-313513a187d5/git"
+  },
+  "status": "initialized"
+}
