@@ -595,6 +595,14 @@ def main():
         ("Comprehensive Stack Support", tester.test_comprehensive_stack_support),
     ]
     
+    # Prompt caching tests
+    caching_tests = [
+        ("Prompt Cache Clear", tester.test_prompt_cache_clear),
+        ("Prompt Cache Functionality", tester.test_prompt_cache_functionality),
+        ("Cost Savings Calculation", tester.test_cost_savings_calculation),
+        ("LLM Router Cache Integration", tester.test_llm_router_cache_integration),
+    ]
+    
     # Run management tests
     run_tests = [
         ("Create Basic Run", tester.test_create_run_basic),
