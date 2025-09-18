@@ -37,6 +37,12 @@ class LLMRouter:
         self.current_attempt = 0
         self.local_failures = 0
         
+        # Initialize prompt cache manager
+        self.prompt_cache = PromptCacheManager()
+        
+        # Conversation history for context (per run)
+        self.conversation_histories: Dict[str, List[Dict[str, str]]] = {}
+        
         # Initialize clients if keys are available
         if os.getenv("OPENAI_API_KEY"):
             self.openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
