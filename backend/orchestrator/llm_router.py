@@ -83,7 +83,7 @@ class LLMRouter:
                     
                 try:
                     self.current_attempt += 1
-                    response = await self._generate_with_tier(prompt, attempt_tier)
+                    response = await self._generate_with_tier(prompt, attempt_tier, task_type, run_id)
                     
                     if self._is_valid_response(response.content, task_type):
                         # Reset failure count on success
