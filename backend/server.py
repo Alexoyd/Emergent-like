@@ -680,8 +680,8 @@ CHECKLIST
 Be specific, focused, and ensure changes are minimal and testable.
 """
         
-        # Generate response using LLM router
-        response = await llm_router.generate(prompt, "coding", run.cost_used_eur, run.daily_budget_eur)
+        # Generate response using LLM router with improved escalation
+        response = await llm_router.generate(prompt, "coding", run.cost_used_eur, run.daily_budget_eur, run_id)
         
         # Parse patch from response
         patch = extract_patch(response.content)
