@@ -285,8 +285,9 @@ metadata:
   
 test_plan:
   current_focus:
-    - "Nouvelles routes API admin et projets"
-    - "Support multi-stack avec auto-génération"
+    - "Système de Prompt Caching avec PromptCacheManager"
+    - "LLMRouter amélioré avec intégration cache"
+    - "Nouvelles routes API admin avec cache stats"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
