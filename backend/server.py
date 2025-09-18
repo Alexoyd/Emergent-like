@@ -127,10 +127,20 @@ async def root():
 
 @api_router.post("/runs", response_model=Run)
 async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
-    """Create a new AI agent run"""
+    """Create a new AI agent run with project isolation"""
     try:
         # Create run record
         run = Run(**run_data.dict())
+        
+        # Create isolated project workspace
+        project_workspace = await project_manager.create_project_workspace(
+            project_id=run.id,
+            stack=run.stack,
+            project_name=f"Run {run.id[:8]}"
+        )
+        
+        # Update run with project path
+        run.project_path = project_workspace["code_path"]
         
         # Save to database
         await db.runs.insert_one(run.dict())
