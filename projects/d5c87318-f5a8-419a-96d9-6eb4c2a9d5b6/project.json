@@ -1,0 +1,15 @@
+{
+  "id": "d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6",
+  "name": "Run d5c87318",
+  "stack": "python",
+  "created_at": "2025-09-18T22:49:34.195696+00:00",
+  "directories": {
+    "code": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/code",
+    "logs": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/logs",
+    "tests": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/tests",
+    "patches": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/patches",
+    "backups": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/backups",
+    "git": "/app/projects/d5c87318-f5a8-419a-96d9-6eb4c2a9d5b6/git"
+  },
+  "status": "initialized"
+}
