@@ -1,0 +1,15 @@
+{
+  "id": "ea7b8e56-04d9-4c25-b799-bd9d0e286c9f",
+  "name": "Run ea7b8e56",
+  "stack": "python",
+  "created_at": "2025-09-18T22:46:22.068972+00:00",
+  "directories": {
+    "code": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/code",
+    "logs": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/logs",
+    "tests": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/tests",
+    "patches": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/patches",
+    "backups": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/backups",
+    "git": "/app/projects/ea7b8e56-04d9-4c25-b799-bd9d0e286c9f/git"
+  },
+  "status": "initialized"
+}
