@@ -280,33 +280,81 @@ class LLMRouter:
             logger.error(f"OpenAI generation error: {e}")
             raise
     
-    async def _generate_anthropic(self, prompt: str) -> LLMResponse:
-        """Generate using Anthropic Claude model"""
+    async def _generate_anthropic(self, prompt: str, task_type: str = "coding", run_id: str = None) -> LLMResponse:
+        """Generate using Anthropic Claude model with prompt caching"""
         if not self.anthropic_client:
             raise Exception("Anthropic API key not configured")
         
         try:
+            # Get conversation history for this run
+            conversation_history = self.conversation_histories.get(run_id, [])
+            
+            # Prepare messages with caching optimization
+            system_prompt, messages, cache_used = await self.prompt_cache.prepare_anthropic_messages(
+                task_type, prompt, conversation_history
+            )
+            
+            # Use Claude 3.5 Sonnet with prompt caching
+            model = "claude-3-5-sonnet-20241022"
+            extra_params = {}
+            
+            # Try to use Anthropic's native prompt caching if supported
+            if cache_used and len(conversation_history) > 0:
+                # Add cache control for system prompt (Anthropic beta feature)
+                extra_params["extra_headers"] = {
+                    "anthropic-beta": "prompt-caching-2024-07-31"
+                }
+                
+                # Mark system prompt for caching
+                system_prompt = {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            
             response = await asyncio.to_thread(
                 self.anthropic_client.messages.create,
-                model="claude-3-5-sonnet-20241022",
+                model=model,
                 max_tokens=2048,
                 temperature=0.1,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                system=system_prompt,
+                messages=messages,
+                **extra_params
             )
             
             # Extract token usage from response
             prompt_tokens = response.usage.input_tokens
             completion_tokens = response.usage.output_tokens
-            cost = self._calculate_cost("claude-3-5-sonnet", prompt_tokens, completion_tokens)
+            
+            # Calculate cost with caching savings
+            base_cost = self._calculate_cost("claude-3-5-sonnet", prompt_tokens, completion_tokens)
+            
+            # Anthropic's prompt caching offers 75% savings on cached portions
+            cache_savings_pct = 0.5 if cache_used else 0.0  # Conservative 50% savings estimate
+            final_cost = base_cost * (1 - cache_savings_pct)
+            
+            # Update conversation history
+            if run_id:
+                if run_id not in self.conversation_histories:
+                    self.conversation_histories[run_id] = []
+                
+                self.conversation_histories[run_id].extend([
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": response.content[0].text}
+                ])
+                
+                # Limit history size to prevent context overflow
+                if len(self.conversation_histories[run_id]) > 10:
+                    self.conversation_histories[run_id] = self.conversation_histories[run_id][-8:]
+            
+            logger.info(f"Anthropic request: {prompt_tokens} prompt + {completion_tokens} completion tokens, cache_used: {cache_used}, cost: €{final_cost:.4f}")
             
             return LLMResponse(
                 content=response.content[0].text,
-                model="claude-3-5-sonnet-20241022",
+                model=model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
-                cost_eur=cost
+                cost_eur=final_cost
             )
             
         except Exception as e:
