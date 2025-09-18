@@ -30,7 +30,11 @@ class LLMRouter:
         self.anthropic_client = None
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+        self.max_local_retries = int(os.getenv("MAX_LOCAL_RETRIES", "3"))
+        self.max_escalation_retries = int(os.getenv("MAX_ESCALATION_RETRIES", "2"))
         self.force_escalation = False
+        self.current_attempt = 0
+        self.local_failures = 0
         
         # Initialize clients if keys are available
         if os.getenv("OPENAI_API_KEY"):
