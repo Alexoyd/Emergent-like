@@ -32,6 +32,7 @@ import DiffViewer from './components/DiffViewer';
 import CostMeter from './components/CostMeter';
 import LogViewer from './components/LogViewer';
 import RunsList from './components/RunsList';
+import AdminPanel from './components/AdminPanel';
 
 import './App.css';
 
