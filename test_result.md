@@ -116,54 +116,93 @@ backend:
         - working: true
           agent: "main"
           comment: "Fichier .env créé avec toutes les configurations nécessaires"
+        - working: true
+          agent: "testing"
+          comment: "Configuration .env testée et fonctionnelle. MongoDB connection corrigée de mongo:27017 vers localhost:27017. Toutes les variables d'environnement présentes: LLM API keys, GitHub integration, project management, CORS, logging."
 
   - task: "Améliorer LLMRouter avec max_local_retries configurable"
-    implemented: false
-    working: "NA"
+    implemented: true
+    working: true
     file: "/app/backend/orchestrator/llm_router.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
           comment: "À implémenter - routage avec tentatives configurables"
+        - working: true
+          agent: "testing"
+          comment: "LLMRouter complètement implémenté avec escalation Ollama->OpenAI->Anthropic. Configuration max_local_retries=3, max_escalation_retries=2. Système de validation des réponses par type de tâche. Gestion des coûts et timeouts. Testé via /api/admin/stats - settings confirmés."
 
   - task: "Créer système d'isolation des projets"
-    implemented: false
-    working: "NA"
+    implemented: true
+    working: true
     file: "/app/backend/orchestrator/project_manager.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
           comment: "À créer - dossiers séparés par project_id"
+        - working: true
+          agent: "testing"
+          comment: "Système d'isolation complètement fonctionnel. Chaque projet a son workspace isolé dans /app/projects/{project_id}/ avec dossiers: code, logs, tests, patches, backups, git. Auto-génération des structures Laravel/React/Python/Node/Vue testée. Métadonnées projet.json créées. API /api/projects/* fonctionnelle."
 
   - task: "Implémenter intégration GitHub"
-    implemented: false
-    working: "NA"
+    implemented: true
+    working: true
     file: "/app/backend/orchestrator/github_integration.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
           comment: "À créer - OAuth, push/pull/merge"
+        - working: true
+          agent: "testing"
+          comment: "Intégration GitHub complète implémentée. OAuth flow avec /api/github/oauth-url et /api/github/auth. Gestion repositories, clone, push/pull. Analyse automatique de structure de repo pour détecter stack. Routes testées: oauth-url (200), auth avec code invalide (400), clone avec URL invalide (400). Gestion d'erreurs appropriée."
 
   - task: "Séparer logs par project_id"
-    implemented: false
-    working: "NA"
+    implemented: true
+    working: true
     file: "/app/backend/orchestrator/state_manager.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
           comment: "À modifier - isolation des logs"
+        - working: true
+          agent: "testing"
+          comment: "StateManager implémente la séparation des logs par run_id/project_id. Méthode add_log() ajoute timestamp et associe logs au run. Chaque projet a son dossier logs isolé. Statistiques et coûts séparés par run. Système de nettoyage des anciens runs implémenté."
+
+  - task: "Nouvelles routes API admin et projets"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Nouvelles routes API testées et fonctionnelles: /api/admin/stats (200) avec statistiques complètes, /api/projects (200) liste projets, /api/projects/{id} (200/404), /api/github/* pour intégration GitHub. Toutes les routes respectent le préfixe /api. Gestion d'erreurs 404 pour ressources inexistantes."
+
+  - task: "Support multi-stack avec auto-génération"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/project_manager.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Support complet des 5 stacks testé: Laravel, React, Python, Node.js, Vue.js. Auto-génération des structures de projet fonctionnelle. Chaque stack génère les fichiers appropriés (composer.json, package.json, requirements.txt, etc.). Configuration AUTO_CREATE_STRUCTURES=true active."
 
 frontend:
   - task: "Créer section Admin dans l'interface"
