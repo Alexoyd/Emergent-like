@@ -1,0 +1,15 @@
+{
+  "id": "e08d93cf-2b2d-4262-bedc-7bb6af47eaad",
+  "name": "Run e08d93cf",
+  "stack": "laravel",
+  "created_at": "2025-09-18T22:28:40.673878+00:00",
+  "directories": {
+    "code": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/code",
+    "logs": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/logs",
+    "tests": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/tests",
+    "patches": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/patches",
+    "backups": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/backups",
+    "git": "/app/projects/e08d93cf-2b2d-4262-bedc-7bb6af47eaad/git"
+  },
+  "status": "initialized"
+}

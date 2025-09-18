@@ -1,0 +1,15 @@
+{
+  "id": "28c727e4-b88c-4867-927a-677851ca0bcc",
+  "name": "Run 28c727e4",
+  "stack": "laravel",
+  "created_at": "2025-09-18T22:28:31.226786+00:00",
+  "directories": {
+    "code": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/code",
+    "logs": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/logs",
+    "tests": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/tests",
+    "patches": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/patches",
+    "backups": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/backups",
+    "git": "/app/projects/28c727e4-b88c-4867-927a-677851ca0bcc/git"
+  },
+  "status": "initialized"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "79a94b47-81b3-4959-b47a-640053c11af3",
+  "name": "Run 79a94b47",
+  "stack": "node",
+  "created_at": "2025-09-18T22:28:36.941985+00:00",
+  "directories": {
+    "code": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/code",
+    "logs": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/logs",
+    "tests": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/tests",
+    "patches": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/patches",
+    "backups": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/backups",
+    "git": "/app/projects/79a94b47-81b3-4959-b47a-640053c11af3/git"
+  },
+  "status": "initialized"
+}
