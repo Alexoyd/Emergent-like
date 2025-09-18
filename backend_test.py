@@ -68,7 +68,42 @@ class EmergentSystemTester:
 
     def test_admin_stats(self):
         """Test admin statistics endpoint"""
-        return self.run_test("Admin Statistics", "GET", "admin/stats", 200)
+        success, response = self.run_test("Admin Statistics", "GET", "admin/stats", 200)
+        
+        if success and response:
+            # Check for new cache-related fields
+            expected_fields = ['run_stats', 'daily_cost', 'project_count', 'cache_stats', 'cost_savings', 'settings']
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"⚠️  Missing expected fields in admin stats: {missing_fields}")
+                return False, response
+            else:
+                print(f"✅ All expected admin stats fields present: {list(response.keys())}")
+                
+                # Check cache_stats structure
+                if 'cache_stats' in response:
+                    cache_stats = response['cache_stats']
+                    cache_fields = ['total_entries', 'total_usage', 'hit_rate', 'most_used']
+                    cache_missing = [field for field in cache_fields if field not in cache_stats]
+                    if cache_missing:
+                        print(f"⚠️  Missing cache stats fields: {cache_missing}")
+                    else:
+                        print(f"✅ Cache stats structure correct: {cache_stats}")
+                
+                # Check cost_savings structure
+                if 'cost_savings' in response:
+                    cost_savings = response['cost_savings']
+                    savings_fields = ['tokens_saved', 'cost_saved_eur', 'savings_percentage']
+                    savings_missing = [field for field in savings_fields if field not in cost_savings]
+                    if savings_missing:
+                        print(f"⚠️  Missing cost savings fields: {savings_missing}")
+                    else:
+                        print(f"✅ Cost savings structure correct: {cost_savings}")
+                
+                return True, response
+        
+        return success, response
 
     def test_projects_list(self):
         """Test projects listing"""
