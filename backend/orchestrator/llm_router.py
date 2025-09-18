@@ -50,28 +50,52 @@ class LLMRouter:
             "claude-3-5-sonnet": {"input": 0.003, "output": 0.015}
         }
     
-    async def generate(self, prompt: str, task_type: str, current_cost: float, budget_limit: float) -> LLMResponse:
-        """Generate response with automatic model selection and escalation"""
+    async def generate(self, prompt: str, task_type: str, current_cost: float, budget_limit: float, run_id: str = None) -> LLMResponse:
+        """Generate response with improved automatic model selection and escalation"""
         try:
+            # Reset attempt counter for new generation
+            self.current_attempt = 0
+            
             # Determine initial model tier
             tier = self._determine_tier(task_type, current_cost, budget_limit, len(prompt))
             
-            # Try each tier until success
+            # Try local model first with configured retries
+            if tier == ModelTier.LOCAL and not self.force_escalation:
+                local_response = await self._try_local_with_retries(prompt, task_type, run_id)
+                if local_response:
+                    return local_response
+                    
+                # Local failed, escalate
+                logger.warning(f"Local model failed after {self.max_local_retries} attempts, escalating...")
+                self.local_failures += 1
+            
+            # Try escalation path
             for attempt_tier in self._get_escalation_path(tier):
+                if attempt_tier == ModelTier.LOCAL and self.local_failures >= self.max_local_retries:
+                    continue  # Skip local if already failed
+                    
                 try:
+                    self.current_attempt += 1
                     response = await self._generate_with_tier(prompt, attempt_tier)
+                    
                     if self._is_valid_response(response.content, task_type):
+                        # Reset failure count on success
+                        if attempt_tier == ModelTier.LOCAL:
+                            self.local_failures = 0
                         return response
                     else:
                         logger.warning(f"Invalid response from {attempt_tier}, escalating...")
                         continue
+                        
                 except Exception as e:
-                    logger.error(f"Error with {attempt_tier}: {e}")
+                    logger.error(f"Error with {attempt_tier} (attempt {self.current_attempt}): {e}")
+                    if self.current_attempt >= self.max_escalation_retries:
+                        break
                     continue
             
             # Fallback to basic response if all fail
             return LLMResponse(
-                content="Error: Unable to generate response with any available model",
+                content="Error: Unable to generate response with any available model after escalation",
                 model="error",
                 prompt_tokens=0,
                 completion_tokens=0,
@@ -82,11 +106,33 @@ class LLMRouter:
             logger.error(f"Error in LLM routing: {e}")
             return LLMResponse(
                 content=f"Error: {str(e)}",
-                model="error",
+                model="error", 
                 prompt_tokens=0,
                 completion_tokens=0,
                 cost_eur=0.0
             )
+    
+    async def _try_local_with_retries(self, prompt: str, task_type: str, run_id: str = None) -> Optional[LLMResponse]:
+        """Try local model with configured retries"""
+        for attempt in range(1, self.max_local_retries + 1):
+            try:
+                logger.info(f"Local attempt {attempt}/{self.max_local_retries} for {task_type}")
+                response = await self._generate_ollama(prompt)
+                
+                if self._is_valid_response(response.content, task_type):
+                    logger.info(f"Local model succeeded on attempt {attempt}")
+                    return response
+                else:
+                    logger.warning(f"Local model invalid response on attempt {attempt}")
+                    
+            except Exception as e:
+                logger.error(f"Local model error on attempt {attempt}: {e}")
+                
+            # Wait between retries (exponential backoff)
+            if attempt < self.max_local_retries:
+                await asyncio.sleep(2 ** attempt)
+        
+        return None
     
     def _determine_tier(self, task_type: str, current_cost: float, budget_limit: float, prompt_length: int) -> ModelTier:
         """Determine appropriate model tier based on task and constraints"""
