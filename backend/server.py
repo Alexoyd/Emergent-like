@@ -290,6 +290,243 @@ async def stream_run_logs(run_id: str):
     
     return StreamingResponse(generate(), media_type="text/plain")
 
+# Project Management Routes
+
+@api_router.get("/projects")
+async def list_projects():
+    """List all projects"""
+    try:
+        projects = await project_manager.list_projects()
+        return {"projects": projects}
+    except Exception as e:
+        logging.error(f"Error listing projects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}")
+async def get_project(project_id: str):
+    """Get project details"""
+    try:
+        project_info = await project_manager.get_project_info(project_id)
+        if not project_info:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    """Delete project"""
+    try:
+        success = await project_manager.delete_project(project_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {"message": "Project deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# GitHub Integration Routes
+
+@api_router.get("/github/oauth-url")
+async def get_github_oauth_url(state: str = None):
+    """Get GitHub OAuth authorization URL"""
+    try:
+        oauth_url = await github_integration.get_oauth_url(state)
+        return {"oauth_url": oauth_url}
+    except Exception as e:
+        logging.error(f"Error getting GitHub OAuth URL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class GitHubAuthData(BaseModel):
+    code: str
+    state: Optional[str] = None
+
+@api_router.post("/github/auth")
+async def github_auth(auth_data: GitHubAuthData):
+    """Exchange GitHub OAuth code for token"""
+    try:
+        token_data = await github_integration.exchange_code_for_token(auth_data.code)
+        if not token_data:
+            raise HTTPException(status_code=400, detail="Failed to exchange code for token")
+        
+        # Get user info
+        user_info = await github_integration.get_user_info(token_data["access_token"])
+        
+        return {
+            "access_token": token_data["access_token"],
+            "user": user_info
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error with GitHub auth: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/github/repositories")
+async def list_github_repositories(access_token: str):
+    """List user's GitHub repositories"""
+    try:
+        repos = await github_integration.list_repositories(access_token)
+        return {"repositories": repos}
+    except Exception as e:
+        logging.error(f"Error listing GitHub repos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CloneRepositoryData(BaseModel):
+    repo_url: str
+    access_token: str
+    project_name: Optional[str] = None
+
+@api_router.post("/github/clone")
+async def clone_repository(clone_data: CloneRepositoryData):
+    """Clone GitHub repository to new project"""
+    try:
+        # Analyze repository structure
+        repo_info = github_integration.get_repo_info_from_url(clone_data.repo_url)
+        if not repo_info:
+            raise HTTPException(status_code=400, detail="Invalid GitHub repository URL")
+        
+        analysis = await github_integration.analyze_repository_structure(
+            clone_data.access_token, 
+            repo_info["owner"], 
+            repo_info["repo"]
+        )
+        
+        # Create project workspace
+        project_id = str(uuid.uuid4())
+        project_workspace = await project_manager.create_project_workspace(
+            project_id=project_id,
+            stack=analysis["stack"],
+            project_name=clone_data.project_name or repo_info["repo"]
+        )
+        
+        # Clone repository
+        success = await github_integration.clone_repository(
+            clone_data.repo_url,
+            Path(project_workspace["code_path"]),
+            clone_data.access_token
+        )
+        
+        if not success:
+            await project_manager.delete_project(project_id)
+            raise HTTPException(status_code=500, detail="Failed to clone repository")
+        
+        return {
+            "project_id": project_id,
+            "project_path": project_workspace["project_path"],
+            "analysis": analysis,
+            "message": "Repository cloned successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error cloning repository: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class GitOperationData(BaseModel):
+    project_id: str
+    access_token: Optional[str] = None
+    message: Optional[str] = None
+    branch: Optional[str] = "main"
+
+@api_router.post("/github/push")
+async def push_to_github(git_data: GitOperationData):
+    """Push project changes to GitHub"""
+    try:
+        code_path = project_manager.get_code_path(git_data.project_id)
+        
+        # Commit changes
+        success = await github_integration.commit_changes(
+            code_path,
+            git_data.message or "Automated changes from AI Agent"
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to commit changes")
+        
+        # Push changes
+        success = await github_integration.push_changes(
+            code_path,
+            "origin",
+            git_data.branch,
+            git_data.access_token
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to push changes")
+        
+        return {"message": "Changes pushed successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error pushing to GitHub: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/github/pull")
+async def pull_from_github(git_data: GitOperationData):
+    """Pull changes from GitHub"""
+    try:
+        code_path = project_manager.get_code_path(git_data.project_id)
+        
+        success = await github_integration.pull_changes(
+            code_path,
+            "origin",
+            git_data.branch
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to pull changes")
+        
+        return {"message": "Changes pulled successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error pulling from GitHub: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Admin Routes
+
+@api_router.get("/admin/stats")
+async def get_admin_stats():
+    """Get admin statistics"""
+    try:
+        # Get run statistics
+        run_stats = await state_manager.get_run_statistics()
+        
+        # Get daily cost
+        daily_cost = await state_manager.get_daily_cost()
+        
+        # Get project count
+        projects = await project_manager.list_projects()
+        project_count = len(projects)
+        
+        # Get system settings
+        settings = {
+            "max_local_retries": int(os.getenv("MAX_LOCAL_RETRIES", "3")),
+            "default_daily_budget": float(os.getenv("DEFAULT_DAILY_BUDGET_EUR", "5.0")),
+            "max_steps_per_run": int(os.getenv("MAX_STEPS_PER_RUN", "20")),
+            "auto_create_structures": os.getenv("AUTO_CREATE_STRUCTURES", "true").lower() == "true"
+        }
+        
+        return {
+            "run_stats": run_stats,
+            "daily_cost": daily_cost,
+            "project_count": project_count,
+            "settings": settings
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting admin stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Core orchestration logic
 
 async def execute_run(run_id: str, from_step: int = 0):
