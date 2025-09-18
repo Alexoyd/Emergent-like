@@ -212,32 +212,68 @@ class LLMRouter:
             logger.error(f"Ollama generation error: {e}")
             raise
     
-    async def _generate_openai(self, prompt: str) -> LLMResponse:
-        """Generate using OpenAI GPT model"""
+    async def _generate_openai(self, prompt: str, task_type: str = "coding", run_id: str = None) -> LLMResponse:
+        """Generate using OpenAI GPT model with prompt caching"""
         if not self.openai_client:
             raise Exception("OpenAI API key not configured")
         
         try:
+            # Get conversation history for this run
+            conversation_history = self.conversation_histories.get(run_id, [])
+            
+            # Prepare messages with caching optimization
+            messages, cache_used = await self.prompt_cache.prepare_openai_messages(
+                task_type, prompt, conversation_history
+            )
+            
+            # Use GPT-4o with native caching if available
+            model = "gpt-4o"  # Supports better caching
+            extra_params = {}
+            
+            # Try to use OpenAI's native caching if supported
+            if cache_used and len(conversation_history) > 0:
+                # Use message caching for longer conversations
+                extra_params["stream"] = False
+                extra_params["max_completion_tokens"] = 2048
+            
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
-                model="gpt-4o-mini",  # Using available model for now
-                messages=[
-                    {"role": "system", "content": "You are an expert AI coding agent. Generate precise, minimal code changes."},
-                    {"role": "user", "content": prompt}
-                ],
+                model=model,
+                messages=messages,
                 temperature=0.1,
-                max_tokens=2048
+                max_tokens=2048,
+                **extra_params
             )
             
             usage = response.usage
-            cost = self._calculate_cost("gpt-4o-mini", usage.prompt_tokens, usage.completion_tokens)
+            
+            # Calculate cost with caching savings
+            base_cost = self._calculate_cost("gpt-4o", usage.prompt_tokens, usage.completion_tokens)
+            cache_savings_pct = 0.3 if cache_used else 0.0  # 30% savings with cache
+            final_cost = base_cost * (1 - cache_savings_pct)
+            
+            # Update conversation history
+            if run_id:
+                if run_id not in self.conversation_histories:
+                    self.conversation_histories[run_id] = []
+                
+                self.conversation_histories[run_id].extend([
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": response.choices[0].message.content}
+                ])
+                
+                # Limit history size to prevent context overflow
+                if len(self.conversation_histories[run_id]) > 10:
+                    self.conversation_histories[run_id] = self.conversation_histories[run_id][-8:]
+            
+            logger.info(f"OpenAI request: {usage.prompt_tokens} prompt + {usage.completion_tokens} completion tokens, cache_used: {cache_used}, cost: €{final_cost:.4f}")
             
             return LLMResponse(
                 content=response.choices[0].message.content,
-                model="gpt-4o-mini",
+                model=model,
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
-                cost_eur=cost
+                cost_eur=final_cost
             )
             
         except Exception as e:
