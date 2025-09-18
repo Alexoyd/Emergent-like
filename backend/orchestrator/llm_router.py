@@ -169,14 +169,14 @@ class LLMRouter:
         else:
             return [ModelTier.PREMIUM, ModelTier.MEDIUM, ModelTier.LOCAL]
     
-    async def _generate_with_tier(self, prompt: str, tier: ModelTier) -> LLMResponse:
+    async def _generate_with_tier(self, prompt: str, tier: ModelTier, task_type: str = "coding", run_id: str = None) -> LLMResponse:
         """Generate response with specific model tier"""
         if tier == ModelTier.LOCAL:
             return await self._generate_ollama(prompt)
         elif tier == ModelTier.MEDIUM:
-            return await self._generate_openai(prompt)
+            return await self._generate_openai(prompt, task_type, run_id)
         else:  # PREMIUM
-            return await self._generate_anthropic(prompt)
+            return await self._generate_anthropic(prompt, task_type, run_id)
     
     async def _generate_ollama(self, prompt: str) -> LLMResponse:
         """Generate using local Ollama model"""
