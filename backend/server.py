@@ -686,9 +686,10 @@ Be specific, focused, and ensure changes are minimal and testable.
         # Parse patch from response
         patch = extract_patch(response.content)
         
-        # Apply patch
+        # Apply patch to project workspace
         if patch:
-            await tool_manager.apply_patch(patch, run.project_path)
+            project_code_path = project_manager.get_code_path(run_id)
+            await tool_manager.apply_patch(patch, str(project_code_path))
             step.patch = patch
         
         # Run tests
