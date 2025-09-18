@@ -692,8 +692,9 @@ Be specific, focused, and ensure changes are minimal and testable.
             await tool_manager.apply_patch(patch, str(project_code_path))
             step.patch = patch
         
-        # Run tests
-        test_results = await run_comprehensive_tests(run.project_path, run.stack)
+        # Run tests in project workspace
+        project_code_path = project_manager.get_code_path(run_id)
+        test_results = await run_comprehensive_tests(str(project_code_path), run.stack)
         step.tests_passed = all(result.status == "passed" for result in test_results)
         
         # Update step with results
