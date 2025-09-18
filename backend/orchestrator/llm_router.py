@@ -1,13 +1,14 @@
 import os
 import logging
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
 import openai
 import anthropic
 import httpx
 import json
+from .prompt_cache import PromptCacheManager
 
 logger = logging.getLogger(__name__)
 
