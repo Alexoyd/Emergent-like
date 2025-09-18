@@ -423,6 +423,10 @@ const Dashboard = () => {
                       </CardContent>
                     </Card>
                   </TabsContent>
+
+                  <TabsContent value="admin" className="mt-6">
+                    <AdminPanel />
+                  </TabsContent>
                 </Tabs>
               </div>
             ) : (
