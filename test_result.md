@@ -101,3 +101,122 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Amélioration du système Emergent-like avec routage LLM amélioré, interface admin, isolation des projets, logs séparés, timeline corrigée et intégration GitHub"
+
+backend:
+  - task: "Créer fichier .env avec configuration complète"
+    implemented: true
+    working: true
+    file: "/app/backend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Fichier .env créé avec toutes les configurations nécessaires"
+
+  - task: "Améliorer LLMRouter avec max_local_retries configurable"
+    implemented: false
+    working: "NA"
+    file: "/app/backend/orchestrator/llm_router.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À implémenter - routage avec tentatives configurables"
+
+  - task: "Créer système d'isolation des projets"
+    implemented: false
+    working: "NA"
+    file: "/app/backend/orchestrator/project_manager.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À créer - dossiers séparés par project_id"
+
+  - task: "Implémenter intégration GitHub"
+    implemented: false
+    working: "NA"
+    file: "/app/backend/orchestrator/github_integration.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À créer - OAuth, push/pull/merge"
+
+  - task: "Séparer logs par project_id"
+    implemented: false
+    working: "NA"
+    file: "/app/backend/orchestrator/state_manager.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À modifier - isolation des logs"
+
+frontend:
+  - task: "Créer section Admin dans l'interface"
+    implemented: false
+    working: "NA"
+    file: "/app/frontend/src/components/AdminPanel.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À créer - gestion budgets, clés API, paramètres"
+
+  - task: "Corriger Timeline et avancement"
+    implemented: false
+    working: "NA"
+    file: "/app/frontend/src/components/Timeline.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À corriger - mise à jour progression"
+
+  - task: "Interface GitHub dans frontend"
+    implemented: false
+    working: "NA"
+    file: "/app/frontend/src/components/GitHubIntegration.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "À créer - connexion repos, push/pull"
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+  
+test_plan:
+  current_focus:
+    - "Créer fichier .env avec configuration complète"
+    - "Améliorer LLMRouter avec max_local_retries configurable"
+    - "Créer système d'isolation des projets"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: "Initialisation du projet d'amélioration Emergent-like. Configuration .env créée, prêt à implémenter les améliorations du routage LLM et l'isolation des projets."
