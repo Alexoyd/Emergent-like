@@ -619,6 +619,7 @@ def main():
     all_tests = [
         ("🔧 CORE FUNCTIONALITY", core_tests),
         ("🆕 NEW FEATURES", feature_tests),
+        ("🧠 PROMPT CACHING", caching_tests),
         ("🏃 RUN MANAGEMENT", run_tests),
         ("❌ ERROR HANDLING", error_tests),
     ]
