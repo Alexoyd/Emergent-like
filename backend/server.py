@@ -25,6 +25,8 @@ from orchestrator.llm_router import LLMRouter
 from orchestrator.tools import ToolManager
 from orchestrator.state_manager import StateManager
 from orchestrator.rag_system import RAGSystem
+from orchestrator.project_manager import ProjectManager
+from orchestrator.github_integration import GitHubIntegration
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
