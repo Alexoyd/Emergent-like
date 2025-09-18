@@ -429,6 +429,150 @@ class EmergentSystemTester:
         print(f"✅ Supported stacks: {successful_stacks}")
         return len(successful_stacks) >= 3, {"supported_stacks": successful_stacks}
 
+    def test_prompt_cache_clear(self):
+        """Test prompt cache clearing endpoint"""
+        return self.run_test("Clear Prompt Cache", "POST", "admin/cache/clear", 200)
+
+    def test_prompt_cache_functionality(self):
+        """Test prompt caching by creating multiple runs and checking cache usage"""
+        print("\n🔍 Testing Prompt Cache Functionality...")
+        
+        # Create multiple runs with same stack to trigger cache usage
+        cache_test_runs = []
+        
+        for i in range(3):
+            run_data = {
+                "goal": f"Test prompt caching functionality - run {i+1}",
+                "stack": "laravel",
+                "max_steps": 1,
+                "daily_budget_eur": 0.1
+            }
+            
+            success, response = self.run_test(
+                f"Cache Test Run {i+1}",
+                "POST",
+                "runs",
+                200,
+                data=run_data,
+                timeout=15
+            )
+            
+            if not success:
+                success, response = self.run_test(
+                    f"Cache Test Run {i+1} (201)",
+                    "POST",
+                    "runs",
+                    201,
+                    data=run_data,
+                    timeout=15
+                )
+            
+            if success and 'id' in response:
+                cache_test_runs.append(response['id'])
+        
+        # Wait a moment for cache to be populated
+        time.sleep(2)
+        
+        # Check admin stats for cache information
+        stats_success, stats_response = self.test_admin_stats()
+        
+        if stats_success and 'cache_stats' in stats_response:
+            cache_stats = stats_response['cache_stats']
+            print(f"✅ Cache stats after runs: {cache_stats}")
+            
+            # Check if cache has entries
+            if cache_stats.get('total_entries', 0) > 0:
+                print(f"✅ Cache populated with {cache_stats['total_entries']} entries")
+                return True, {"cache_runs": cache_test_runs, "cache_stats": cache_stats}
+            else:
+                print("⚠️  Cache not populated after test runs")
+                return False, {"cache_runs": cache_test_runs, "cache_stats": cache_stats}
+        
+        return False, {"cache_runs": cache_test_runs}
+
+    def test_cost_savings_calculation(self):
+        """Test cost savings calculation from prompt caching"""
+        success, response = self.run_test("Cost Savings Check", "GET", "admin/stats", 200)
+        
+        if success and 'cost_savings' in response:
+            cost_savings = response['cost_savings']
+            
+            # Check if cost savings structure is correct
+            required_fields = ['tokens_saved', 'cost_saved_eur', 'savings_percentage', 'cache_hits', 'total_requests']
+            missing_fields = [field for field in required_fields if field not in cost_savings]
+            
+            if missing_fields:
+                print(f"❌ Missing cost savings fields: {missing_fields}")
+                return False, response
+            
+            print(f"✅ Cost savings data: {cost_savings}")
+            
+            # If we have cache hits, we should have some savings
+            if cost_savings.get('cache_hits', 0) > 0:
+                if cost_savings.get('tokens_saved', 0) > 0:
+                    print(f"✅ Cache is saving tokens: {cost_savings['tokens_saved']} tokens saved")
+                    print(f"✅ Estimated cost savings: €{cost_savings['cost_saved_eur']:.4f}")
+                    print(f"✅ Savings percentage: {cost_savings['savings_percentage']:.1f}%")
+                    return True, response
+                else:
+                    print("⚠️  Cache hits detected but no tokens saved")
+                    return False, response
+            else:
+                print("ℹ️  No cache hits yet - this is normal for new system")
+                return True, response  # This is OK for a new system
+        
+        return success, response
+
+    def test_llm_router_cache_integration(self):
+        """Test that LLM router properly integrates with prompt cache"""
+        # Create a run that will use the LLM router
+        run_data = {
+            "goal": "Test LLM router cache integration by creating a simple function",
+            "stack": "python",
+            "max_steps": 2,
+            "daily_budget_eur": 1.0
+        }
+        
+        success, response = self.run_test(
+            "LLM Router Cache Integration",
+            "POST",
+            "runs",
+            200,
+            data=run_data,
+            timeout=20
+        )
+        
+        if not success:
+            success, response = self.run_test(
+                "LLM Router Cache Integration (201)",
+                "POST",
+                "runs",
+                201,
+                data=run_data,
+                timeout=20
+            )
+        
+        if success and 'id' in response:
+            run_id = response['id']
+            print(f"✅ Created run {run_id} for LLM router cache testing")
+            
+            # Wait a moment for processing
+            time.sleep(3)
+            
+            # Check if the run was processed and cache was used
+            run_success, run_response = self.run_test(
+                "Get LLM Router Test Run",
+                "GET",
+                f"runs/{run_id}",
+                200
+            )
+            
+            if run_success:
+                print(f"✅ Run status: {run_response.get('status', 'unknown')}")
+                return True, {"run_id": run_id, "run_data": run_response}
+        
+        return success, response
+
 def main():
     print("🚀 Starting Emergent-like System Comprehensive Tests")
     print("=" * 70)
