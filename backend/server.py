@@ -508,6 +508,10 @@ async def get_admin_stats():
         projects = await project_manager.list_projects()
         project_count = len(projects)
         
+        # Get prompt cache statistics
+        cache_stats = llm_router.prompt_cache.get_cache_stats()
+        cost_savings = llm_router.prompt_cache.estimate_cost_savings()
+        
         # Get system settings
         settings = {
             "max_local_retries": int(os.getenv("MAX_LOCAL_RETRIES", "3")),
@@ -520,11 +524,23 @@ async def get_admin_stats():
             "run_stats": run_stats,
             "daily_cost": daily_cost,
             "project_count": project_count,
+            "cache_stats": cache_stats,
+            "cost_savings": cost_savings,
             "settings": settings
         }
         
     except Exception as e:
         logging.error(f"Error getting admin stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/cache/clear")
+async def clear_prompt_cache():
+    """Clear prompt cache"""
+    try:
+        cleared_count = await llm_router.prompt_cache.clear_cache()
+        return {"message": f"Cleared {cleared_count} cached prompts"}
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Core orchestration logic
