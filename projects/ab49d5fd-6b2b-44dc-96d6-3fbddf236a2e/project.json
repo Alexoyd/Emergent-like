@@ -1,0 +1,15 @@
+{
+  "id": "ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e",
+  "name": "Run ab49d5fd",
+  "stack": "python",
+  "created_at": "2025-09-18T22:47:04.754942+00:00",
+  "directories": {
+    "code": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/code",
+    "logs": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/logs",
+    "tests": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/tests",
+    "patches": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/patches",
+    "backups": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/backups",
+    "git": "/app/projects/ab49d5fd-6b2b-44dc-96d6-3fbddf236a2e/git"
+  },
+  "status": "initialized"
+}
