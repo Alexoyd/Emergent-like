@@ -334,7 +334,7 @@ async def delete_project(project_id: str):
 async def preview_project(project_id: str):
     """Preview a completed project in browser"""
     try:
-        project = await project_manager.get_project(project_id)
+        project = await project_manager.get_project_info(project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
