@@ -802,6 +802,20 @@ def main():
         ("Comprehensive Stack Support", tester.test_comprehensive_stack_support),
     ]
     
+    # New admin global features tests
+    admin_global_tests = [
+        ("Admin Global Statistics", tester.test_admin_global_stats),
+        ("Admin Global Logs", tester.test_admin_global_logs),
+        ("Admin Global Logs Filtered", tester.test_admin_global_logs_filtered),
+        ("Environment Configuration", tester.test_environment_configuration),
+    ]
+    
+    # Project preview tests
+    preview_tests = [
+        ("Project Preview Multi-Stack", tester.test_project_preview),
+        ("Project Preview Non-existent", tester.test_project_preview_nonexistent),
+    ]
+    
     # Prompt caching tests
     caching_tests = [
         ("Prompt Cache Clear", tester.test_prompt_cache_clear),
