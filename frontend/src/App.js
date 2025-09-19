@@ -33,6 +33,7 @@ import CostMeter from './components/CostMeter';
 import LogViewer from './components/LogViewer';
 import RunsList from './components/RunsList';
 import AdminPanel from './components/AdminPanel';
+import AdminGlobal from './components/AdminGlobal';
 
 import './App.css';
 
