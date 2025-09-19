@@ -644,6 +644,12 @@ const Dashboard = () => {
       </div>
       
       <Toaster position="top-right" richColors />
+      
+      {/* Global Admin Modal */}
+      <AdminGlobal 
+        isOpen={showAdminGlobal} 
+        onClose={() => setShowAdminGlobal(false)} 
+      />
     </div>
   );
 };
