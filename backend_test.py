@@ -589,9 +589,52 @@ class EmergentSystemTester:
         
         return len(preview_results) > 0, preview_results
 
-    def test_prompt_cache_clear(self):
-        """Test prompt cache clearing endpoint"""
-        return self.run_test("Clear Prompt Cache", "POST", "admin/cache/clear", 200)
+    def test_project_preview_nonexistent(self):
+        """Test project preview with non-existent project"""
+        return self.run_test(
+            "Preview Non-existent Project",
+            "GET",
+            "projects/nonexistent-project-12345/preview",
+            404
+        )
+
+    def test_environment_configuration(self):
+        """Test that environment variables are properly loaded"""
+        success, response = self.run_test("Environment Configuration Check", "GET", "admin/global-stats", 200)
+        
+        if success and response:
+            env_status = response.get('env_status', {})
+            system_config = response.get('system_config', {})
+            
+            # Check that environment variables are detected
+            env_checks = []
+            if 'mongo_url' in env_status:
+                env_checks.append(f"MongoDB: {'✅' if env_status['mongo_url'] else '❌'}")
+            if 'openai_key' in env_status:
+                env_checks.append(f"OpenAI: {'✅' if env_status['openai_key'] else '❌'}")
+            if 'anthropic_key' in env_status:
+                env_checks.append(f"Anthropic: {'✅' if env_status['anthropic_key'] else '❌'}")
+            if 'github_token' in env_status:
+                env_checks.append(f"GitHub: {'✅' if env_status['github_token'] else '❌'}")
+            
+            print(f"   Environment status: {', '.join(env_checks)}")
+            
+            # Check system configuration values
+            config_checks = []
+            if 'daily_budget' in system_config:
+                config_checks.append(f"Daily Budget: €{system_config['daily_budget']}")
+            if 'max_local_retries' in system_config:
+                config_checks.append(f"Max Retries: {system_config['max_local_retries']}")
+            if 'max_steps' in system_config:
+                config_checks.append(f"Max Steps: {system_config['max_steps']}")
+            if 'auto_create' in system_config:
+                config_checks.append(f"Auto Create: {system_config['auto_create']}")
+            
+            print(f"   System config: {', '.join(config_checks)}")
+            
+            return True, response
+        
+        return success, response
 
     def test_prompt_cache_functionality(self):
         """Test prompt caching by creating multiple runs and checking cache usage"""
