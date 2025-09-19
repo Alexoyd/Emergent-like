@@ -543,6 +543,116 @@ async def clear_prompt_cache():
         logging.error(f"Error clearing cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/admin/global-stats")
+async def get_global_admin_stats():
+    """Get global admin statistics for main admin panel"""
+    try:
+        # Get all runs from database
+        runs_collection = client.emergent_ai.runs
+        
+        # Total projects and runs
+        projects = await project_manager.list_projects()
+        total_projects = len(projects)
+        
+        all_runs = await runs_collection.find({}).to_list(length=None)
+        total_runs = len(all_runs)
+        completed_runs = len([r for r in all_runs if r.get('status') == 'completed'])
+        
+        # Total costs calculation
+        total_costs = sum(r.get('cost_used_eur', 0) for r in all_runs)
+        
+        # Today's usage
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).date()
+        today_runs = [r for r in all_runs if r.get('created_at') and 
+                      datetime.fromisoformat(r['created_at'].replace('Z', '+00:00')).date() == today]
+        today_usage = sum(r.get('cost_used_eur', 0) for r in today_runs)
+        
+        # Cache statistics
+        cache_stats = llm_router.prompt_cache.get_cache_stats()
+        cost_savings = llm_router.prompt_cache.estimate_cost_savings()
+        
+        # Environment status
+        env_status = {
+            "openai_key": bool(os.getenv("OPENAI_API_KEY")),
+            "openai_key_suffix": os.getenv("OPENAI_API_KEY", "")[-4:] if os.getenv("OPENAI_API_KEY") else "",
+            "anthropic_key": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "anthropic_key_suffix": os.getenv("ANTHROPIC_API_KEY", "")[-6:] if os.getenv("ANTHROPIC_API_KEY") else "",
+            "github_token": bool(os.getenv("GITHUB_TOKEN")),
+            "mongo_url": bool(os.getenv("MONGO_URL"))
+        }
+        
+        # System configuration
+        system_config = {
+            "daily_budget": float(os.getenv("DEFAULT_DAILY_BUDGET_EUR", "5.0")),
+            "max_local_retries": int(os.getenv("MAX_LOCAL_RETRIES", "3")),
+            "max_steps": int(os.getenv("MAX_STEPS_PER_RUN", "20")),
+            "auto_create": os.getenv("AUTO_CREATE_STRUCTURES", "true").lower() == "true"
+        }
+        
+        return {
+            "total_projects": total_projects,
+            "total_runs": total_runs,
+            "completed_runs": completed_runs,
+            "total_costs": total_costs,
+            "daily_usage": {
+                "today": today_usage
+            },
+            "daily_budget": system_config["daily_budget"],
+            "cache_stats": cache_stats,
+            "cache_savings": cost_savings,
+            "env_status": env_status,
+            "system_config": system_config
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting global admin stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/global-logs")
+async def get_global_logs(limit: int = 100, project_id: str = None):
+    """Get global system logs across all projects"""
+    try:
+        # Get logs from all runs
+        runs_collection = client.emergent_ai.runs
+        query = {}
+        
+        if project_id:
+            # Filter by project_id if specified
+            projects = await project_manager.list_projects()
+            project_runs = [p for p in projects if p.get('id') == project_id]
+            if project_runs:
+                run_ids = [r.get('id') for r in project_runs if r.get('id')]
+                query = {"id": {"$in": run_ids}}
+        
+        runs = await runs_collection.find(query).sort("created_at", -1).limit(limit).to_list(length=limit)
+        
+        # Collect all logs from runs
+        all_logs = []
+        for run in runs:
+            run_logs = run.get('logs', [])
+            for log in run_logs:
+                log_entry = {
+                    "timestamp": log.get('timestamp'),
+                    "type": log.get('type', 'info'),
+                    "content": log.get('content', ''),
+                    "project_id": run.get('project_id'),
+                    "run_id": run.get('id')
+                }
+                all_logs.append(log_entry)
+        
+        # Sort by timestamp (most recent first)
+        all_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        return {
+            "logs": all_logs[:limit],
+            "total_count": len(all_logs)
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting global logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Core orchestration logic
 
 async def execute_run(run_id: str, from_step: int = 0):
