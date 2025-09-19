@@ -330,6 +330,87 @@ async def delete_project(project_id: str):
         logging.error(f"Error deleting project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/projects/{project_id}/preview")
+async def preview_project(project_id: str):
+    """Preview a completed project in browser"""
+    try:
+        project = await project_manager.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project_path = f"/app/projects/{project_id}/code"
+        
+        # Check if project directory exists
+        if not os.path.exists(project_path):
+            raise HTTPException(status_code=404, detail="Project files not found")
+        
+        stack = project.get('stack', 'unknown')
+        
+        # For React/Vue projects, look for build output or serve directly
+        if stack in ['react', 'vue']:
+            # Look for build directory
+            build_path = os.path.join(project_path, 'build') if stack == 'react' else os.path.join(project_path, 'dist')
+            
+            if os.path.exists(build_path):
+                # Serve the built static files
+                index_file = os.path.join(build_path, 'index.html')
+                if os.path.exists(index_file):
+                    from fastapi.responses import FileResponse
+                    return FileResponse(index_file, media_type='text/html')
+            
+            # If no build, look for public/index.html for development preview
+            public_index = os.path.join(project_path, 'public', 'index.html')
+            if os.path.exists(public_index):
+                from fastapi.responses import FileResponse
+                return FileResponse(public_index, media_type='text/html')
+        
+        # For Laravel projects
+        elif stack == 'laravel':
+            # Check for Laravel public directory
+            public_path = os.path.join(project_path, 'public', 'index.php')
+            if os.path.exists(public_path):
+                return {
+                    "message": "Laravel project detected",
+                    "preview_type": "php_server_required",
+                    "instructions": "Ce projet Laravel nécessite un serveur PHP pour être prévisualisé. Utilisez 'php artisan serve' dans le répertoire du projet."
+                }
+        
+        # For Python projects
+        elif stack == 'python':
+            # Look for common Python web frameworks
+            requirements_path = os.path.join(project_path, 'requirements.txt')
+            if os.path.exists(requirements_path):
+                with open(requirements_path, 'r') as f:
+                    requirements = f.read().lower()
+                    
+                if 'flask' in requirements:
+                    return {
+                        "message": "Flask project detected",
+                        "preview_type": "python_server_required", 
+                        "instructions": "Ce projet Flask nécessite Python. Exécutez 'python app.py' dans le répertoire du projet."
+                    }
+                elif 'django' in requirements:
+                    return {
+                        "message": "Django project detected",
+                        "preview_type": "python_server_required",
+                        "instructions": "Ce projet Django nécessite Python. Exécutez 'python manage.py runserver' dans le répertoire du projet."
+                    }
+        
+        # Fallback: return project structure
+        return {
+            "message": f"Preview non disponible pour le stack {stack}",
+            "preview_type": "not_supported",
+            "stack": stack,
+            "project_path": project_path,
+            "instructions": f"Ce type de projet ({stack}) ne supporte pas encore la preview automatique."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error previewing project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # GitHub Integration Routes
 
 @api_router.get("/github/oauth-url")
