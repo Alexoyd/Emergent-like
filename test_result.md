@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Amélioration du système Emergent-like avec routage LLM amélioré, interface admin, isolation des projets, logs séparés, timeline corrigée et intégration GitHub"
+user_problem_statement: "Amélioration du système Emergent-like avec routage LLM amélioré, interface admin, isolation des projets, logs séparés, timeline corrigée et intégration GitHub + nouvelles améliorations UI/UX demandées"
 
 backend:
   - task: "Créer fichier .env avec configuration complète"
