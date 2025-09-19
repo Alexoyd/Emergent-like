@@ -34,6 +34,28 @@ const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon
     return goal.substring(0, maxLength) + '...';
   };
 
+  const previewProject = (run, event) => {
+    event.stopPropagation(); // Prevent selecting the run
+    
+    const supportedStacks = ['react', 'vue', 'laravel'];
+    
+    if (!supportedStacks.includes(run.stack)) {
+      toast.error(`Preview non disponible pour le stack ${run.stack}`);
+      return;
+    }
+
+    // Here you would implement the actual preview logic
+    // For now, we'll simulate opening a preview
+    const previewUrl = `${process.env.REACT_APP_BACKEND_URL}/api/projects/${run.project_id}/preview`;
+    
+    try {
+      window.open(previewUrl, '_blank', 'width=1200,height=800');
+      toast.success('Ouverture de la preview du projet...');
+    } catch (error) {
+      toast.error('Impossible d\'ouvrir la preview du projet');
+    }
+  };
+
   if (runs.length === 0) {
     return (
       <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
