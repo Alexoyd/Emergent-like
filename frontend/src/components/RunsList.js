@@ -7,11 +7,15 @@ import {
   Pause,
   Play,
   History,
-  TrendingUp
+  TrendingUp,
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
+import { Button } from './ui/button';
+import { toast } from 'sonner';
 
 const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon }) => {
   const formatTimeAgo = (timestamp) => {
