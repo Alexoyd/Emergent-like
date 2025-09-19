@@ -270,6 +270,16 @@ const Dashboard = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              <Button 
+                onClick={() => setShowAdminGlobal(true)}
+                variant="outline"
+                size="sm"
+                className="flex items-center"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Admin Global
+              </Button>
+              
               {currentRun && (
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline" className={`${getStatusColor(currentRun.status)} text-white border-none`}>
