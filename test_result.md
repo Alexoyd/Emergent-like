@@ -271,20 +271,53 @@ frontend:
           agent: "testing"
           comment: "✅ Timeline fonctionnelle et visible dans l'onglet Timeline après sélection d'un run. Affiche 'Execution Timeline' avec phases (Planning Phase visible), progress tracking, et intégration avec les runs. Composant correctement intégré dans l'interface principale."
 
-  - task: "Interface GitHub dans frontend"
+  - task: "Admin Global avec statistiques et paramètres système"
     implemented: true
     working: true
-    file: "/app/frontend/src/components/AdminPanel.js"
+    file: "/app/frontend/src/components/AdminGlobal.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Admin Global créé avec statistiques globales, cache stats, variables d'environnement, et logs globaux. Modal fonctionnelle avec onglets. Routes backend /api/admin/global-stats et /api/admin/global-logs ajoutées."
+
+  - task: "Interface GitHub non automatique avec connexion manuelle"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Interface GitHub modifiée pour être non automatique. Ajout champ URL + bouton Connecter Repository. Affichage repo connecté. Bouton Save to GitHub conditionnel pour projets terminés."
+
+  - task: "Onglets Timeline/Logs/Files/Admin toujours visibles"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "Onglets modifiés pour être toujours visibles. États par défaut avec messages informatifs 'Aucun Run Sélectionné' ajoutés pour tous les onglets."
+
+  - task: "Bouton Preview/Test pour projets terminés"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/RunsList.js"
     stuck_count: 0
     priority: "medium"
     needs_retesting: false
     status_history:
-        - working: "NA"
-          agent: "main"
-          comment: "À créer - connexion repos, push/pull"
         - working: true
-          agent: "testing"
-          comment: "✅ Interface GitHub intégrée dans AdminPanel onglet GitHub. Token input password fonctionnel (testé avec saisie), bouton 'Charger Repos' cliquable, section 'Intégration GitHub' avec description. Interface prête pour connexion repos. Gestion d'erreurs appropriée sans token valide."
+          agent: "main"
+          comment: "Bouton Preview ajouté pour les runs avec status 'completed'. Route backend /api/projects/{id}/preview créée avec support React/Vue/Laravel/Python. Gestion stacks non supportées."
 
 metadata:
   created_by: "main_agent"
