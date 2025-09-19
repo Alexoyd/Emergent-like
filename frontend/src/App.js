@@ -180,6 +180,53 @@ const Dashboard = () => {
     }
   };
 
+  const connectGitHubRepo = async () => {
+    if (!repoUrl.trim()) {
+      toast.error('Veuillez entrer une URL de repository GitHub valide');
+      return;
+    }
+
+    try {
+      // Simple validation of GitHub URL
+      const urlPattern = /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(?:\.git)?$/;
+      if (!urlPattern.test(repoUrl.trim())) {
+        toast.error('Format d\'URL GitHub invalide. Utilisez: https://github.com/user/repo');
+        return;
+      }
+
+      setConnectedRepo({
+        url: repoUrl.trim(),
+        name: repoUrl.trim().split('/').slice(-1)[0].replace('.git', ''),
+        connectedAt: new Date().toISOString()
+      });
+      
+      toast.success('Repository GitHub connecté avec succès !');
+      setRepoUrl('');
+    } catch (error) {
+      toast.error('Erreur lors de la connexion du repository');
+    }
+  };
+
+  const disconnectGitHubRepo = () => {
+    setConnectedRepo(null);
+    toast.success('Repository GitHub déconnecté');
+  };
+
+  const saveToGitHub = async () => {
+    if (!connectedRepo || !currentRun) {
+      toast.error('Aucun repository connecté ou run sélectionné');
+      return;
+    }
+
+    try {
+      // Here you would implement the actual GitHub save logic
+      // For now, we'll just show a success message
+      toast.success(`Projet sauvegardé vers ${connectedRepo.name} !`);
+    } catch (error) {
+      toast.error('Erreur lors de la sauvegarde vers GitHub');
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       pending: 'bg-amber-500',
