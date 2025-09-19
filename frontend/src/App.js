@@ -50,6 +50,9 @@ const Dashboard = () => {
   const [stack, setStack] = useState('laravel');
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [showAdminGlobal, setShowAdminGlobal] = useState(false);
+  const [connectedRepo, setConnectedRepo] = useState(null);
+  const [repoUrl, setRepoUrl] = useState('');
 
   // Load runs on component mount
   useEffect(() => {
