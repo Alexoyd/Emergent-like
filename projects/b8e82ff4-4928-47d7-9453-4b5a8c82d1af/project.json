@@ -1,0 +1,15 @@
+{
+  "id": "b8e82ff4-4928-47d7-9453-4b5a8c82d1af",
+  "name": "Run b8e82ff4",
+  "stack": "react",
+  "created_at": "2025-09-19T21:35:05.097398+00:00",
+  "directories": {
+    "code": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/code",
+    "logs": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/logs",
+    "tests": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/tests",
+    "patches": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/patches",
+    "backups": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/backups",
+    "git": "/app/projects/b8e82ff4-4928-47d7-9453-4b5a8c82d1af/git"
+  },
+  "status": "initialized"
+}

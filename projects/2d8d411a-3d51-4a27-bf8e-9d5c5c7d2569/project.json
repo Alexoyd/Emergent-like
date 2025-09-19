@@ -1,0 +1,15 @@
+{
+  "id": "2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569",
+  "name": "Run 2d8d411a",
+  "stack": "laravel",
+  "created_at": "2025-09-19T21:35:26.130707+00:00",
+  "directories": {
+    "code": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/code",
+    "logs": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/logs",
+    "tests": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/tests",
+    "patches": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/patches",
+    "backups": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/backups",
+    "git": "/app/projects/2d8d411a-3d51-4a27-bf8e-9d5c5c7d2569/git"
+  },
+  "status": "initialized"
+}
