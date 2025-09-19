@@ -137,11 +137,26 @@ const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon
                     <span>Step {run.current_step + 1}/{run.max_steps}</span>
                   </div>
                   
-                  {run.cost_used_eur > 0 && (
-                    <span className="font-mono">
-                      €{run.cost_used_eur.toFixed(3)}
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {run.cost_used_eur > 0 && (
+                      <span className="font-mono">
+                        €{run.cost_used_eur.toFixed(3)}
+                      </span>
+                    )}
+                    
+                    {/* Preview/Test button for completed projects */}
+                    {run.status === 'completed' && (
+                      <Button 
+                        onClick={(e) => previewProject(run, e)}
+                        variant="outline" 
+                        size="sm" 
+                        className="h-6 px-2 text-xs"
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        Preview
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Progress bar for active runs */}
