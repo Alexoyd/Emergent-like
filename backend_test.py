@@ -589,14 +589,9 @@ class EmergentSystemTester:
         
         return len(preview_results) > 0, preview_results
 
-    def test_project_preview_nonexistent(self):
-        """Test project preview with non-existent project"""
-        return self.run_test(
-            "Preview Non-existent Project",
-            "GET",
-            "projects/nonexistent-project-12345/preview",
-            404
-        )
+    def test_prompt_cache_clear(self):
+        """Test prompt cache clearing endpoint"""
+        return self.run_test("Clear Prompt Cache", "POST", "admin/cache/clear", 200)
 
     def test_prompt_cache_functionality(self):
         """Test prompt caching by creating multiple runs and checking cache usage"""
