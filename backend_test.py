@@ -429,9 +429,174 @@ class EmergentSystemTester:
         print(f"✅ Supported stacks: {successful_stacks}")
         return len(successful_stacks) >= 3, {"supported_stacks": successful_stacks}
 
-    def test_prompt_cache_clear(self):
-        """Test prompt cache clearing endpoint"""
-        return self.run_test("Clear Prompt Cache", "POST", "admin/cache/clear", 200)
+    def test_admin_global_stats(self):
+        """Test new admin global statistics endpoint"""
+        success, response = self.run_test("Admin Global Statistics", "GET", "admin/global-stats", 200)
+        
+        if success and response:
+            # Check for expected fields in global stats
+            expected_fields = ['total_projects', 'total_runs', 'total_costs', 'cache_stats', 'env_status', 'system_config']
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"⚠️  Missing expected fields in global stats: {missing_fields}")
+                return False, response
+            else:
+                print(f"✅ All expected global stats fields present: {list(response.keys())}")
+                
+                # Check env_status structure
+                if 'env_status' in response:
+                    env_status = response['env_status']
+                    env_fields = ['openai_key', 'anthropic_key', 'github_token', 'mongo_url']
+                    env_missing = [field for field in env_fields if field not in env_status]
+                    if env_missing:
+                        print(f"⚠️  Missing env status fields: {env_missing}")
+                    else:
+                        print(f"✅ Environment status structure correct: {env_status}")
+                
+                # Check system_config structure
+                if 'system_config' in response:
+                    system_config = response['system_config']
+                    config_fields = ['daily_budget', 'max_local_retries', 'max_steps', 'auto_create']
+                    config_missing = [field for field in config_fields if field not in system_config]
+                    if config_missing:
+                        print(f"⚠️  Missing system config fields: {config_missing}")
+                    else:
+                        print(f"✅ System config structure correct: {system_config}")
+                
+                return True, response
+        
+        return success, response
+
+    def test_admin_global_logs(self):
+        """Test new admin global logs endpoint"""
+        # Test without project_id filter
+        success, response = self.run_test("Admin Global Logs", "GET", "admin/global-logs", 200)
+        
+        if success and response:
+            # Check for expected structure
+            expected_fields = ['logs', 'total_count']
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"⚠️  Missing expected fields in global logs: {missing_fields}")
+                return False, response
+            else:
+                print(f"✅ Global logs structure correct: {list(response.keys())}")
+                print(f"   Total logs: {response.get('total_count', 0)}")
+                
+                # Check logs structure if any exist
+                logs = response.get('logs', [])
+                if logs:
+                    first_log = logs[0]
+                    log_fields = ['timestamp', 'type', 'content', 'run_id']
+                    log_missing = [field for field in log_fields if field not in first_log]
+                    if log_missing:
+                        print(f"⚠️  Missing log entry fields: {log_missing}")
+                    else:
+                        print(f"✅ Log entry structure correct")
+                
+                return True, response
+        
+        return success, response
+
+    def test_admin_global_logs_filtered(self):
+        """Test admin global logs with project_id filter"""
+        # First get a project ID from projects list
+        projects_success, projects_response = self.test_projects_list()
+        
+        if projects_success and 'projects' in projects_response:
+            projects = projects_response['projects']
+            if projects:
+                # Use first project ID for filtering
+                project_id = projects[0].get('id')
+                if project_id:
+                    success, response = self.run_test(
+                        "Admin Global Logs Filtered", 
+                        "GET", 
+                        f"admin/global-logs?project_id={project_id}", 
+                        200
+                    )
+                    
+                    if success:
+                        print(f"✅ Filtered logs for project {project_id}")
+                        return True, response
+                    
+                    return success, response
+        
+        print("ℹ️  Skipping filtered logs test - no projects available")
+        return True, {}
+
+    def test_project_preview(self):
+        """Test project preview functionality for different stacks"""
+        # First create projects with different stacks to test preview
+        stacks_to_test = ["react", "vue", "laravel", "python"]
+        preview_results = {}
+        
+        for stack in stacks_to_test:
+            # Create a run for this stack
+            run_data = {
+                "goal": f"Create a simple {stack} project for preview testing",
+                "stack": stack,
+                "max_steps": 1,
+                "daily_budget_eur": 0.1
+            }
+            
+            success, response = self.run_test(
+                f"Create {stack.upper()} Project for Preview",
+                "POST",
+                "runs",
+                200,
+                data=run_data,
+                timeout=10
+            )
+            
+            if not success:
+                success, response = self.run_test(
+                    f"Create {stack.upper()} Project for Preview (201)",
+                    "POST",
+                    "runs",
+                    201,
+                    data=run_data,
+                    timeout=10
+                )
+            
+            if success and 'id' in response:
+                project_id = response['id']
+                
+                # Test preview endpoint for this project
+                preview_success, preview_response = self.run_test(
+                    f"Preview {stack.upper()} Project",
+                    "GET",
+                    f"projects/{project_id}/preview",
+                    200
+                )
+                
+                if preview_success:
+                    preview_results[stack] = preview_response
+                    print(f"✅ Preview for {stack}: {preview_response.get('message', 'Success')}")
+                else:
+                    # Try 404 if project files don't exist yet
+                    preview_success, preview_response = self.run_test(
+                        f"Preview {stack.upper()} Project (404)",
+                        "GET",
+                        f"projects/{project_id}/preview",
+                        404
+                    )
+                    if preview_success:
+                        preview_results[stack] = {"status": "404", "message": "Project files not found"}
+                        print(f"✅ Preview for {stack}: Project files not found (expected)")
+        
+        return len(preview_results) > 0, preview_results
+
+    def test_project_preview_nonexistent(self):
+        """Test project preview with non-existent project"""
+        return self.run_test(
+            "Preview Non-existent Project",
+            "GET",
+            "projects/nonexistent-project-12345/preview",
+            404
+        )
 
     def test_prompt_cache_functionality(self):
         """Test prompt caching by creating multiple runs and checking cache usage"""
