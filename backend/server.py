@@ -645,8 +645,26 @@ async def get_global_admin_stats():
         # Today's usage
         from datetime import datetime, timezone
         today = datetime.now(timezone.utc).date()
-        today_runs = [r for r in all_runs if r.get('created_at') and 
-                      datetime.fromisoformat(r['created_at'].replace('Z', '+00:00')).date() == today]
+        today_runs = []
+        for r in all_runs:
+            if r.get('created_at'):
+                try:
+                    # Handle different datetime formats
+                    created_at_str = r['created_at']
+                    if isinstance(created_at_str, str):
+                        # Remove Z and add timezone info if needed
+                        if created_at_str.endswith('Z'):
+                            created_at_str = created_at_str[:-1] + '+00:00'
+                        created_at = datetime.fromisoformat(created_at_str)
+                        if created_at.date() == today:
+                            today_runs.append(r)
+                    elif hasattr(created_at_str, 'date'):
+                        # Already a datetime object
+                        if created_at_str.date() == today:
+                            today_runs.append(r)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse created_at for run {r.get('id', 'unknown')}: {e}")
+                    continue
         today_usage = sum(r.get('cost_used_eur', 0) for r in today_runs)
         
         # Cache statistics
