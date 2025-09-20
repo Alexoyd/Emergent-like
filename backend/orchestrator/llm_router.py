@@ -8,6 +8,9 @@ import openai
 import anthropic
 import httpx
 import json
+import time
+import collections
+import re  # à ajouter en haut du fichier
 from .prompt_cache import PromptCacheManager
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,8 @@ class LLMResponse:
 
 class LLMRouter:
     def __init__(self):
+        self.max_requests_per_minute = int(os.getenv("MAX_REQUESTS_PER_MINUTE", "20"))
+        self.request_timestamps = collections.deque()
         self.openai_client = None
         self.anthropic_client = None
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -57,6 +62,23 @@ class LLMRouter:
             "claude-3-5-sonnet": {"input": 0.003, "output": 0.015}
         }
     
+    async def _wait_if_rate_limited(self):
+        now = time.time()
+        # Nettoyer les timestamps vieux de plus de 60s
+        while self.request_timestamps and now - self.request_timestamps[0] > 60:
+            self.request_timestamps.popleft()
+
+        if len(self.request_timestamps) >= self.max_requests_per_minute:
+            sleep_time = 60 - (now - self.request_timestamps[0])
+            logger.warning(f"Rate limit atteint ({self.max_requests_per_minute}/min). "
+                        f"Pause de {sleep_time:.2f} secondes...")
+            await asyncio.sleep(sleep_time)
+            # Après la pause, nettoyer à nouveau
+            await self._wait_if_rate_limited()
+
+        # Enregistrer l’horodatage de la requête actuelle
+        self.request_timestamps.append(time.time())
+
     async def generate(self, prompt: str, task_type: str, current_cost: float, budget_limit: float, run_id: str = None) -> LLMResponse:
         """Generate response with improved automatic model selection and escalation"""
         try:
@@ -218,6 +240,9 @@ class LLMRouter:
             raise Exception("OpenAI API key not configured")
         
         try:
+             # ✅ Throttle avant de lancer la requête
+            await self._wait_if_rate_limited()
+
             # Get conversation history for this run
             conversation_history = self.conversation_histories.get(run_id, [])
             
@@ -234,7 +259,8 @@ class LLMRouter:
             if cache_used and len(conversation_history) > 0:
                 # Use message caching for longer conversations
                 extra_params["stream"] = False
-                extra_params["max_completion_tokens"] = 2048
+                #extra_params["max_completion_tokens"] = 2048
+                
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
@@ -286,6 +312,9 @@ class LLMRouter:
             raise Exception("Anthropic API key not configured")
         
         try:
+            # ✅ Throttle avant d’envoyer la requête
+            await self._wait_if_rate_limited()
+
             # Get conversation history for this run
             conversation_history = self.conversation_histories.get(run_id, [])
             
@@ -370,20 +399,38 @@ class LLMRouter:
             return (prompt_tokens * 0.000003 + completion_tokens * 0.000015) * 0.85  # Convert USD to EUR
         else:
             return 0.0
+
     
     def _is_valid_response(self, content: str, task_type: str) -> bool:
-        """Validate response based on task type"""
+        """Validate response based on task type."""
         if not content or len(content.strip()) < 10:
             return False
-        
+
         if task_type == "coding":
-            # Check for patch format
-            return "BEGIN_PATCH" in content and "END_PATCH" in content
+            # 1) Préférence : diff encadré
+            if "BEGIN_PATCH" in content and "END_PATCH" in content:
+                return True
+            # 2) Diff standard (---/+++ ou diff --git)
+            stripped = content.lstrip()
+            if stripped.startswith(("diff --git", "---", "+++")):
+                return True
+            # 3) Le contenu ressemble à du code source (Python, JS, PHP…)
+            code_patterns = r"\b(def|class|function|<?php|import |package )"
+            if re.search(code_patterns, content):
+                return True
+            # sinon on considère invalide
+            return False
+
         elif task_type == "planning":
-            # Check for structured plan
-            return any(marker in content.lower() for marker in ["step", "1.", "2.", "plan"])
-        
+            # Accepter les plans qui mentionnent des étapes ou des listes numérotées
+            lower = content.lower()
+            if any(k in lower for k in ["step", "plan", "1.", "2.", "- "]):
+                return True
+            return False
+
+        # Pour les autres types, on valide par défaut si non vide
         return True
+
     
     async def check_ollama_availability(self) -> bool:
         """Check if Ollama is available and has the required model"""

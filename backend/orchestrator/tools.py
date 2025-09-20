@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import asyncio
 import subprocess
@@ -51,6 +52,21 @@ class ToolManager:
             logger.error(f"Error writing file {file_path}: {e}")
             return False
     
+    def _normalize_patch(self, patch: str, project_path: str) -> str:
+        code_root = os.path.abspath(project_path)
+        normalized_lines = []
+        for line in patch.splitlines():
+            if line.startswith(("---", "+++")):
+                # Extraire le chemin après a/ ou b/
+                prefix, path = line.split(' ', 1)
+                # Supprimer le préfixe absolu jusqu’au dossier code/
+                if code_root in path:
+                    path = path.replace(code_root + '/', '')
+                normalized_lines.append(f"{prefix} {path}")
+            else:
+                normalized_lines.append(line)
+        return '\n'.join(normalized_lines)
+
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
         """Apply unified diff patch"""
         try:

@@ -1,0 +1,15 @@
+{
+  "id": "2df1018d-9e2d-4895-af8c-03334b9d32cd",
+  "name": "Run 2df1018d",
+  "stack": "python",
+  "created_at": "2025-09-19T22:27:21.505774+00:00",
+  "directories": {
+    "code": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/code",
+    "logs": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/logs",
+    "tests": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/tests",
+    "patches": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/patches",
+    "backups": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/backups",
+    "git": "/home/alexoyd/Emergent-like/projects/2df1018d-9e2d-4895-af8c-03334b9d32cd/git"
+  },
+  "status": "initialized"
+}
