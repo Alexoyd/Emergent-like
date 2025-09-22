@@ -1,0 +1,15 @@
+{
+  "id": "26d1cb11-ccfa-474a-8344-876bc5bd650c",
+  "name": "Run 26d1cb11",
+  "stack": "react",
+  "created_at": "2025-09-19T21:34:59.890983+00:00",
+  "directories": {
+    "code": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/code",
+    "logs": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/logs",
+    "tests": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/tests",
+    "patches": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/patches",
+    "backups": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/backups",
+    "git": "/app/projects/26d1cb11-ccfa-474a-8344-876bc5bd650c/git"
+  },
+  "status": "initialized"
+}

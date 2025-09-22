@@ -1,0 +1,15 @@
+{
+  "id": "7da7b7e1-ab1c-4ee0-b016-362d5d9f311b",
+  "name": "Run 7da7b7e1",
+  "stack": "vue",
+  "created_at": "2025-09-19T21:35:17.518223+00:00",
+  "directories": {
+    "code": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/code",
+    "logs": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/logs",
+    "tests": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/tests",
+    "patches": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/patches",
+    "backups": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/backups",
+    "git": "/app/projects/7da7b7e1-ab1c-4ee0-b016-362d5d9f311b/git"
+  },
+  "status": "initialized"
+}

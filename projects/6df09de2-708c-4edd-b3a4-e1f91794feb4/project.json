@@ -1,0 +1,15 @@
+{
+  "id": "6df09de2-708c-4edd-b3a4-e1f91794feb4",
+  "name": "Run 6df09de2",
+  "stack": "python",
+  "created_at": "2025-09-19T21:35:07.143561+00:00",
+  "directories": {
+    "code": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/code",
+    "logs": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/logs",
+    "tests": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/tests",
+    "patches": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/patches",
+    "backups": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/backups",
+    "git": "/app/projects/6df09de2-708c-4edd-b3a4-e1f91794feb4/git"
+  },
+  "status": "initialized"
+}

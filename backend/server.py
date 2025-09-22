@@ -21,12 +21,12 @@ import git
 from contextlib import asynccontextmanager
 
 # Import AI orchestrator components
-from orchestrator.llm_router import LLMRouter
-from orchestrator.tools import ToolManager
-from orchestrator.state_manager import StateManager
-from orchestrator.rag_system import RAGSystem
-from orchestrator.project_manager import ProjectManager
-from orchestrator.github_integration import GitHubIntegration
+from backend.orchestrator.llm_router import LLMRouter
+from backend.orchestrator.tools import ToolManager
+from backend.orchestrator.state_manager import StateManager
+from backend.orchestrator.rag_system import RAGSystem
+from backend.orchestrator.project_manager import ProjectManager
+from backend.orchestrator.github_integration import GitHubIntegration
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -330,6 +330,87 @@ async def delete_project(project_id: str):
         logging.error(f"Error deleting project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/projects/{project_id}/preview")
+async def preview_project(project_id: str):
+    """Preview a completed project in browser"""
+    try:
+        project = await project_manager.get_project_info(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project_path = f"/app/projects/{project_id}/code"
+        
+        # Check if project directory exists
+        if not os.path.exists(project_path):
+            raise HTTPException(status_code=404, detail="Project files not found")
+        
+        stack = project.get('stack', 'unknown')
+        
+        # For React/Vue projects, look for build output or serve directly
+        if stack in ['react', 'vue']:
+            # Look for build directory
+            build_path = os.path.join(project_path, 'build') if stack == 'react' else os.path.join(project_path, 'dist')
+            
+            if os.path.exists(build_path):
+                # Serve the built static files
+                index_file = os.path.join(build_path, 'index.html')
+                if os.path.exists(index_file):
+                    from fastapi.responses import FileResponse
+                    return FileResponse(index_file, media_type='text/html')
+            
+            # If no build, look for public/index.html for development preview
+            public_index = os.path.join(project_path, 'public', 'index.html')
+            if os.path.exists(public_index):
+                from fastapi.responses import FileResponse
+                return FileResponse(public_index, media_type='text/html')
+        
+        # For Laravel projects
+        elif stack == 'laravel':
+            # Check for Laravel public directory
+            public_path = os.path.join(project_path, 'public', 'index.php')
+            if os.path.exists(public_path):
+                return {
+                    "message": "Laravel project detected",
+                    "preview_type": "php_server_required",
+                    "instructions": "Ce projet Laravel nécessite un serveur PHP pour être prévisualisé. Utilisez 'php artisan serve' dans le répertoire du projet."
+                }
+        
+        # For Python projects
+        elif stack == 'python':
+            # Look for common Python web frameworks
+            requirements_path = os.path.join(project_path, 'requirements.txt')
+            if os.path.exists(requirements_path):
+                with open(requirements_path, 'r') as f:
+                    requirements = f.read().lower()
+                    
+                if 'flask' in requirements:
+                    return {
+                        "message": "Flask project detected",
+                        "preview_type": "python_server_required", 
+                        "instructions": "Ce projet Flask nécessite Python. Exécutez 'python app.py' dans le répertoire du projet."
+                    }
+                elif 'django' in requirements:
+                    return {
+                        "message": "Django project detected",
+                        "preview_type": "python_server_required",
+                        "instructions": "Ce projet Django nécessite Python. Exécutez 'python manage.py runserver' dans le répertoire du projet."
+                    }
+        
+        # Fallback: return project structure
+        return {
+            "message": f"Preview non disponible pour le stack {stack}",
+            "preview_type": "not_supported",
+            "stack": stack,
+            "project_path": project_path,
+            "instructions": f"Ce type de projet ({stack}) ne supporte pas encore la preview automatique."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error previewing project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # GitHub Integration Routes
 
 @api_router.get("/github/oauth-url")
@@ -543,6 +624,134 @@ async def clear_prompt_cache():
         logging.error(f"Error clearing cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/admin/global-stats")
+async def get_global_admin_stats():
+    """Get global admin statistics for main admin panel"""
+    try:
+        # Get all runs from database
+        runs_collection = client.emergent_ai.runs
+        
+        # Total projects and runs
+        projects = await project_manager.list_projects()
+        total_projects = len(projects)
+        
+        all_runs = await runs_collection.find({}).to_list(length=None)
+        total_runs = len(all_runs)
+        completed_runs = len([r for r in all_runs if r.get('status') == 'completed'])
+        
+        # Total costs calculation
+        total_costs = sum(r.get('cost_used_eur', 0) for r in all_runs)
+        
+        # Today's usage
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).date()
+        today_runs = []
+        for r in all_runs:
+            if r.get('created_at'):
+                try:
+                    # Handle different datetime formats
+                    created_at_str = r['created_at']
+                    if isinstance(created_at_str, str):
+                        # Remove Z and add timezone info if needed
+                        if created_at_str.endswith('Z'):
+                            created_at_str = created_at_str[:-1] + '+00:00'
+                        created_at = datetime.fromisoformat(created_at_str)
+                        if created_at.date() == today:
+                            today_runs.append(r)
+                    elif hasattr(created_at_str, 'date'):
+                        # Already a datetime object
+                        if created_at_str.date() == today:
+                            today_runs.append(r)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse created_at for run {r.get('id', 'unknown')}: {e}")
+                    continue
+        today_usage = sum(r.get('cost_used_eur', 0) for r in today_runs)
+        
+        # Cache statistics
+        cache_stats = llm_router.prompt_cache.get_cache_stats()
+        cost_savings = llm_router.prompt_cache.estimate_cost_savings()
+        
+        # Environment status
+        env_status = {
+            "openai_key": bool(os.getenv("OPENAI_API_KEY")),
+            "openai_key_suffix": os.getenv("OPENAI_API_KEY", "")[-4:] if os.getenv("OPENAI_API_KEY") else "",
+            "anthropic_key": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "anthropic_key_suffix": os.getenv("ANTHROPIC_API_KEY", "")[-6:] if os.getenv("ANTHROPIC_API_KEY") else "",
+            "github_token": bool(os.getenv("GITHUB_TOKEN")),
+            "mongo_url": bool(os.getenv("MONGO_URL"))
+        }
+        
+        # System configuration
+        system_config = {
+            "daily_budget": float(os.getenv("DEFAULT_DAILY_BUDGET_EUR", "5.0")),
+            "max_local_retries": int(os.getenv("MAX_LOCAL_RETRIES", "3")),
+            "max_steps": int(os.getenv("MAX_STEPS_PER_RUN", "20")),
+            "auto_create": os.getenv("AUTO_CREATE_STRUCTURES", "true").lower() == "true"
+        }
+        
+        return {
+            "total_projects": total_projects,
+            "total_runs": total_runs,
+            "completed_runs": completed_runs,
+            "total_costs": total_costs,
+            "daily_usage": {
+                "today": today_usage
+            },
+            "daily_budget": system_config["daily_budget"],
+            "cache_stats": cache_stats,
+            "cache_savings": cost_savings,
+            "env_status": env_status,
+            "system_config": system_config
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting global admin stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/global-logs")
+async def get_global_logs(limit: int = 100, project_id: str = None):
+    """Get global system logs across all projects"""
+    try:
+        # Get logs from all runs
+        runs_collection = client.emergent_ai.runs
+        query = {}
+        
+        if project_id:
+            # Filter by project_id if specified
+            projects = await project_manager.list_projects()
+            project_runs = [p for p in projects if p.get('id') == project_id]
+            if project_runs:
+                run_ids = [r.get('id') for r in project_runs if r.get('id')]
+                query = {"id": {"$in": run_ids}}
+        
+        runs = await runs_collection.find(query).sort("created_at", -1).limit(limit).to_list(length=limit)
+        
+        # Collect all logs from runs
+        all_logs = []
+        for run in runs:
+            run_logs = run.get('logs', [])
+            for log in run_logs:
+                log_entry = {
+                    "timestamp": log.get('timestamp'),
+                    "type": log.get('type', 'info'),
+                    "content": log.get('content', ''),
+                    "project_id": run.get('project_id'),
+                    "run_id": run.get('id')
+                }
+                all_logs.append(log_entry)
+        
+        # Sort by timestamp (most recent first)
+        all_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        return {
+            "logs": all_logs[:limit],
+            "total_count": len(all_logs)
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting global logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Core orchestration logic
 
 async def execute_run(run_id: str, from_step: int = 0):
@@ -565,45 +774,87 @@ async def execute_run(run_id: str, from_step: int = 0):
         # Generate initial plan
         if from_step == 0:
             plan = await generate_plan(run)
-            await state_manager.add_log(run_id, {"type": "plan", "content": plan})
+            await state_manager.add_log(run_id, {"step": "plan", "status": "succeeded", "output": plan})
+
+            # 🆕 Parse du plan et enregistrement dans la base
+            parsed_steps = parse_plan(plan)
+            await db.runs.update_one(
+                {"id": run_id},
+                {"$set": {"plan": plan, "parsed_plan": parsed_steps}}
+            )
         
         # Execute steps
         current_step = from_step
+        steps_executed = 0
+        completed_successfully = True
+        
+        await state_manager.add_log(run_id, {"type": "info", "content": f"Starting execution from step {current_step}"})
+        
         while current_step < run.max_steps:
             try:
                 # Check if run was cancelled
                 run_data = await db.runs.find_one({"id": run_id})
                 if not run_data or Run(**run_data).status == RunStatus.CANCELLED:
+                    await state_manager.add_log(run_id, {"type": "warning", "content": "Run was cancelled"})
+                    completed_successfully = False
                     break
                 
+                await state_manager.add_log(run_id, {"type": "info", "content": f"Executing step {current_step + 1}/{run.max_steps}"})
+
                 # Execute step
                 step_result = await execute_step(run_id, current_step)
-                
+                steps_executed += 1
+
                 # Check if step failed and needs retry
                 if not step_result.tests_passed and step_result.retries < step_result.max_retries:
                     # Retry with higher model
+                    await state_manager.add_log(run_id, {"type": "warning", "content": f"Step {current_step + 1} failed, retrying with escalation (attempt {step_result.retries + 1})"})
                     await retry_step_with_escalation(run_id, current_step, step_result.retries + 1)
                     continue
                 elif not step_result.tests_passed:
                     # Max retries reached, fail the run
+                    await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed after {step_result.max_retries} retries"})
                     await state_manager.update_run_status(run_id, RunStatus.FAILED)
+                    completed_successfully = False
                     break
                 
+                await state_manager.add_log(run_id, {"type": "success", "content": f"Step {current_step + 1} completed successfully"})
                 current_step += 1
+                # Update current step in database for progress tracking
+                await state_manager.update_current_step(run_id, current_step)
                 
                 # Check budget limit
                 run_data = await db.runs.find_one({"id": run_id})
                 if run_data and Run(**run_data).cost_used_eur >= run.daily_budget_eur:
-                    await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached"})
+                    #await state_manager.add_log(run_id, {"step": "budget", "status": "failed", "output": "Daily budget limit reached"})
+                    await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached, stopping execution"})
+                    completed_successfully = False
                     break
                 
             except Exception as e:
                 logging.error(f"Error executing step {current_step}: {e}")
-                await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step} failed: {str(e)}"})
+                #await state_manager.add_log(run_id, {"step": f"step {current_step}", "status": "failed", "output": f"Step {current_step} failed: {str(e)}"})
+                await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed with exception: {str(e)}"})
+                completed_successfully = False
                 break
         
         # Mark as completed if all steps successful
-        if current_step >= run.max_steps or current_step == 0:
+        #if current_step >= run.max_steps or current_step == 0:
+        # Determine final status based on execution results
+        if completed_successfully and steps_executed > 0:
+            await state_manager.add_log(run_id, {"type": "success", "content": f"All {steps_executed} steps completed successfully"})
+            await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+        elif steps_executed == 0 and from_step == 0:
+            # Only planning was done, no steps executed - this shouldn't mark as completed
+            await state_manager.add_log(run_id, {"type": "error", "content": "No steps were executed after planning phase"})
+            await state_manager.update_run_status(run_id, RunStatus.FAILED)
+        elif not completed_successfully:
+            # Steps were executed but run failed
+            await state_manager.add_log(run_id, {"type": "info", "content": f"Run terminated after {steps_executed} steps"})
+            # Status already set to FAILED in the loop if needed
+        else:
+            # Reached max steps
+            await state_manager.add_log(run_id, {"type": "info", "content": f"Reached maximum steps limit ({run.max_steps})"})
             await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
         
     except Exception as e:

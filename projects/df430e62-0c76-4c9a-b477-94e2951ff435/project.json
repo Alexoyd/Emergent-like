@@ -1,0 +1,15 @@
+{
+  "id": "df430e62-0c76-4c9a-b477-94e2951ff435",
+  "name": "Run df430e62",
+  "stack": "laravel",
+  "created_at": "2025-09-19T21:35:05.091978+00:00",
+  "directories": {
+    "code": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/code",
+    "logs": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/logs",
+    "tests": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/tests",
+    "patches": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/patches",
+    "backups": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/backups",
+    "git": "/app/projects/df430e62-0c76-4c9a-b477-94e2951ff435/git"
+  },
+  "status": "initialized"
+}

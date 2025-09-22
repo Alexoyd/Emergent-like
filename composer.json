@@ -1,0 +1,13 @@
+{
+    "require-dev": {
+        "pestphp/pest": "^2.36",
+        "pestphp/pest-plugin-laravel": "^2.4",
+        "phpstan/phpstan": "^2.1",
+        "laravel/pint": "^1.20"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}

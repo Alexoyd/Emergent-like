@@ -7,11 +7,15 @@ import {
   Pause,
   Play,
   History,
-  TrendingUp
+  TrendingUp,
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
+import { Button } from './ui/button';
+import { toast } from 'sonner';
 
 const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon }) => {
   const formatTimeAgo = (timestamp) => {
@@ -28,6 +32,28 @@ const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon
   const truncateGoal = (goal, maxLength = 60) => {
     if (goal.length <= maxLength) return goal;
     return goal.substring(0, maxLength) + '...';
+  };
+
+  const previewProject = (run, event) => {
+    event.stopPropagation(); // Prevent selecting the run
+    
+    const supportedStacks = ['react', 'vue', 'laravel'];
+    
+    if (!supportedStacks.includes(run.stack)) {
+      toast.error(`Preview non disponible pour le stack ${run.stack}`);
+      return;
+    }
+
+    // Here you would implement the actual preview logic
+    // For now, we'll simulate opening a preview
+    const previewUrl = `${process.env.REACT_APP_BACKEND_URL}/api/projects/${run.project_id}/preview`;
+    
+    try {
+      window.open(previewUrl, '_blank', 'width=1200,height=800');
+      toast.success('Ouverture de la preview du projet...');
+    } catch (error) {
+      toast.error('Impossible d\'ouvrir la preview du projet');
+    }
   };
 
   if (runs.length === 0) {
@@ -111,11 +137,26 @@ const RunsList = ({ runs, currentRun, onSelectRun, getStatusColor, getStatusIcon
                     <span>Step {run.current_step + 1}/{run.max_steps}</span>
                   </div>
                   
-                  {run.cost_used_eur > 0 && (
-                    <span className="font-mono">
-                      €{run.cost_used_eur.toFixed(3)}
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    {run.cost_used_eur > 0 && (
+                      <span className="font-mono">
+                        €{run.cost_used_eur.toFixed(3)}
+                      </span>
+                    )}
+                    
+                    {/* Preview/Test button for completed projects */}
+                    {run.status === 'completed' && (
+                      <Button 
+                        onClick={(e) => previewProject(run, e)}
+                        variant="outline" 
+                        size="sm" 
+                        className="h-6 px-2 text-xs"
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        Preview
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Progress bar for active runs */}

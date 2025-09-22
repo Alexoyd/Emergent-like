@@ -1,0 +1,15 @@
+{
+  "id": "e2694aef-2de3-4ac0-ab97-f59edb19036e",
+  "name": "Run e2694aef",
+  "stack": "vue",
+  "created_at": "2025-09-19T21:35:10.956243+00:00",
+  "directories": {
+    "code": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/code",
+    "logs": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/logs",
+    "tests": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/tests",
+    "patches": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/patches",
+    "backups": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/backups",
+    "git": "/app/projects/e2694aef-2de3-4ac0-ab97-f59edb19036e/git"
+  },
+  "status": "initialized"
+}

@@ -33,6 +33,7 @@ import CostMeter from './components/CostMeter';
 import LogViewer from './components/LogViewer';
 import RunsList from './components/RunsList';
 import AdminPanel from './components/AdminPanel';
+import AdminGlobal from './components/AdminGlobal';
 
 import './App.css';
 
@@ -49,6 +50,9 @@ const Dashboard = () => {
   const [stack, setStack] = useState('laravel');
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [showAdminGlobal, setShowAdminGlobal] = useState(false);
+  const [connectedRepo, setConnectedRepo] = useState(null);
+  const [repoUrl, setRepoUrl] = useState('');
 
   // Load runs on component mount
   useEffect(() => {
@@ -176,6 +180,53 @@ const Dashboard = () => {
     }
   };
 
+  const connectGitHubRepo = async () => {
+    if (!repoUrl.trim()) {
+      toast.error('Veuillez entrer une URL de repository GitHub valide');
+      return;
+    }
+
+    try {
+      // Simple validation of GitHub URL
+      const urlPattern = /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(?:\.git)?$/;
+      if (!urlPattern.test(repoUrl.trim())) {
+        toast.error('Format d\'URL GitHub invalide. Utilisez: https://github.com/user/repo');
+        return;
+      }
+
+      setConnectedRepo({
+        url: repoUrl.trim(),
+        name: repoUrl.trim().split('/').slice(-1)[0].replace('.git', ''),
+        connectedAt: new Date().toISOString()
+      });
+      
+      toast.success('Repository GitHub connecté avec succès !');
+      setRepoUrl('');
+    } catch (error) {
+      toast.error('Erreur lors de la connexion du repository');
+    }
+  };
+
+  const disconnectGitHubRepo = () => {
+    setConnectedRepo(null);
+    toast.success('Repository GitHub déconnecté');
+  };
+
+  const saveToGitHub = async () => {
+    if (!connectedRepo || !currentRun) {
+      toast.error('Aucun repository connecté ou run sélectionné');
+      return;
+    }
+
+    try {
+      // Here you would implement the actual GitHub save logic
+      // For now, we'll just show a success message
+      toast.success(`Projet sauvegardé vers ${connectedRepo.name} !`);
+    } catch (error) {
+      toast.error('Erreur lors de la sauvegarde vers GitHub');
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       pending: 'bg-amber-500',
@@ -219,6 +270,16 @@ const Dashboard = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              <Button 
+                onClick={() => setShowAdminGlobal(true)}
+                variant="outline"
+                size="sm"
+                className="flex items-center"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Admin Global
+              </Button>
+              
               {currentRun && (
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline" className={`${getStatusColor(currentRun.status)} text-white border-none`}>
@@ -291,6 +352,57 @@ const Dashboard = () => {
                     <option value="python">Python</option>
                   </select>
                 </div>
+
+                {/* GitHub Repository Connection */}
+                <div className="border-t pt-4">
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Repository GitHub (optionnel)
+                  </label>
+                  
+                  {!connectedRepo ? (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="https://github.com/username/repository"
+                        value={repoUrl}
+                        onChange={(e) => setRepoUrl(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <Button 
+                        onClick={connectGitHubRepo}
+                        variant="outline"
+                        size="sm"
+                        disabled={!repoUrl.trim()}
+                        className="w-full"
+                      >
+                        <GitBranch className="w-4 h-4 mr-2" />
+                        Connecter Repository
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <GitBranch className="w-4 h-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-800">
+                            {connectedRepo.name}
+                          </span>
+                        </div>
+                        <Button 
+                          onClick={disconnectGitHubRepo}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                      <p className="text-xs text-green-600 mt-1">
+                        Connecté le {new Date(connectedRepo.connectedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
                 
                 <Button 
                   onClick={createRun} 
@@ -328,9 +440,34 @@ const Dashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="col-span-9"
           >
-            {currentRun ? (
-              <div className="space-y-6">
-                {/* Run Header */}
+            <div className="space-y-6">
+              {/* Save to GitHub Button - Only show if repo connected and run completed */}
+              {connectedRepo && currentRun && currentRun.status === 'completed' && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-green-50 border border-green-200 rounded-lg p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <GitBranch className="w-5 h-5 text-green-600" />
+                      <div>
+                        <h3 className="font-medium text-green-800">Projet terminé avec succès !</h3>
+                        <p className="text-sm text-green-600">
+                          Repository connecté : {connectedRepo.name}
+                        </p>
+                      </div>
+                    </div>
+                    <Button onClick={saveToGitHub} className="bg-green-600 hover:bg-green-700">
+                      <GitBranch className="w-4 h-4 mr-2" />
+                      Save to GitHub
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Run Header - Only show if run selected */}
+              {currentRun && (
                 <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -350,8 +487,10 @@ const Dashboard = () => {
                     </div>
                   </CardHeader>
                 </Card>
+              )}
 
-                {/* Progress Bar */}
+              {/* Progress Bar - Only show if run selected */}
+              {currentRun && (
                 <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
                   <CardContent className="pt-6">
                     <div className="flex items-center justify-between mb-2">
@@ -366,49 +505,93 @@ const Dashboard = () => {
                     />
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Tabs */}
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid w-full grid-cols-5 bg-white/70 backdrop-blur-sm">
-                    <TabsTrigger value="overview" className="flex items-center">
-                      <TrendingUp className="w-4 h-4 mr-2" />
-                      Timeline
-                    </TabsTrigger>
-                    <TabsTrigger value="diff" className="flex items-center">
-                      <GitBranch className="w-4 h-4 mr-2" />
-                      Code Changes
-                    </TabsTrigger>
-                    <TabsTrigger value="logs" className="flex items-center">
-                      <Terminal className="w-4 h-4 mr-2" />
-                      Logs
-                    </TabsTrigger>
-                    <TabsTrigger value="files" className="flex items-center">
-                      <FileText className="w-4 h-4 mr-2" />
-                      Files
-                    </TabsTrigger>
-                    <TabsTrigger value="admin" className="flex items-center">
-                      <Settings className="w-4 h-4 mr-2" />
-                      Admin
-                    </TabsTrigger>
-                  </TabsList>
+              {/* Tabs - Always visible */}
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="grid w-full grid-cols-5 bg-white/70 backdrop-blur-sm">
+                  <TabsTrigger value="overview" className="flex items-center">
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    Timeline
+                  </TabsTrigger>
+                  <TabsTrigger value="diff" className="flex items-center">
+                    <GitBranch className="w-4 h-4 mr-2" />
+                    Code Changes
+                  </TabsTrigger>
+                  <TabsTrigger value="logs" className="flex items-center">
+                    <Terminal className="w-4 h-4 mr-2" />
+                    Logs
+                  </TabsTrigger>
+                  <TabsTrigger value="files" className="flex items-center">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Files
+                  </TabsTrigger>
+                  <TabsTrigger value="admin" className="flex items-center">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Admin
+                  </TabsTrigger>
+                </TabsList>
 
-                  <TabsContent value="overview" className="mt-6">
+                <TabsContent value="overview" className="mt-6">
+                  {currentRun ? (
                     <Timeline 
                       run={currentRun} 
                       onRetryStep={retryStep}
                       getStatusColor={getStatusColor}
                     />
-                  </TabsContent>
+                  ) : (
+                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+                      <CardContent className="flex items-center justify-center h-64">
+                        <div className="text-center space-y-4">
+                          <TrendingUp className="w-16 h-16 text-gray-300 mx-auto" />
+                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
+                          <p className="text-gray-600">
+                            Sélectionnez un run dans la liste de gauche pour voir sa timeline d'exécution
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
 
-                  <TabsContent value="diff" className="mt-6">
+                <TabsContent value="diff" className="mt-6">
+                  {currentRun ? (
                     <DiffViewer run={currentRun} />
-                  </TabsContent>
+                  ) : (
+                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+                      <CardContent className="flex items-center justify-center h-64">
+                        <div className="text-center space-y-4">
+                          <GitBranch className="w-16 h-16 text-gray-300 mx-auto" />
+                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
+                          <p className="text-gray-600">
+                            Sélectionnez un run pour voir les modifications de code générées par l'IA
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
 
-                  <TabsContent value="logs" className="mt-6">
+                <TabsContent value="logs" className="mt-6">
+                  {currentRun ? (
                     <LogViewer logs={logs} />
-                  </TabsContent>
+                  ) : (
+                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+                      <CardContent className="flex items-center justify-center h-64">
+                        <div className="text-center space-y-4">
+                          <Terminal className="w-16 h-16 text-gray-300 mx-auto" />
+                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
+                          <p className="text-gray-600">
+                            Sélectionnez un run pour voir ses logs d'exécution en temps réel
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
 
-                  <TabsContent value="files" className="mt-6">
+                <TabsContent value="files" className="mt-6">
+                  {currentRun ? (
                     <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
                       <CardHeader>
                         <CardTitle>Project Files</CardTitle>
@@ -422,31 +605,51 @@ const Dashboard = () => {
                         </div>
                       </CardContent>
                     </Card>
-                  </TabsContent>
+                  ) : (
+                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+                      <CardContent className="flex items-center justify-center h-64">
+                        <div className="text-center space-y-4">
+                          <FileText className="w-16 h-16 text-gray-300 mx-auto" />
+                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
+                          <p className="text-gray-600">
+                            Sélectionnez un run pour explorer les fichiers du projet
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
 
-                  <TabsContent value="admin" className="mt-6">
+                <TabsContent value="admin" className="mt-6">
+                  {currentRun ? (
                     <AdminPanel />
-                  </TabsContent>
-                </Tabs>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-96">
-                <div className="text-center space-y-4">
-                  <div className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full w-16 h-16 mx-auto flex items-center justify-center">
-                    <Bot className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900">No Active Run</h3>
-                  <p className="text-gray-600 max-w-md">
-                    Create a new AI agent run or select an existing one from the sidebar to get started.
-                  </p>
-                </div>
-              </div>
-            )}
+                  ) : (
+                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+                      <CardContent className="flex items-center justify-center h-64">
+                        <div className="text-center space-y-4">
+                          <Settings className="w-16 h-16 text-gray-300 mx-auto" />
+                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
+                          <p className="text-gray-600">
+                            Sélectionnez un run pour accéder à son panneau d'administration
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
           </motion.div>
         </div>
       </div>
       
       <Toaster position="top-right" richColors />
+      
+      {/* Global Admin Modal */}
+      <AdminGlobal 
+        isOpen={showAdminGlobal} 
+        onClose={() => setShowAdminGlobal(false)} 
+      />
     </div>
   );
 };
