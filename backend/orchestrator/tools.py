@@ -21,9 +21,10 @@ def is_valid_patch(patch_text: str) -> bool:
         logger.warning("Patch validation failed: empty patch")
         return False
     
-    lines = patch_text.strip().split(\'\
-\')
-    
+    #lines = patch_text.strip().split(\'\
+#\')
+    lines = patch_text.strip().split("\n")
+
     # Check if patch starts with proper diff header
     if not lines[0].startswith("diff --git"):
         logger.warning("Patch validation failed: missing \'diff --git\' header")
