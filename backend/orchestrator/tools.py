@@ -12,6 +12,63 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+def is_valid_patch(patch_text: str) -> bool:
+    """
+    Validate patch format before applying
+    Returns True if patch appears to be valid unified diff format
+    """
+    if not patch_text or not patch_text.strip():
+        logger.warning("Patch validation failed: empty patch")
+        return False
+    
+    lines = patch_text.strip().split(\'\
+\')
+    
+    # Check if patch starts with proper diff header
+    if not lines[0].startswith("diff --git"):
+        logger.warning("Patch validation failed: missing \'diff --git\' header")
+        return False
+    
+    # Check for required file headers
+    has_old_file = False
+    has_new_file = False
+    
+    for line in lines:
+        if line.startswith("--- "):
+            has_old_file = True
+        elif line.startswith("+++ "):
+            has_new_file = True
+            
+    if not has_old_file or not has_new_file:
+        logger.warning("Patch validation failed: missing \'---\' or \'+++\' file headers")
+        return False
+    
+    # Check for basic patch structure (should have at least one hunk)
+    has_hunk_header = False
+    for line in lines:
+        if line.startswith("@@") and "@@" in line[2:]:
+            has_hunk_header = True
+            break
+            
+    if not has_hunk_header:
+        logger.warning("Patch validation failed: missing hunk headers \'@@\'")
+        return False
+    
+    # Additional format checks
+    for i, line in enumerate(lines, 1):
+        # Skip headers and hunk headers
+        if (line.startswith(("diff --git", "index ", "--- ", "+++ ", "@@")) or 
+            line.startswith(("new file", "deleted file", "similarity"))):
+            continue
+            
+        # Check that patch lines start with valid prefixes
+        if line and not line.startswith((" ", "+", "-")):
+            # Allow empty lines in patches
+            if line.strip():
+                logger.warning(f"Patch validation failed: invalid line format at line {i}: \'{line[:50]}...\'")
+                return False
+    
+    return True
 @dataclass
 class TestResult:
     test_type: str
@@ -68,10 +125,15 @@ class ToolManager:
         return '\n'.join(normalized_lines)
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
-        """Apply unified diff patch"""
+        """Apply unified diff patch with pre-validation"""
         try:
             if not project_path:
                 project_path = os.getcwd()
+                
+            # ✅ Validate patch format BEFORE applying
+            if not is_valid_patch(patch):
+                logger.error("Patch validation failed: Invalid patch format. Please provide a valid unified diff patch.")
+                return False
             
             # Create temporary patch file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False) as f:
@@ -93,7 +155,8 @@ class ToolManager:
                     )
                     return result.returncode == 0
                 else:
-                    logger.warning(f"Patch validation failed: {result.stderr}")
+                    logger.warning(f"Git patch validation failed: {result.stderr}")
+                    logger.error("Unable to apply patch. Please provide a valid patch that can be applied.")
                     return False
                     
             finally:
