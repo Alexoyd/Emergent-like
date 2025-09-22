@@ -54,6 +54,16 @@ class ProjectManager:
             # Auto-create project structure if enabled
             if self.auto_create_structures:
                 await self._create_project_structure(directories["code"], stack, project_name)
+
+                # ✅ Install dependencies automatically after scaffolding
+                logger.info(f"Auto-installing dependencies for {stack} project {project_id}")
+                install_success = await self.install_dependencies(str(project_path), stack)
+                if install_success:
+                    metadata["dependencies_installed"] = True
+                    logger.info(f"Dependencies successfully installed for {stack} project")
+                else:
+                    metadata["dependencies_installed"] = False
+                    logger.warning(f"Dependencies installation failed for {stack} project")
             
             logger.info(f"Created workspace for project {project_id} with stack {stack}")
             return {
@@ -598,6 +608,67 @@ createApp(App).mount('#app')
         """Get project code path"""
         return self.projects_base_path / project_id / "code"
     
-    def get_logs_path(self, project_id: str) -> Path:
-        """Get project logs path"""
-        return self.projects_base_path / project_id / "logs"
+    async def install_dependencies(self, project_path: str, stack: str) -> bool:
+        """Install dependencies for the project based on stack"""
+        try:
+            code_path = Path(project_path) / "code"
+            
+            if stack == "laravel":
+                logger.info(f"Installing Laravel dependencies for {project_path}")
+                # Run composer install in the code directory
+                result = await self._run_command(["composer", "install"], cwd=str(code_path))
+                if result.returncode != 0:
+                    logger.warning(f"Composer install failed: {result.stderr}")
+                    return False
+                    
+            elif stack in ["react", "vue", "node"]:
+                logger.info(f"Installing {stack} dependencies for {project_path}")
+                # Run yarn install in the code directory
+                result = await self._run_command(["yarn", "install"], cwd=str(code_path))
+                if result.returncode != 0:
+                    logger.warning(f"Yarn install failed: {result.stderr}")
+                    return False
+                    
+            elif stack == "python":
+                logger.info(f"Installing Python dependencies for {project_path}")
+                # Run pip install -r requirements.txt in the code directory
+                requirements_file = code_path / "requirements.txt"
+                if requirements_file.exists():
+                    result = await self._run_command(
+                        ["pip", "install", "-r", "requirements.txt"], 
+                        cwd=str(code_path)
+                    )
+                    if result.returncode != 0:
+                        logger.warning(f"Pip install failed: {result.stderr}")
+                        return False
+                else:
+                    logger.warning("No requirements.txt found for Python project")
+                    
+            logger.info(f"Dependencies installed successfully for {stack} project")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error installing dependencies for {stack}: {e}")
+            return False
+    
+    async def _run_command(self, command: List[str], cwd: str = None):
+        """Run shell command"""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            return type(\'CommandResult\', (), {
+                \'returncode\': process.returncode,
+                \'stdout\': stdout.decode(\'utf-8\', errors=\'ignore\'),
+                \'stderr\': stderr.decode(\'utf-8\', errors=\'ignore\')
+            })()
+            
+        except Exception as e:
+            logger.error(f"Command execution error: {e}")
+            raise
