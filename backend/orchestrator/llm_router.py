@@ -42,7 +42,10 @@ class LLMRouter:
         self.current_attempt = 0
         self.local_failures = 0
         
-        # Initialize prompt cache manager
+        # ✅ Check if Anthropic is enabled
+        self.anthropic_enabled = os.getenv("ENABLE_ANTHROPIC", "true").lower() == "true"
+        
+         # Initialize prompt cache manager
         self.prompt_cache = PromptCacheManager()
         
         # Conversation history for context (per run)
@@ -52,8 +55,13 @@ class LLMRouter:
         if os.getenv("OPENAI_API_KEY"):
             self.openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        if os.getenv("ANTHROPIC_API_KEY"):
+        # ✅ Only initialize Anthropic if enabled AND key is available
+        if self.anthropic_enabled and os.getenv("ANTHROPIC_API_KEY"):
             self.anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        elif not self.anthropic_enabled:
+            logger.info("Anthropic integration disabled via ENABLE_ANTHROPIC=false")
+        elif not os.getenv("ANTHROPIC_API_KEY"):
+            logger.warning("Anthropic API key not provided, Anthropic integration disabled")
         
         # Cost mapping (EUR per 1K tokens)
         self.cost_mapping = {
@@ -183,13 +191,30 @@ class LLMRouter:
         return ModelTier.LOCAL
     
     def _get_escalation_path(self, initial_tier: ModelTier) -> list:
-        """Get escalation path for model selection"""
+        """Get escalation path for model selection, excluding disabled providers"""
+        available_tiers = []
+        
+        # Always include LOCAL if available
+        available_tiers.append(ModelTier.LOCAL)
+        
+        # Include MEDIUM (OpenAI) if client is available  
+        if self.openai_client:
+            available_tiers.append(ModelTier.MEDIUM)
+            
+        # ✅ Only include PREMIUM (Anthropic) if enabled and client available
+        if self.anthropic_enabled and self.anthropic_client:
+            available_tiers.append(ModelTier.PREMIUM)
+        
+        # Build escalation path based on initial tier preference
         if initial_tier == ModelTier.LOCAL:
-            return [ModelTier.LOCAL, ModelTier.MEDIUM, ModelTier.PREMIUM]
+            path [ModelTier.LOCAL, ModelTier.MEDIUM, ModelTier.PREMIUM]
         elif initial_tier == ModelTier.MEDIUM:
-            return [ModelTier.MEDIUM, ModelTier.PREMIUM, ModelTier.LOCAL]
+            path [ModelTier.MEDIUM, ModelTier.PREMIUM, ModelTier.LOCAL]
         else:
-            return [ModelTier.PREMIUM, ModelTier.MEDIUM, ModelTier.LOCAL]
+            path [ModelTier.PREMIUM, ModelTier.MEDIUM, ModelTier.LOCAL]
+                    
+        # Filter path to only include available tiers
+        return [tier for tier in path if tier in available_tiers]
     
     async def _generate_with_tier(self, prompt: str, tier: ModelTier, task_type: str = "coding", run_id: str = None) -> LLMResponse:
         """Generate response with specific model tier"""
@@ -198,6 +223,10 @@ class LLMRouter:
         elif tier == ModelTier.MEDIUM:
             return await self._generate_openai(prompt, task_type, run_id)
         else:  # PREMIUM
+            if not self.anthropic_enabled:
+                raise Exception("Anthropic is disabled via ENABLE_ANTHROPIC=false")
+            if not self.anthropic_client:
+                raise Exception("Anthropic client not available (API key missing or disabled)")
             return await self._generate_anthropic(prompt, task_type, run_id)
     
     async def _generate_ollama(self, prompt: str) -> LLMResponse:
