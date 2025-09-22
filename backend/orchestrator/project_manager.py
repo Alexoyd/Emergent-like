@@ -663,10 +663,10 @@ createApp(App).mount('#app')
             
             stdout, stderr = await process.communicate()
             
-            return type(\'CommandResult\', (), {
-                \'returncode\': process.returncode,
-                \'stdout\': stdout.decode(\'utf-8\', errors=\'ignore\'),
-                \'stderr\': stderr.decode(\'utf-8\', errors=\'ignore\')
+            return type('CommandResult', (), {
+                'returncode': process.returncode,
+                'stdout': stdout.decode('utf-8', errors='ignore'),
+                'stderr': stderr.decode('utf-8', errors='ignore')
             })()
             
         except Exception as e:
