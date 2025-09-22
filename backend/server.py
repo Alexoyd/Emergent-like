@@ -21,12 +21,12 @@ import git
 from contextlib import asynccontextmanager
 
 # Import AI orchestrator components
-from orchestrator.llm_router import LLMRouter
-from orchestrator.tools import ToolManager
-from orchestrator.state_manager import StateManager
-from orchestrator.rag_system import RAGSystem
-from orchestrator.project_manager import ProjectManager
-from orchestrator.github_integration import GitHubIntegration
+from backend.orchestrator.llm_router import LLMRouter
+from backend.orchestrator.tools import ToolManager
+from backend.orchestrator.state_manager import StateManager
+from backend.orchestrator.rag_system import RAGSystem
+from backend.orchestrator.project_manager import ProjectManager
+from backend.orchestrator.github_integration import GitHubIntegration
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -774,45 +774,87 @@ async def execute_run(run_id: str, from_step: int = 0):
         # Generate initial plan
         if from_step == 0:
             plan = await generate_plan(run)
-            await state_manager.add_log(run_id, {"type": "plan", "content": plan})
+            await state_manager.add_log(run_id, {"step": "plan", "status": "succeeded", "output": plan})
+
+            # 🆕 Parse du plan et enregistrement dans la base
+            parsed_steps = parse_plan(plan)
+            await db.runs.update_one(
+                {"id": run_id},
+                {"$set": {"plan": plan, "parsed_plan": parsed_steps}}
+            )
         
         # Execute steps
         current_step = from_step
+        steps_executed = 0
+        completed_successfully = True
+        
+        await state_manager.add_log(run_id, {"type": "info", "content": f"Starting execution from step {current_step}"})
+        
         while current_step < run.max_steps:
             try:
                 # Check if run was cancelled
                 run_data = await db.runs.find_one({"id": run_id})
                 if not run_data or Run(**run_data).status == RunStatus.CANCELLED:
+                    await state_manager.add_log(run_id, {"type": "warning", "content": "Run was cancelled"})
+                    completed_successfully = False
                     break
                 
+                await state_manager.add_log(run_id, {"type": "info", "content": f"Executing step {current_step + 1}/{run.max_steps}"})
+
                 # Execute step
                 step_result = await execute_step(run_id, current_step)
-                
+                steps_executed += 1
+
                 # Check if step failed and needs retry
                 if not step_result.tests_passed and step_result.retries < step_result.max_retries:
                     # Retry with higher model
+                    await state_manager.add_log(run_id, {"type": "warning", "content": f"Step {current_step + 1} failed, retrying with escalation (attempt {step_result.retries + 1})"})
                     await retry_step_with_escalation(run_id, current_step, step_result.retries + 1)
                     continue
                 elif not step_result.tests_passed:
                     # Max retries reached, fail the run
+                    await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed after {step_result.max_retries} retries"})
                     await state_manager.update_run_status(run_id, RunStatus.FAILED)
+                    completed_successfully = False
                     break
                 
+                await state_manager.add_log(run_id, {"type": "success", "content": f"Step {current_step + 1} completed successfully"})
                 current_step += 1
+                # Update current step in database for progress tracking
+                await state_manager.update_current_step(run_id, current_step)
                 
                 # Check budget limit
                 run_data = await db.runs.find_one({"id": run_id})
                 if run_data and Run(**run_data).cost_used_eur >= run.daily_budget_eur:
-                    await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached"})
+                    #await state_manager.add_log(run_id, {"step": "budget", "status": "failed", "output": "Daily budget limit reached"})
+                    await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached, stopping execution"})
+                    completed_successfully = False
                     break
                 
             except Exception as e:
                 logging.error(f"Error executing step {current_step}: {e}")
-                await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step} failed: {str(e)}"})
+                #await state_manager.add_log(run_id, {"step": f"step {current_step}", "status": "failed", "output": f"Step {current_step} failed: {str(e)}"})
+                await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed with exception: {str(e)}"})
+                completed_successfully = False
                 break
         
         # Mark as completed if all steps successful
-        if current_step >= run.max_steps or current_step == 0:
+        #if current_step >= run.max_steps or current_step == 0:
+        # Determine final status based on execution results
+        if completed_successfully and steps_executed > 0:
+            await state_manager.add_log(run_id, {"type": "success", "content": f"All {steps_executed} steps completed successfully"})
+            await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+        elif steps_executed == 0 and from_step == 0:
+            # Only planning was done, no steps executed - this shouldn't mark as completed
+            await state_manager.add_log(run_id, {"type": "error", "content": "No steps were executed after planning phase"})
+            await state_manager.update_run_status(run_id, RunStatus.FAILED)
+        elif not completed_successfully:
+            # Steps were executed but run failed
+            await state_manager.add_log(run_id, {"type": "info", "content": f"Run terminated after {steps_executed} steps"})
+            # Status already set to FAILED in the loop if needed
+        else:
+            # Reached max steps
+            await state_manager.add_log(run_id, {"type": "info", "content": f"Reached maximum steps limit ({run.max_steps})"})
             await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
         
     except Exception as e:
