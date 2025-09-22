@@ -37,7 +37,10 @@ class LLMRouter:
         self.current_attempt = 0
         self.local_failures = 0
         
-        # Initialize prompt cache manager
+        # ✅ Check if Anthropic is enabled
+        self.anthropic_enabled = os.getenv("ENABLE_ANTHROPIC", "true").lower() == "true"
+        
+         # Initialize prompt cache manager
         self.prompt_cache = PromptCacheManager()
         
         # Conversation history for context (per run)
@@ -47,8 +50,13 @@ class LLMRouter:
         if os.getenv("OPENAI_API_KEY"):
             self.openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        if os.getenv("ANTHROPIC_API_KEY"):
+        # ✅ Only initialize Anthropic if enabled AND key is available
+        if self.anthropic_enabled and os.getenv("ANTHROPIC_API_KEY"):
             self.anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        elif not self.anthropic_enabled:
+            logger.info("Anthropic integration disabled via ENABLE_ANTHROPIC=false")
+        elif not os.getenv("ANTHROPIC_API_KEY"):
+            logger.warning("Anthropic API key not provided, Anthropic integration disabled")
         
         # Cost mapping (EUR per 1K tokens)
         self.cost_mapping = {
