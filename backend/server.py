@@ -27,6 +27,7 @@ from backend.orchestrator.state_manager import StateManager
 from backend.orchestrator.rag_system import RAGSystem
 from backend.orchestrator.project_manager import ProjectManager
 from backend.orchestrator.github_integration import GitHubIntegration
+from backend.orchestrator.plan_parser import parse_plan
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
