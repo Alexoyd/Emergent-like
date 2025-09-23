@@ -207,11 +207,11 @@ class LLMRouter:
         
         # Build escalation path based on initial tier preference
         if initial_tier == ModelTier.LOCAL:
-            path [ModelTier.LOCAL, ModelTier.MEDIUM, ModelTier.PREMIUM]
+            path = [ModelTier.LOCAL, ModelTier.MEDIUM, ModelTier.PREMIUM]
         elif initial_tier == ModelTier.MEDIUM:
-            path [ModelTier.MEDIUM, ModelTier.PREMIUM, ModelTier.LOCAL]
+            path = [ModelTier.MEDIUM, ModelTier.PREMIUM, ModelTier.LOCAL]
         else:
-            path [ModelTier.PREMIUM, ModelTier.MEDIUM, ModelTier.LOCAL]
+            path = [ModelTier.PREMIUM, ModelTier.MEDIUM, ModelTier.LOCAL]
                     
         # Filter path to only include available tiers
         return [tier for tier in path if tier in available_tiers]

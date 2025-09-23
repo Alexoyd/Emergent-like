@@ -8,6 +8,16 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+STRICT_PATCH_SUFFIX = """
+OUTPUT CONTRACT (STRICT):
+Return ONLY a valid unified diff suitable for `git apply`.
+- First line MUST be: diff --git a/<file> b/<file>
+- Include --- and +++ headers (--- /dev/null for new files).
+- Include at least one @@ hunk header.
+- Added lines start with + ; removed with - ; context with a space.
+- Repo-relative paths only. No prose/HTML/Markdown fences. Diff only.
+""".strip()
+
 @dataclass
 class CachedPrompt:
     hash_key: str
@@ -34,24 +44,23 @@ class PromptCacheManager:
 Your task is to create focused patches that solve specific problems without introducing unnecessary complexity.
 
 Guidelines:
-- Generate unified diff patches in the format: BEGIN_PATCH...END_PATCH
 - Focus on minimal, testable changes
 - Include appropriate error handling
 - Follow best practices for the given technology stack
 - Add comments for complex logic
 - Ensure backward compatibility where possible
 
-Response format:
-BEGIN_PATCH
-<unified diff or file content changes>
-END_PATCH
-
-CHECKLIST
-- Tests: OK/KO with brief explanation
-- Linting: OK/KO 
-- Security: OK/KO
-- Performance: OK/KO
-- Comments: <brief summary of changes and reasoning>""",
+OUTPUT CONTRACT (STRICT) — return ONLY a valid unified diff suitable for `git apply`:
+- The very first line MUST start with: `diff --git a/<file> b/<file>`
+- Include the file headers: `--- a/<file>` and `+++ b/<file>` (use `--- /dev/null` for new files, `+++ /dev/null` for deletions)
+- Include at least one hunk header starting with `@@`
+- Every added line MUST start with `+`
+- Every removed line MUST start with `-`
+- Unchanged context lines MUST start with a single space
+- Multiple files are allowed; separate them with new `diff --git` sections
+- Use repository-relative paths only (no absolute paths)
+- Do NOT include markdown fences, BEGIN/END markers, prose, XML/HTML, logs, or any explanation outside the diff
+- If your draft does not begin with `diff --git`, FIX IT and re-emit ONLY the unified diff""",
 
             "planning": """You are an AI project planning agent. Create detailed, actionable execution plans.
 Your task is to break down complex goals into specific, measurable steps.
@@ -172,12 +181,13 @@ Deliver structured analysis with clear priorities and implementation suggestions
             if conversation_history:
                 messages.extend(conversation_history)
             
-            # Add current user message
-            messages.append({
-                "role": "user",
-                "content": user_prompt
-            })
-            
+            # User message (+ contrat strict si coding)
+            final_user_prompt = user_prompt
+            if task_type == "coding":
+                final_user_prompt = f"{user_prompt.rstrip()}\n\n{STRICT_PATCH_SUFFIX}"
+
+            messages.append({"role": "user", "content": final_user_prompt})
+
             return messages, use_cache
             
         except Exception as e:
@@ -226,10 +236,11 @@ Deliver structured analysis with clear priorities and implementation suggestions
                 messages.extend(conversation_history)
             
             # Add current user message
-            messages.append({
-                "role": "user",
-                "content": user_prompt
-            })
+            final_user_prompt = user_prompt
+            if task_type == "coding":
+                final_user_prompt = f"{user_prompt.rstrip()}\n\n{STRICT_PATCH_SUFFIX}"
+
+            messages.append({"role": "user", "content": final_user_prompt})
             
             return system_prompt, messages, use_cache
             

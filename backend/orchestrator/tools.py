@@ -113,17 +113,25 @@ class ToolManager:
     def _normalize_patch(self, patch: str, project_path: str) -> str:
         code_root = os.path.abspath(project_path)
         normalized_lines = []
+        inside_hunk = False
+
         for line in patch.splitlines():
             if line.startswith(("---", "+++")):
-                # Extraire le chemin après a/ ou b/
-                prefix, path = line.split(' ', 1)
+            # Extraire le chemin après a/ ou b/
+                prefix, path_part  = line.split(' ', 1)
                 # Supprimer le préfixe absolu jusqu’au dossier code/
-                if code_root in path:
-                    path = path.replace(code_root + '/', '')
-                normalized_lines.append(f"{prefix} {path}")
-            else:
-                normalized_lines.append(line)
-        return '\n'.join(normalized_lines)
+                if code_root in path_part :
+                    path_part  = path_part .replace(code_root + '/', '')
+                normalized_lines.append(f"{prefix} {path_part}")
+            else: 
+                normalized_lines.append(line) 
+         # 🔧 Normalisation EOL et LF final (critique pour git apply)
+        text = "\n".join(normalized_lines)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")  # CRLF/CR -> LF
+        if not text.endswith("\n"):
+            text += "\n"
+        return text
+
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
         """Apply unified diff patch with pre-validation"""
