@@ -10,7 +10,9 @@ import httpx
 import json
 import time
 import collections
-import re  # à ajouter en haut du fichier
+import re
+import tempfile
+from datetime import datetime
 from .prompt_cache import PromptCacheManager
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,13 @@ class LLMRouter:
                         return response
                     else:
                         logger.warning(f"Invalid response from {attempt_tier}, escalating...")
+                        
+                        # ✅ RETRY UNE FOIS pour task_type="coding" seulement
+                        if task_type == "coding":
+                            retry_response = await self._retry_for_valid_diff(attempt_tier, task_type, run_id)
+                            if retry_response:
+                                return retry_response
+                                
                         continue
                         
                 except Exception as e:
@@ -154,7 +163,7 @@ class LLMRouter:
         for attempt in range(1, self.max_local_retries + 1):
             try:
                 logger.info(f"Local attempt {attempt}/{self.max_local_retries} for {task_type}")
-                response = await self._generate_ollama(prompt)
+                response = await self._generate_ollama(prompt, task_type)
                 
                 if self._is_valid_response(response.content, task_type):
                     logger.info(f"Local model succeeded on attempt {attempt}")
@@ -219,7 +228,7 @@ class LLMRouter:
     async def _generate_with_tier(self, prompt: str, tier: ModelTier, task_type: str = "coding", run_id: str = None) -> LLMResponse:
         """Generate response with specific model tier"""
         if tier == ModelTier.LOCAL:
-            return await self._generate_ollama(prompt)
+            return await self._generate_ollama(prompt, task_type)
         elif tier == ModelTier.MEDIUM:
             return await self._generate_openai(prompt, task_type, run_id)
         else:  # PREMIUM
@@ -229,15 +238,23 @@ class LLMRouter:
                 raise Exception("Anthropic client not available (API key missing or disabled)")
             return await self._generate_anthropic(prompt, task_type, run_id)
     
-    async def _generate_ollama(self, prompt: str) -> LLMResponse:
+    async def _generate_ollama(self, prompt: str, task_type: str = "coding") -> LLMResponse:
         """Generate using local Ollama model"""
         try:
+            # ✅ FORCER LE CONTRAT STRICT pour task_type="coding"  
+            final_prompt = prompt
+            if task_type == "coding":
+                from .prompt_cache import STRICT_PATCH_SUFFIX
+                final_prompt = f"{prompt.rstrip()}\
+\
+{STRICT_PATCH_SUFFIX.strip()}"
+                
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.ollama_base_url}/api/generate",
                     json={
                         "model": self.ollama_model,
-                        "prompt": prompt,
+                        "prompt": final_prompt,
                         "stream": False,
                         "options": {
                             "temperature": 0.1,
@@ -275,9 +292,17 @@ class LLMRouter:
             # Get conversation history for this run
             conversation_history = self.conversation_histories.get(run_id, [])
             
+            # ✅ FORCER LE CONTRAT STRICT pour task_type="coding"
+            final_user_prompt = prompt
+            if task_type == "coding":
+                from .prompt_cache import STRICT_PATCH_SUFFIX
+                final_user_prompt = f"{prompt.rstrip()}\
+\
+{STRICT_PATCH_SUFFIX.strip()}"
+            
             # Prepare messages with caching optimization
             messages, cache_used = await self.prompt_cache.prepare_openai_messages(
-                task_type, prompt, conversation_history
+                task_type, final_user_prompt, conversation_history
             )
             
             # Use GPT-4o with native caching if available
@@ -307,13 +332,13 @@ class LLMRouter:
             cache_savings_pct = 0.3 if cache_used else 0.0  # 30% savings with cache
             final_cost = base_cost * (1 - cache_savings_pct)
             
-            # Update conversation history
+            # Update conversation history (avec le prompt original, pas le STRICT_PATCH_SUFFIX)
             if run_id:
                 if run_id not in self.conversation_histories:
                     self.conversation_histories[run_id] = []
                 
                 self.conversation_histories[run_id].extend([
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt},  # Original prompt, pas final_user_prompt
                     {"role": "assistant", "content": response.choices[0].message.content}
                 ])
                 
@@ -347,9 +372,17 @@ class LLMRouter:
             # Get conversation history for this run
             conversation_history = self.conversation_histories.get(run_id, [])
             
+            # ✅ FORCER LE CONTRAT STRICT pour task_type="coding"
+            final_user_prompt = prompt
+            if task_type == "coding":
+                from .prompt_cache import STRICT_PATCH_SUFFIX
+                final_user_prompt = f"{prompt.rstrip()}\
+\
+{STRICT_PATCH_SUFFIX.strip()}"
+            
             # Prepare messages with caching optimization
             system_prompt, messages, cache_used = await self.prompt_cache.prepare_anthropic_messages(
-                task_type, prompt, conversation_history
+                task_type, final_user_prompt, conversation_history
             )
             
             # Use Claude 3.5 Sonnet with prompt caching
@@ -391,13 +424,13 @@ class LLMRouter:
             cache_savings_pct = 0.5 if cache_used else 0.0  # Conservative 50% savings estimate
             final_cost = base_cost * (1 - cache_savings_pct)
             
-            # Update conversation history
+            # Update conversation history (avec le prompt original, pas le STRICT_PATCH_SUFFIX)
             if run_id:
                 if run_id not in self.conversation_histories:
                     self.conversation_histories[run_id] = []
                 
                 self.conversation_histories[run_id].extend([
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt},  # Original prompt, pas final_user_prompt
                     {"role": "assistant", "content": response.content[0].text}
                 ])
                 
@@ -436,19 +469,38 @@ class LLMRouter:
             return False
 
         if task_type == "coding":
-            # 1) Préférence : diff encadré
-            if "BEGIN_PATCH" in content and "END_PATCH" in content:
-                return True
-            # 2) Diff standard (---/+++ ou diff --git)
+            # ✅ VALIDATION STRICTE : seuls les unified diffs valides sont acceptés
             stripped = content.lstrip()
-            if stripped.startswith(("diff --git", "---", "+++")):
-                return True
-            # 3) Le contenu ressemble à du code source (Python, JS, PHP…)
-            code_patterns = r"\b(def|class|function|<?php|import |package )"
-            if re.search(code_patterns, content):
-                return True
-            # sinon on considère invalide
-            return False
+            
+            # 1) Doit commencer par diff --git
+            if not stripped.startswith("diff --git"):
+                logger.warning(f"Invalid coding response: doesn\'t start with \'diff --git\', starts with: \'{stripped[:50]}...\'")
+                self._save_invalid_response(content, "missing_diff_git_header")
+                return False
+            
+            # 2) Vérification basique de structure unified diff
+            lines = content.split(\'\\')
+            
+            has_file_headers = False
+            has_hunk_header = False
+            
+            for line in lines:
+                if line.startswith(\'--- \') or line.startswith(\'+++ \'):
+                    has_file_headers = True
+                elif line.startswith('@@') and '@@' in line[2:]:
+                    has_hunk_header = True
+                    
+            if not has_file_headers:
+                logger.warning("Invalid coding response: missing file headers (--- or +++)")
+                self._save_invalid_response(content, "missing_file_headers")
+                return False
+                
+            if not has_hunk_header:
+                logger.warning("Invalid coding response: missing hunk headers (@@)")
+                self._save_invalid_response(content, "missing_hunk_headers") 
+                return False
+                
+            return True
 
         elif task_type == "planning":
             # Accepter les plans qui mentionnent des étapes ou des listes numérotées
@@ -459,7 +511,45 @@ class LLMRouter:
 
         # Pour les autres types, on valide par défaut si non vide
         return True
+ 
+    def _save_invalid_response(self, content: str, reason: str) -> None:
+        """Save invalid response to debug file"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            debug_path = f"/tmp/emergent_patches/invalid_{timestamp}_{reason}.txt"
+            
+            with open(debug_path, 'w', encoding='utf-8') as f:
+                f.write(f"=== Invalid Response Debug ===")
+                f.write(f"Reason: {reason}")
+                f.write(f"Timestamp: {datetime.now().isoformat()}")
+                f.write(f"Length: {len(content)} characters")
+                f.write("=== Content ===")
+                f.write(content)
+                
+            logger.info(f"Saved invalid response to {debug_path}")
+        except Exception as e:
+            logger.error(f"Failed to save invalid response: {e}")
 
+    async def _retry_for_valid_diff(self, tier: ModelTier, task_type: str, run_id: str = None) -> Optional[LLMResponse]:
+        """Retry with strict message for invalid coding responses"""
+        retry_prompt = """Invalid output. Re-emit ONLY a valid unified diff suitable for 'git apply'. Start with 'diff --git …'. No prose/HTML/Markdown fences."""
+        
+        try:
+            logger.info(f"Retrying {tier} for valid unified diff...")
+            response = await self._generate_with_tier(retry_prompt, tier, task_type, run_id)
+            
+            if self._is_valid_response(response.content, task_type):
+                logger.info(f"Retry successful with {tier}")
+                return response
+            else:
+                logger.warning(f"Retry failed with {tier}: still invalid response")
+                # Sauvegarder le retry échoué aussi
+                self._save_invalid_response(response.content, f"retry_failed_{tier.value}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error during retry with {tier}: {e}")
+            return None
     
     async def check_ollama_availability(self) -> bool:
         """Check if Ollama is available and has the required model"""
