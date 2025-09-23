@@ -91,3 +91,4 @@ android-sdk/ -e
 *.env.*
 backend/orchestrator/*.bak
 backend/.env
+backend/.env
