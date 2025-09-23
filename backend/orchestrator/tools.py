@@ -111,30 +111,31 @@ class ToolManager:
             return False
     
     def _normalize_patch(self, patch: str, project_path: str) -> str:
+        """Normalize patch paths to be repo-relative and fix line endings (minimaliste)"""
         code_root = os.path.abspath(project_path)
         normalized_lines = []
-        inside_hunk = False
 
         for line in patch.splitlines():
             if line.startswith(("---", "+++")):
             # Extraire le chemin après a/ ou b/
-                prefix, path_part  = line.split(' ', 1)
-                # Supprimer le préfixe absolu jusqu’au dossier code/
-                if code_root in path_part :
-                    path_part  = path_part .replace(code_root + '/', '')
+                prefix, path_part = line.split(\' \', 1)
+                # Supprimer le préfixe absolu jusqu\'au dossier code/ si présent
+                if code_root in path_part:
+                    path_part = path_part.replace(code_root + \'/\', \'\')
                 normalized_lines.append(f"{prefix} {path_part}")
             else: 
+                # ✅ Ne pas modifier le contenu des hunks - juste passer la ligne telle quelle
                 normalized_lines.append(line) 
-         # 🔧 Normalisation EOL et LF final (critique pour git apply)
+         
+        # 🔧 Normalisation EOL seulement (CRLF/CR -> LF)
         text = "\n".join(normalized_lines)
         text = text.replace("\r\n", "\n").replace("\r", "\n")  # CRLF/CR -> LF
-        if not text.endswith("\n"):
-            text += "\n"
+        # ✅ NE PAS ajouter de newline finale ici - c\'est fait dans apply_patch()
         return text
 
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
-        """Apply unified diff patch with pre-validation"""
+        """Apply unified diff patch with pre-validation and automatic newline fix"""
         try:
             if not project_path:
                 project_path = os.getcwd()
@@ -144,37 +145,100 @@ class ToolManager:
                 logger.error("Patch validation failed: Invalid patch format. Please provide a valid unified diff patch.")
                 return False
             
-            # Create temporary patch file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False) as f:
-                f.write(patch)
+            # ✅ Normalize patch and ensure final newline
+            normalized_patch = self._normalize_patch(patch, project_path)
+            appended_final_newline = False
+            
+            if not normalized_patch.endswith(''):
+                normalized_patch += ''
+                appended_final_newline = True
+                logger.info("apply_patch: appended_final_newline=True")
+            
+            # ✅ Save debug copy to /tmp/emergent_patches (exactly what will be tested/applied)
+            timestamp = time.time()
+            debug_path = f"/tmp/emergent_patches/patch_{timestamp:.0f}.diff"
+            
+            try:
+                with open(debug_path, 'w', encoding='utf-8') as f:
+                    f.write(normalized_patch)
+                logger.info(f"Saved patch debug copy to {debug_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save debug patch copy: {e}")
+            
+            # Create temporary patch file with normalized content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as f:
+                f.write(normalized_patch)
                 patch_file = f.name
             
             try:
-                # Apply patch using git apply
-                result = await self._run_command(
+                # ✅ First check if patch is valid
+                check_result = await self._run_command(
                     ["git", "apply", "--check", patch_file],
                     cwd=project_path
                 )
                 
-                if result.returncode == 0:
+                if check_result.returncode == 0:
                     # Patch is valid, apply it
-                    result = await self._run_command(
+                    apply_result = await self._run_command(
                         ["git", "apply", patch_file],
                         cwd=project_path
                     )
-                    return result.returncode == 0
+                                      
+                    if apply_result.returncode == 0:
+                        logger.info(f"Patch applied successfully. appended_final_newline={appended_final_newline}")
+                        return True
+                    else:
+                        logger.error(f"Git apply failed: {apply_result.stderr}")
+                        self._log_patch_failure_details(normalized_patch, apply_result.stderr, "git_apply_failed")
+                        return False
                 else:
-                    logger.warning(f"Git patch validation failed: {result.stderr}")
-                    logger.error("Unable to apply patch. Please provide a valid patch that can be applied.")
+                    logger.error(f"Git patch validation failed: {check_result.stderr}")
+                    self._log_patch_failure_details(normalized_patch, check_result.stderr, "git_check_failed")
                     return False
                     
             finally:
+                # Clean up temporary file
+                try:
                 os.unlink(patch_file)
+                except:
+                    pass
                 
         except Exception as e:
             logger.error(f"Error applying patch: {e}")
             return False
-    
+        
+    def _log_patch_failure_details(self, patch: str, git_stderr: str, reason: str):
+        """Log detailed information about patch application failure"""
+        try:
+            patch_lines = patch.split('')
+            first_20_lines = ''.join(patch_lines[:20])
+            
+            logger.error(f"""
+=== PATCH APPLICATION FAILURE ===
+Reason: {reason}
+First 20 lines of patch:
+{first_20_lines}
+
+Git stderr (complete):
+{git_stderr}
+
+Patch length: {len(patch)} characters
+Patch lines: {len(patch_lines)}
+=== END FAILURE DETAILS ===
+            """.strip())
+            
+            # Try to identify specific line causing issue if possible
+            if "corrupt patch at line" in git_stderr:
+                import re
+                match = re.search(r"corrupt patch at line (\d+)", git_stderr)
+                if match:
+                    line_num = int(match.group(1))
+                    if line_num <= len(patch_lines):
+                        faulty_line = patch_lines[line_num - 1] if line_num > 0 else "N/A"
+                        logger.error(f"Faulty line {line_num}: '{faulty_line}'")
+                        
+        except Exception as e:
+            logger.error(f"Failed to log patch failure details: {e}")
     async def run_command(self, command: List[str], cwd: Optional[str] = None) -> TestResult:
         """Run shell command and return result"""
         try:
