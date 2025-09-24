@@ -620,6 +620,22 @@ createApp(App).mount('#app')
                 if result.returncode != 0:
                     logger.warning(f"Composer install failed: {result.stderr}")
                     return False
+                
+                # ✅ PRIORITÉ 3 - Bootstrap automatique des dépendances de test Laravel
+                logger.info(f"Installing Laravel dev dependencies (phpstan, pint, pest) for {project_path}")
+                dev_dependencies = [
+                    "composer", "require", "--dev",
+                    "phpstan/phpstan",
+                    "laravel/pint", 
+                    "pestphp/pest"
+                ]
+                
+                dev_result = await self._run_command(dev_dependencies, cwd=str(code_path))
+                if dev_result.returncode != 0:
+                    logger.warning(f"Laravel dev dependencies install failed: {dev_result.stderr}")
+                    # Ne pas faire échouer tout l'install pour ça
+                else:
+                    logger.info("Laravel dev dependencies (phpstan, pint, pest) installed successfully")
                     
             elif stack in ["react", "vue", "node"]:
                 logger.info(f"Installing {stack} dependencies for {project_path}")

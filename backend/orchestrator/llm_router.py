@@ -516,7 +516,11 @@ class LLMRouter:
         """Save invalid response to debug file"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            debug_path = f"/tmp/emergent_patches/invalid_{timestamp}_{reason}.txt"
+            debug_dir = "/tmp/emergent_patches"
+            debug_path = f"{debug_dir}/invalid_{timestamp}_{reason}.txt"
+            
+            # ✅ PRIORITÉ 2 - Créer automatiquement le dossier tmp/ s'il n'existe pas
+            os.makedirs(debug_dir, exist_ok=True)
             
             with open(debug_path, 'w', encoding='utf-8') as f:
                 f.write(f"=== Invalid Response Debug ===")

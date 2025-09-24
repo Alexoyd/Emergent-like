@@ -843,8 +843,14 @@ async def execute_run(run_id: str, from_step: int = 0):
         #if current_step >= run.max_steps or current_step == 0:
         # Determine final status based on execution results
         if completed_successfully and steps_executed > 0:
-            await state_manager.add_log(run_id, {"type": "success", "content": f"All {steps_executed} steps completed successfully"})
-            await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+            # ✅ PRIORITÉ 1 - Vérification des fichiers générés avant de marquer comme completed
+            project_code_path = project_manager.get_code_path(run_id)
+            if not await verify_code_files_generated(project_code_path, run.stack):
+                await state_manager.add_log(run_id, {"type": "error", "content": f"Run completed but no code files were generated in {project_code_path}"})
+                await state_manager.update_run_status(run_id, RunStatus.FAILED)
+            else:
+                await state_manager.add_log(run_id, {"type": "success", "content": f"All {steps_executed} steps completed successfully with code files generated"}) 
+                await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
         elif steps_executed == 0 and from_step == 0:
             # Only planning was done, no steps executed - this shouldn't mark as completed
             await state_manager.add_log(run_id, {"type": "error", "content": "No steps were executed after planning phase"})
@@ -855,12 +861,70 @@ async def execute_run(run_id: str, from_step: int = 0):
             # Status already set to FAILED in the loop if needed
         else:
             # Reached max steps
-            await state_manager.add_log(run_id, {"type": "info", "content": f"Reached maximum steps limit ({run.max_steps})"})
-            await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+            # ✅ PRIORITÉ 1 - Vérification des fichiers même quand max steps atteint
+            project_code_path = project_manager.get_code_path(run_id)
+            if not await verify_code_files_generated(project_code_path, run.stack):
+                await state_manager.add_log(run_id, {"type": "error", "content": f"Reached maximum steps but no code files were generated in {project_code_path}"})
+                await state_manager.update_run_status(run_id, RunStatus.FAILED)
+            else:
+                await state_manager.add_log(run_id, {"type": "info", "content": f"Reached maximum steps limit ({run.max_steps}) with code files generated"})
+                await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
         
     except Exception as e:
         logging.error(f"Error executing run {run_id}: {e}")
         await state_manager.update_run_status(run_id, RunStatus.FAILED)
+
+async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
+    """
+    ✅ PRIORITÉ 1 - Vérifier que des fichiers de code ont été générés dans le dossier projects/<id>/code/
+    Retourne True si des fichiers principaux attendus selon la stack sont présents
+    """
+    try:
+        if not code_path.exists():
+            logging.warning(f"Code path does not exist: {code_path}")
+            return False
+            
+        # Définir les fichiers attendus selon la stack
+        expected_files = {
+            "laravel": ["composer.json", "app/", "routes/", "database/"],
+            "react": ["package.json", "src/", "public/"],
+            "vue": ["package.json", "src/", "public/"],
+            "python": ["main.py", "requirements.txt"],
+            "node": ["package.json", "index.js"],
+            "nodejs": ["package.json", "index.js"]
+        }
+        
+        stack_lower = stack.lower() if stack else "unknown"
+        required_files = expected_files.get(stack_lower, ["main.py"])  # Fallback to Python
+        
+        # Compter les fichiers/dossiers présents
+        existing_count = 0
+        all_items = list(code_path.iterdir())
+        
+        logging.info(f"Checking code files in {code_path} for stack '{stack}' - found {len(all_items)} items")
+        
+        for required in required_files:
+            file_path = code_path / required
+            if file_path.exists():
+                existing_count += 1
+                logging.info(f"Found expected file/dir: {required}")
+            else:
+                logging.warning(f"Missing expected file/dir: {required}")
+        
+        # Si au moins 50% des fichiers attendus sont présents, considérer comme valide
+        success_threshold = max(1, len(required_files) // 2)
+        files_generated = existing_count >= success_threshold
+        
+        if files_generated:
+            logging.info(f"Code verification PASSED: {existing_count}/{len(required_files)} expected files found")
+        else:
+            logging.error(f"Code verification FAILED: only {existing_count}/{len(required_files)} expected files found (threshold: {success_threshold})")
+            
+        return files_generated
+        
+    except Exception as e:
+        logging.error(f"Error verifying code files: {e}")
+        return False
 
 async def generate_plan(run: Run) -> str:
     """Generate execution plan using LLM"""

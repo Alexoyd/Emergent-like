@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import tempfile
 import shutil
+import time  # ✅ PRIORITÉ 4 - Ajout import time manquant
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import git
@@ -155,9 +156,12 @@ class ToolManager:
             
             # ✅ Save debug copy to /tmp/emergent_patches (exactly what will be tested/applied)
             timestamp = time.time()
-            debug_path = f"/tmp/emergent_patches/patch_{timestamp:.0f}.diff"
+            debug_dir = "/tmp/emergent_patches"
+            debug_path = f"{debug_dir}/patch_{timestamp:.0f}.diff"
             
+            # ✅ PRIORITÉ 2 - Créer automatiquement le dossier tmp/ s'il n'existe pas
             try:
+                os.makedirs(debug_dir, exist_ok=True)
                 with open(debug_path, 'w', encoding='utf-8') as f:
                     f.write(normalized_patch)
                 logger.info(f"Saved patch debug copy to {debug_path}")
