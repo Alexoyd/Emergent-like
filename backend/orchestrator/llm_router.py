@@ -474,18 +474,18 @@ class LLMRouter:
             
             # 1) Doit commencer par diff --git
             if not stripped.startswith("diff --git"):
-                logger.warning(f"Invalid coding response: doesn\'t start with \'diff --git\', starts with: \'{stripped[:50]}...\'")
+                logger.warning(f"Invalid coding response: doesn't start with 'diff --git', starts with: '{stripped[:50]}...'")
                 self._save_invalid_response(content, "missing_diff_git_header")
                 return False
             
             # 2) Vérification basique de structure unified diff
-            lines = content.split(\'\\')
+            lines = content.split('\\')
             
             has_file_headers = False
             has_hunk_header = False
             
             for line in lines:
-                if line.startswith(\'--- \') or line.startswith(\'+++ \'):
+                if line.startswith('--- ') or line.startswith('+++ '):
                     has_file_headers = True
                 elif line.startswith('@@') and '@@' in line[2:]:
                     has_hunk_header = True

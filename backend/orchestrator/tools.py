@@ -21,13 +21,12 @@ def is_valid_patch(patch_text: str) -> bool:
         logger.warning("Patch validation failed: empty patch")
         return False
     
-    #lines = patch_text.strip().split(\'\
-#\')
+    #lines = patch_text.strip().split('\#')
     lines = patch_text.strip().split("\n")
 
     # Check if patch starts with proper diff header
     if not lines[0].startswith("diff --git"):
-        logger.warning("Patch validation failed: missing \'diff --git\' header")
+        logger.warning("Patch validation failed: missing 'diff --git' header")
         return False
     
     # Check for required file headers
@@ -41,7 +40,7 @@ def is_valid_patch(patch_text: str) -> bool:
             has_new_file = True
             
     if not has_old_file or not has_new_file:
-        logger.warning("Patch validation failed: missing \'---\' or \'+++\' file headers")
+        logger.warning("Patch validation failed: missing '---' or '+++' file headers")
         return False
     
     # Check for basic patch structure (should have at least one hunk)
@@ -52,7 +51,7 @@ def is_valid_patch(patch_text: str) -> bool:
             break
             
     if not has_hunk_header:
-        logger.warning("Patch validation failed: missing hunk headers \'@@\'")
+        logger.warning("Patch validation failed: missing hunk headers '@@'")
         return False
     
     # Additional format checks
@@ -66,7 +65,7 @@ def is_valid_patch(patch_text: str) -> bool:
         if line and not line.startswith((" ", "+", "-")):
             # Allow empty lines in patches
             if line.strip():
-                logger.warning(f"Patch validation failed: invalid line format at line {i}: \'{line[:50]}...\'")
+                logger.warning(f"Patch validation failed: invalid line format at line {i}: '{line[:50]}...'")
                 return False
     
     return True
@@ -118,10 +117,10 @@ class ToolManager:
         for line in patch.splitlines():
             if line.startswith(("---", "+++")):
             # Extraire le chemin après a/ ou b/
-                prefix, path_part = line.split(\' \', 1)
-                # Supprimer le préfixe absolu jusqu\'au dossier code/ si présent
+                prefix, path_part = line.split(" ", 1)
+                # Supprimer le préfixe absolu jusqu'au dossier code/ si présent
                 if code_root in path_part:
-                    path_part = path_part.replace(code_root + \'/\', \'\')
+                     path_part = path_part.replace(code_root + "/", "")
                 normalized_lines.append(f"{prefix} {path_part}")
             else: 
                 # ✅ Ne pas modifier le contenu des hunks - juste passer la ligne telle quelle
@@ -130,7 +129,7 @@ class ToolManager:
         # 🔧 Normalisation EOL seulement (CRLF/CR -> LF)
         text = "\n".join(normalized_lines)
         text = text.replace("\r\n", "\n").replace("\r", "\n")  # CRLF/CR -> LF
-        # ✅ NE PAS ajouter de newline finale ici - c\'est fait dans apply_patch()
+        # ✅ NE PAS ajouter de newline finale ici - c'est fait dans apply_patch()
         return text
 
 
@@ -199,7 +198,7 @@ class ToolManager:
             finally:
                 # Clean up temporary file
                 try:
-                os.unlink(patch_file)
+                    os.unlink(patch_file)
                 except:
                     pass
                 
