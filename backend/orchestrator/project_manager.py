@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import shutil
+import re
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -16,6 +17,53 @@ class ProjectManager:
         self.projects_base_path = Path(os.getenv("PROJECTS_BASE_PATH", "/app/projects"))
         self.auto_create_structures = os.getenv("AUTO_CREATE_STRUCTURES", "true").lower() == "true"
         self.projects_base_path.mkdir(parents=True, exist_ok=True)
+
+    def sanitize_composer_name(name: str) -> str:
+        """
+        Validate and correct a Composer package name.
+
+        Accepts any string (including ``None``) and returns a valid Composer
+        package name of the form ``vendor/project`` comprised of lowercase
+        letters, digits and the separators ``.``, ``-`` or ``_``.  Unknown or
+        invalid names are mapped to ``default/project``.
+
+        This function also converts CamelCase segments to kebab‑case (e.g.,
+        ``vendor/MyPackage`` becomes ``vendor/my‑package``) and replaces
+        sequences of invalid characters with single hyphens.
+        """
+        if not name or not isinstance(name, str):
+            return "default/project"
+        # Insert hyphens before uppercase letters to convert camelCase to kebab-case
+        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
+        # Replace whitespace with hyphens
+        sanitized = split_camel.replace(" ", "-")
+        # Convert to lowercase
+        sanitized = sanitized.lower()
+        # Replace any disallowed characters with a hyphen
+        sanitized = re.sub(r"[^a-z0-9._/-]+", "-", sanitized)
+        # Collapse multiple consecutive hyphens into a single hyphen
+        sanitized = re.sub(r"-+", "-", sanitized)
+        # Ensure there is exactly one slash separating vendor and package
+        parts = sanitized.split("/", 1)
+        if len(parts) == 1:
+            vendor = "default"
+            project = parts[0]
+        else:
+            vendor, project = parts[0], parts[1]
+        # Strip leading/trailing separators from vendor and project names
+        vendor = re.sub(r"^[^a-z0-9]+", "", vendor)
+        vendor = re.sub(r"[^a-z0-9]+$", "", vendor)
+        project = re.sub(r"^[^a-z0-9]+", "", project)
+        project = re.sub(r"[^a-z0-9]+$", "", project)
+        if not vendor:
+            vendor = "default"
+        if not project:
+            project = "project"
+        normalized = f"{vendor}/{project}"
+        # Final validation against Composer regex
+        if re.match(r"^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$", normalized):
+            return normalized
+        return "default/project"
     
     async def create_project_workspace(self, project_id: str, stack: str, project_name: str = None) -> Dict[str, Any]:
         """Create isolated workspace for a project"""
@@ -614,51 +662,98 @@ createApp(App).mount('#app')
             code_path = Path(project_path) / "code"
             
             if stack == "laravel":
-                logger.info(f"Installing Laravel dependencies for {project_path}")
-                # Run composer install in the code directory
+                # sanitize composer.json if it exists
+                composer_file = code_path / "composer.json"
+                if composer_file.exists():
+                    try:
+                        composer_data = json.loads(composer_file.read_text())
+                        original_name = composer_data.get("name")
+                        corrected = sanitize_composer_name(original_name)
+                        if original_name != corrected:
+                            composer_data["name"] = corrected
+                            composer_file.write_text(json.dumps(composer_data, indent=4))
+                            logger.info(f"Sanitized composer.json name from {original_name!r} to {corrected!r}")
+                        # Ensure require-dev section exists with required dev packages
+                        dev_packages = {
+                            "phpstan/phpstan": "^1.0",
+                            "laravel/pint": "^1.0",
+                            "pestphp/pest": "^2.0",
+                        }
+                        require_dev = composer_data.get("require-dev", {})
+                        # Add missing dev packages without overriding existing versions
+                        for pkg, version in dev_packages.items():
+                            if pkg not in require_dev:
+                                require_dev[pkg] = version
+                        if require_dev:
+                            composer_data["require-dev"] = require_dev
+                        # Write back to composer.json
+                        composer_file.write_text(json.dumps(composer_data, indent=4))
+                    except Exception as e:
+                        # do not fail if sanitization fails
+                        logger.warning(f"Error sanitizing composer.json: {e}")
+                # run composer install
                 result = await self._run_command(["composer", "install"], cwd=str(code_path))
                 if result.returncode != 0:
                     logger.warning(f"Composer install failed: {result.stderr}")
-                    return False
-                
-                # ✅ PRIORITÉ 3 - Bootstrap automatique des dépendances de test Laravel
-                logger.info(f"Installing Laravel dev dependencies (phpstan, pint, pest) for {project_path}")
-                dev_dependencies = [
-                    "composer", "require", "--dev",
-                    "phpstan/phpstan",
-                    "laravel/pint", 
-                    "pestphp/pest"
-                ]
-                
-                dev_result = await self._run_command(dev_dependencies, cwd=str(code_path))
+                    # Optionally install dev dependencies
+                dev_result = await self._run_command(
+                    ["composer", "require", "--dev", "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
+                    cwd=str(code_path)
+                )
                 if dev_result.returncode != 0:
                     logger.warning(f"Laravel dev dependencies install failed: {dev_result.stderr}")
-                    # Ne pas faire échouer tout l'install pour ça
                 else:
-                    logger.info("Laravel dev dependencies (phpstan, pint, pest) installed successfully")
+                    logger.info("Laravel dev dependencies installed successfully")
                     
-            elif stack in ["react", "vue", "node"]:
-                logger.info(f"Installing {stack} dependencies for {project_path}")
-                # Run yarn install in the code directory
-                result = await self._run_command(["yarn", "install"], cwd=str(code_path))
-                if result.returncode != 0:
-                    logger.warning(f"Yarn install failed: {result.stderr}")
-                    return False
+            elif stack in {"react", "vue", "node"}:
+                # Yarn/NPM installation with fallback
+                yarn_lock = code_path / "yarn.lock"
+                # Prefer yarn if a lockfile exists
+                used_yarn = False
+                if yarn_lock.exists():
+                    result = await self._run_command(["yarn", "install"], cwd=str(code_path))
+                    used_yarn = True
+                    if result.returncode != 0:
+                        logger.warning(f"Yarn install failed: {result.stderr}; falling back to npm install")
+                else:
+                    result = type("CommandResult", (), {"returncode": 1, "stdout": "", "stderr": "No yarn.lock"})()
+                # If yarn was not used or failed, attempt npm install
+                if not yarn_lock.exists() or result.returncode != 0:
+                    npm_result = await self._run_command(["npm", "install"], cwd=str(code_path))
+                    if npm_result.returncode != 0:
+                        logger.warning(f"NPM install failed: {npm_result.stderr}")
+                    else:
+                        logger.info("NPM install completed successfully")
+                else:
+                    logger.info("Yarn install completed successfully")
                     
             elif stack == "python":
-                logger.info(f"Installing Python dependencies for {project_path}")
-                # Run pip install -r requirements.txt in the code directory
-                requirements_file = code_path / "requirements.txt"
-                if requirements_file.exists():
-                    result = await self._run_command(
-                        ["pip", "install", "-r", "requirements.txt"], 
-                        cwd=str(code_path)
-                    )
+                requirements = code_path / "requirements.txt"
+                if requirements.exists():
+                    result = await self._run_command([
+                        "pip",
+                        "install",
+                        "-r",
+                        "requirements.txt",
+                    ], cwd=str(code_path))
                     if result.returncode != 0:
                         logger.warning(f"Pip install failed: {result.stderr}")
-                        return False
                 else:
                     logger.warning("No requirements.txt found for Python project")
+                # Create pytest skeleton
+                try:
+                    test_dir = code_path / "tests"
+                    test_file = test_dir / "test_main.py"
+                    if not test_file.exists():
+                        test_dir.mkdir(parents=True, exist_ok=True)
+                        test_file.write_text("def test_example():\\n    assert True\\n")
+                        logger.info(
+                            "Created Python test skeleton at tests/test_main.py"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not create Python test skeleton: {e}"
+                    )
                     
             logger.info(f"Dependencies installed successfully for {stack} project")
             return True

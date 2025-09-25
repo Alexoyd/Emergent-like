@@ -320,7 +320,9 @@ Patch lines: {len(patch_lines)}
             "eslint": [["npm", "run", "lint"]],
             "playwright": [["npx", "playwright", "test"]],
             "composer": [["composer", "test"]],
-            "npm": [["npm", "test"]]
+            "npm": [["npm", "test"]],
+            "vue": [["npx", "vitest", "run"], ["npm", "test"]],
+            "python": [["pytest"]],
         }
         
         return commands_map.get(test_type, [])

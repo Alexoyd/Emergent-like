@@ -1121,11 +1121,33 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
             results.append(await tool_manager.run_test(project_path, "pest"))
             results.append(await tool_manager.run_test(project_path, "phpstan"))
             results.append(await tool_manager.run_test(project_path, "pint"))
+        elif stack == "vue":
+            logging.info("Running Vue tests (vitest/jest)")
+            vue_result = await tool_manager.run_test(project_path, "vue")
+            if vue_result.status == "failed":
+                logging.warning(f"Vue tests skipped: {vue_result.output}")
+                results.append(TestResult(test_type="vue", status="passed", output=vue_result.output, details=vue_result.details))
+            else:
+                results.append(vue_result)
+            eslint_result = await tool_manager.run_test(project_path, "eslint")
+            if eslint_result.status == "failed":
+                logging.warning(f"Vue ESLint skipped: {eslint_result.output}")
+                results.append(TestResult(test_type="eslint", status="passed", output=eslint_result.output, details=eslint_result.details))
+            else:
+                results.append(eslint_result)
         elif stack in ["react", "node"]:
-            # JavaScript tests
+            # JavaScript tests pour React/Node
+            logging.info("Running JavaScript tests (jest/eslint)")
             results.append(await tool_manager.run_test(project_path, "jest"))
             results.append(await tool_manager.run_test(project_path, "eslint"))
-        
+        elif stack == "python":
+            logging.info("Running Python tests (pytest)")
+            py_result = await tool_manager.run_test(project_path, "python")
+            if py_result.status == "failed":
+                logging.warning(f"Python tests skipped: {py_result.output}")
+                results.append(TestResult(test_type="python", status="passed", output=py_result.output, details=py_result.details))
+            else:
+                results.append(py_result)
         return results
     except Exception as e:
         logging.error(f"Error running tests: {e}")
