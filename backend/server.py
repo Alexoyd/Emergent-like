@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Literal
 import uuid
 from datetime import datetime, timezone
+import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 import subprocess
@@ -33,6 +34,8 @@ from backend.orchestrator.agents import PlannerAgent, DeveloperAgent, ReviewerAg
 from backend.orchestrator.agents.planner import ProjectContext
 from backend.orchestrator.agents.reviewer import TestResult as ReviewerTestResult, ReviewDecision
 from backend.orchestrator.plan_parser import Step as PlanStep
+from backend.orchestrator.utils import json_utils
+from backend.orchestrator.utils import bson_utils
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -61,6 +64,31 @@ app = FastAPI(title="AI Agent Orchestrator", version="1.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+def json_default(o):
+    if isinstance(o, Enum):
+        return o.value
+    if dataclasses.is_dataclass(o):
+        return dataclasses.asdict(o)
+    if isinstance(o, Path):
+        return str(o)
+    # fallback raisonnable
+    return str(o)
+
+# Construire un dict du step (selon ton type)
+if hasattr(step, "to_dict"):
+    payload = step.to_dict()
+elif hasattr(step, "dict"):
+    payload = step.dict()
+else:
+    payload = dataclasses.asdict(step)  # dataclass
+
+# Upsert + $set + BSON-safe
+await db.steps.update_one(
+    {"id": step.id},
+    {"$set": bson_utils.bson_safe(payload)},
+    upsert=True,
+)
 
 # Models
 class RunStatus(str, Enum):
@@ -182,7 +210,7 @@ async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
         run.project_path = project_workspace["code_path"]
         
         # Save to database
-        await db.runs.insert_one(run.dict())
+        await db.runs.insert_one(bson_utils.bson_safe(run.dict()))
         
         # Start orchestration in background
         background_tasks.add_task(execute_run, run.id)
@@ -312,11 +340,11 @@ async def stream_run_logs(run_id: str):
                 if len(run.logs) > last_log_count:
                     new_logs = run.logs[last_log_count:]
                     for log in new_logs:
-                        yield f"data: {json.dumps(log)}\n\n"
+                        yield f"data: {json_utils.dumps(log)}\n\n"
                     last_log_count = len(run.logs)
                 
                 # Send status update
-                yield f"data: {json.dumps({'type': 'status', 'status': run.status, 'current_step': run.current_step})}\n\n"
+                yield f"data: {json_utils.dumps({'type': 'status', 'status': run.status, 'current_step': run.current_step})}\n\n"
                 
                 # Break if run is completed
                 if run.status in [RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED]:
@@ -1014,17 +1042,17 @@ async def execute_run(run_id: str, from_step: int = 0):
             })
             
             try:
-                plan_result = await planner_agent.generate_plan(run.goal, project_context)
+                plan_result = await planner_agent.generate_plan(run.goal, project_context, run)
                 parsed_steps = plan_result.steps
                 
                 # Save plan and agent conversation
                 await db.runs.update_one(
                     {"id": run_id},
-                    {"$set": {
+                    {"$set": bson_utils.bson_safe({
                         "plan": plan_result.plan_text,
-                        "parsed_plan": [step.__dict__ for step in parsed_steps],
+                        "parsed_plan": plan_result.steps,
                         "plan_context": plan_result.context
-                    }}
+                    })}
                 )
                 
                 await _save_agent_conversation(run_id, "planner", "output", {
@@ -1527,7 +1555,7 @@ async def execute_step(run_id: str, step_number: int) -> Step:
         
         # Update step to running
         step.status = StepStatus.RUNNING
-        await db.steps.insert_one(step.dict())
+        await db.steps.insert_one(bson_utils.bson_safe(step.dict()))
         
         # Generate step prompt
         context = await rag_system.get_relevant_context(run.goal) if run.project_path else ""

@@ -3,6 +3,10 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from enum import Enum
+import dataclasses
+from pathlib import Path
+from backend.orchestrator.utils import bson_utils
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +27,15 @@ class StepStatus(str, Enum):
 class StateManager:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
-    
+
     async def create_run(self, run_data: Dict[str, Any]) -> str:
         """Create a new run record"""
         try:
             run_data["created_at"] = datetime.now(timezone.utc)
             run_data["updated_at"] = datetime.now(timezone.utc)
             
-            result = await self.db.runs.insert_one(run_data)
-            return str(result.inserted_id)
+            result = await self.db.runs.insert_one(bson_utils.bson_safe(run_data))
+            return run_data.get("id", str(result.inserted_id))
             
         except Exception as e:
             logger.error(f"Error creating run: {e}")
@@ -48,14 +52,13 @@ class StateManager:
     async def update_run_status(self, run_id: str, status: RunStatus) -> bool:
         """Update run status"""
         try:
+            update = {
+            "status": status.value,                 # ✅ Enum -> string
+            "updated_at": datetime.now(timezone.utc)
+            }
             result = await self.db.runs.update_one(
                 {"id": run_id},
-                {
-                    "$set": {
-                        "status": status,
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+                {"$set": bson_utils.bson_safe(update)}
             )
             return result.modified_count > 0
             
@@ -66,14 +69,13 @@ class StateManager:
     async def update_current_step(self, run_id: str, step_number: int) -> bool:
         """Update current step number"""
         try:
+            update = {
+                "current_step": step_number,
+                "updated_at": datetime.now(timezone.utc),
+            }
             result = await self.db.runs.update_one(
                 {"id": run_id},
-                {
-                    "$set": {
-                        "current_step": step_number,
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+                {"$set": bson_utils.bson_safe(update)}
             )
             return result.modified_count > 0
             
@@ -84,12 +86,13 @@ class StateManager:
     async def add_cost(self, run_id: str, cost_eur: float) -> bool:
         """Add cost to run total"""
         try:
+            update = {
+                "$inc": {"cost_used_eur": cost_eur},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            }
             result = await self.db.runs.update_one(
                 {"id": run_id},
-                {
-                    "$inc": {"cost_used_eur": cost_eur},
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
-                }
+                bson_utils.bson_safe(update)
             )
             return result.modified_count > 0
             
@@ -101,13 +104,13 @@ class StateManager:
         """Add log entry to run"""
         try:
             log_entry["timestamp"] = datetime.now(timezone.utc)
-            
+            update = {
+                "$push": {"logs": log_entry},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            }
             result = await self.db.runs.update_one(
                 {"id": run_id},
-                {
-                    "$push": {"logs": log_entry},
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
-                }
+                 bson_utils.bson_safe(update)
             )
             return result.modified_count > 0
             
@@ -121,7 +124,7 @@ class StateManager:
             step_data["created_at"] = datetime.now(timezone.utc)
             step_data["updated_at"] = datetime.now(timezone.utc)
             
-            result = await self.db.steps.insert_one(step_data)
+            result = await self.db.steps.insert_one(bson_utils.bson_safe(step_data))
             return str(result.inserted_id)
             
         except Exception as e:
@@ -131,14 +134,13 @@ class StateManager:
     async def update_step_status(self, step_id: str, status: StepStatus) -> bool:
         """Update step status"""
         try:
+            update = {
+                "status": status.value,
+                "updated_at": datetime.now(timezone.utc),
+            }
             result = await self.db.steps.update_one(
                 {"id": step_id},
-                {
-                    "$set": {
-                        "status": status,
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+                {"$set": bson_utils.bson_safe(update)}
             )
             return result.modified_count > 0
             
@@ -153,7 +155,7 @@ class StateManager:
             
             result = await self.db.steps.update_one(
                 {"id": step_id},
-                {"$set": result_data}
+                {"$set": bson_utils.bson_safe(result_data)}
             )
             return result.modified_count > 0
             
@@ -183,25 +185,21 @@ class StateManager:
         try:
             # Update run status
             run_result = await self.db.runs.update_one(
-                {"id": run_id, "status": {"$in": ["pending", "running"]}},
-                {
-                    "$set": {
-                        "status": RunStatus.CANCELLED,
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+                {"id": run_id, "status": {"$in": [RunStatus.PENDING.value, RunStatus.RUNNING.value]}},
+                {"$set": bson_utils.bson_safe({
+                    "status": RunStatus.CANCELLED.value,
+                    "updated_at": datetime.now(timezone.utc),
+                })}
             )
             
             # Cancel any pending/running steps
             step_result = await self.db.steps.update_many(
-                {"run_id": run_id, "status": {"$in": ["pending", "running"]}},
-                {
-                    "$set": {
-                        "status": StepStatus.FAILED,
-                        "error": "Run cancelled",
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                }
+                {"run_id": run_id, "status": {"$in": [StepStatus.PENDING.value, StepStatus.RUNNING.value]}},
+                {"$set": bson_utils.bson_safe({
+                    "status": StepStatus.FAILED.value,
+                    "error": "Run cancelled",
+                    "updated_at": datetime.now(timezone.utc),
+                })}
             )
             
             return run_result.modified_count > 0
@@ -213,15 +211,16 @@ class StateManager:
     async def retry_step(self, run_id: str, step_number: int) -> bool:
         """Mark step for retry"""
         try:
+            update = {
+                "$set": {
+                    "status": StepStatus.RETRYING.value,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$inc": {"retries": 1},
+            }
             result = await self.db.steps.update_one(
                 {"run_id": run_id, "step_number": step_number},
-                {
-                    "$set": {
-                        "status": StepStatus.RETRYING,
-                        "updated_at": datetime.now(timezone.utc)
-                    },
-                    "$inc": {"retries": 1}
-                }
+                bson_utils.bson_safe(update)
             )
             return result.modified_count > 0
             
@@ -332,7 +331,7 @@ class StateManager:
         try:
             cutoff_date = datetime.now(timezone.utc).replace(
                 hour=0, minute=0, second=0, microsecond=0
-            ) - timezone.timedelta(days=days_old)
+            ) - timedelta(days=days_old)
             
             # Delete old completed runs
             run_result = await self.db.runs.delete_many({

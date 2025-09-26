@@ -12,6 +12,7 @@ import tempfile
 
 from .stacks.registry import StackFactory
 from . import stacks  # triggers default handler registration
+from backend.orchestrator.utils import json_utils
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,21 @@ class ProjectManager:
             for name, path in directories.items():
                 path.mkdir(parents=True, exist_ok=True)
             
+            # Configure file handler specific to this project
+            project_logger = logging.getLogger(f"project.{project_id}")
+            project_logger.setLevel(logging.INFO)
+            
+            log_file = directories["logs"] / "run.log"
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+            file_handler.setFormatter(formatter)
+
+            # To avoid duplicate logs, check before adding
+            if not any(isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file) 
+                    for h in logger.handlers):
+                project_logger.addHandler(file_handler)
+            
             # Create project metadata
             metadata = {
                 "id": project_id,
@@ -63,7 +79,7 @@ class ProjectManager:
             # Save metadata
             metadata_file = project_path / "project.json"
             with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                json_utils.dump(metadata, f, indent=2)
             
             # Auto-create project structure if enabled
             if self.auto_create_structures:
@@ -115,7 +131,7 @@ class ProjectManager:
             return None
         try:
             return json.loads(meta.read_text())
-                    except Exception as e:
+        except Exception as e:
             logger.error(f"Error reading project metadata: {e}")
             return None
 
@@ -178,7 +194,7 @@ class ProjectManager:
                 (code_path / "database" / "migrations").mkdir(exist_ok=True)
                 
                 # Create basic files
-                (code_path / "composer.json").write_text(json.dumps({
+                (code_path / "composer.json").write_text(json_utils.dumps({
                     "name": f"laravel/{project_name.lower().replace(' ', '-')}",
                     "description": f"Laravel project: {project_name}",
                     "require": {
@@ -194,7 +210,7 @@ class ProjectManager:
                 (code_path / "public").mkdir(exist_ok=True)
                 
                 # Create basic files
-                (code_path / "package.json").write_text(json.dumps({
+                (code_path / "package.json").write_text(json_utils.dumps({
                     "name": project_name.lower().replace(' ', '-'),
                     "version": "1.0.0",
                     "dependencies": {
@@ -210,7 +226,7 @@ class ProjectManager:
                 (code_path / "public").mkdir(exist_ok=True)
                 
                 # Create basic files
-                (code_path / "package.json").write_text(json.dumps({
+                (code_path / "package.json").write_text(json_utils.dumps({
                     "name": project_name.lower().replace(' ', '-'),
                     "version": "1.0.0",
                     "dependencies": {
@@ -233,7 +249,7 @@ class ProjectManager:
                 (code_path / "tests").mkdir(exist_ok=True)
                 
                 # Create basic files
-                (code_path / "package.json").write_text(json.dumps({
+                (code_path / "package.json").write_text(json_utils.dumps({
                     "name": project_name.lower().replace(' ', '-'),
                     "version": "1.0.0",
                     "main": "src/index.js",

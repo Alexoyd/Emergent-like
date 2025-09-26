@@ -54,7 +54,7 @@ class PlannerAgent:
         self.rag_system = rag_system
         self.plan_parser = PlanParser()
 
-    async def generate_plan(self, task: str, project_context: ProjectContext) -> PlanGenerationResult:
+    async def generate_plan(self, task: str, project_context: ProjectContext,run: Any) -> PlanGenerationResult:
         """Generate a plan for the given task and project context.
 
         This method retrieves relevant context via the RAG system,
@@ -103,33 +103,31 @@ class PlannerAgent:
             )
         prompt_parts.append(
             "Please produce a numbered plan where each step begins with the step number followed by a description.\n"
-            "Include additional metadata when available, such as files involved, commands to run, durations and dependencies."
-        )
+            "Include additional metadata when available, such as files involved, commands to run, durations and dependencies.")
         prompt_parts.append(f"Task: {task.strip()}")
-        prompt_parts.append(
-            "Return the plan in plain text. Do not wrap it in JSON or any other format."
-        )
+        prompt_parts.append("Return the plan in plain text. Do not wrap it in JSON or any other format.")
         prompt = "\n\n".join(prompt_parts)
 
         # Construct a conversation payload for the LLM router.  The router
         # expects an array of message dicts with roles and content.  We
         # provide a single user message containing the prompt.  The router
         # internally handles escalations between model tiers.
-        messages = [
-            {"role": "user", "content": prompt},
-        ]
+        #messages = [
+            #{"role": "user", "content": prompt},
+        #]
 
         # Request a plan from the LLM router.  The router may be
         # asynchronous or synchronous depending on implementation.  We
         # attempt to await it if it is a coroutine.
         try:
-            plan_text: str
-            result = self.llm_router.generate(messages)
-            if hasattr(result, "__await__"):
-                # If the result is awaitable, await it to get the final text
-                plan_text = await result
-            else:
-                plan_text = result  # type: ignore[assignment]
+            response = await self.llm_router.generate(
+                prompt=prompt,
+                task_type="planning",
+                current_cost=run.cost_used_eur,    # ✅ vrai coût
+                budget_limit=run.daily_budget_eur, # ✅ vrai budget
+                run_id=run.id,
+            )
+            plan_text: str = response.content
         except Exception as e:
             raise PlanParsingError(f"LLM generation failed: {e}") from e
 

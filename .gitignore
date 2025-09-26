@@ -92,3 +92,6 @@ android-sdk/ -e
 backend/orchestrator/*.bak
 backend/.env
 backend/.env
+
+# Generated runs
+projects/

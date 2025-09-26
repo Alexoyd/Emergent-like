@@ -81,6 +81,7 @@ class DeveloperAgent:
         self,
         step: Step,
         project_context: ProjectContext,
+        run: Any,  # ✅ ajout du run pour le suivi coût/budget
         rag_context: Optional[List[str]] = None,
     ) -> PatchGenerationResult:
         """
@@ -130,15 +131,17 @@ class DeveloperAgent:
 
             # 3) LLM call
             try:
-                gen = self.llm_router.generate(messages)
-                if hasattr(gen, "__await__"):
-                    llm_text = await gen
-                else:
-                    llm_text = gen  # type: ignore
+                response = await self.llm_router.generate(
+                    prompt=prompt,
+                    task_type="coding",
+                    current_cost=run.cost_used_eur,
+                    budget_limit=run.daily_budget_eur,
+                    run_id=run.id,
+                )
+                llm_text: str = response.content
             except Exception as e:
                 last_error = f"LLM error: {e}"
                 self.log.warning(last_error)
-                # proceed to next attempt
                 continue
 
             # Extract the patch between markers

@@ -7,6 +7,7 @@ import re
 
 from .base_handler import StackHandler
 from .registry import StackRegistry
+from backend.orchestrator.utils import json_utils
 
 class LaravelHandler(StackHandler):
     name = "laravel"
@@ -81,7 +82,7 @@ class LaravelHandler(StackHandler):
                 corrected = self.sanitize_composer_name(original_name)
                 if original_name != corrected:
                     composer_data["name"] = corrected
-                    composer_file.write_text(json.dumps(composer_data, indent=2))
+                    composer_file.write_text(json_utils.dumps(composer_data, indent=2))
                     if self.logger:
                         self.logger.info(f"Sanitized composer name: {original_name!r} -> {corrected!r}")
             except Exception as e:

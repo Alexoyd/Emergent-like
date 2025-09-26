@@ -338,7 +338,7 @@ class PlanParser:
         if not text:
             return files
         # Split by whitespace and commas to find potential file names
-        tokens = re.split(r"[\\s,]+", text)
+        tokens = re.split(r"[\s,]+", text)
         for token in tokens:
             token = token.strip()
             # Heuristic: treat token as file if it contains a slash or a dot and has an extension like .php/.js/.py/.json etc.
@@ -348,6 +348,6 @@ class PlanParser:
                 # Remove trailing punctuation
                 token_clean = token.strip().strip("`.,;:()[]{}<>")
                 # Ensure token has at least one dot or slash and valid filename characters
-                if re.match(r"[A-Za-z0-9_.\\-/]+\\.[A-Za-z0-9]+", token_clean):
+                if re.match(r"[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]+", token_clean):
                     files.append(token_clean)
         return files

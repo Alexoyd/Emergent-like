@@ -249,7 +249,7 @@ Respond in JSON format:
         
         try:
             messages = [{"role": "user", "content": prompt}]
-            response = await self._call_llm(messages)
+            response = await self._call_llm(run, messages)
             
             # Parse JSON response
             import json
@@ -332,7 +332,7 @@ Respond in JSON format:
         
         try:
             messages = [{"role": "user", "content": prompt}]
-            response = await self._call_llm(messages)
+            response = await self._call_llm(run, messages)
             
             # Parse JSON response
             import json
@@ -353,14 +353,19 @@ Respond in JSON format:
                 "suggestions": ["Review test failures", "Check syntax and logic", "Ensure proper imports"]
             }
     
-    async def _call_llm(self, messages: List[Dict[str, str]]) -> str:
+    async def _call_llm(self, run: Any, messages: List[Dict[str, str]], task_type: str = "review") -> str:
         """Helper method to call LLM with error handling."""
         try:
-            result = self.llm_router.generate(messages)
-            if hasattr(result, "__await__"):
-                return await result
-            else:
-                return result
+            prompt = "\n".join(m["content"] for m in messages)
+
+            response = await self.llm_router.generate(
+                prompt=prompt,
+                task_type=task_type,
+                current_cost=run.cost_used_eur,
+                budget_limit=run.daily_budget_eur,
+                run_id=run.id,
+            )
+            return response.content  # ✅ on renvoie bien du texte
         except Exception as e:
             self.log.error(f"LLM call failed: {e}")
             raise
