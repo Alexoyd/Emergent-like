@@ -28,6 +28,10 @@ from backend.orchestrator.rag_system import RAGSystem
 from backend.orchestrator.project_manager import ProjectManager
 from backend.orchestrator.github_integration import GitHubIntegration
 from backend.orchestrator.plan_parser import parse_plan
+from backend.orchestrator.agents import PlannerAgent, DeveloperAgent, ReviewerAgent
+from backend.orchestrator.agents.planner import ProjectContext
+from backend.orchestrator.agents.reviewer import TestResult as ReviewerTestResult, ReviewDecision
+from backend.orchestrator.plan_parser import Step
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -44,6 +48,11 @@ state_manager = StateManager(db)
 rag_system = RAGSystem()
 project_manager = ProjectManager()
 github_integration = GitHubIntegration()
+
+# Initialize agents
+planner_agent = PlannerAgent(llm_router, rag_system)
+developer_agent = DeveloperAgent(llm_router, rag_system, tool_manager)
+reviewer_agent = ReviewerAgent(llm_router)
 
 # Create the main app without a prefix
 app = FastAPI(title="AI Agent Orchestrator", version="1.0.0")
@@ -753,125 +762,303 @@ async def get_global_logs(limit: int = 100, project_id: str = None):
         logging.error(f"Error getting global logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# User validation and interaction endpoints
+
+@api_router.get("/runs/{run_id}/agent-conversations")
+async def get_agent_conversations(run_id: str):
+    """Get agent conversations for debugging and traceability"""
+    try:
+        run_data = await db.runs.find_one({"id": run_id})
+        if not run_data:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        conversations = run_data.get("agent_conversations", [])
+        return {"conversations": conversations}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting agent conversations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/runs/{run_id}/validate-plan")
+async def validate_plan(run_id: str, validation: dict):
+    """User validation endpoint for plans"""
+    try:
+        approved = validation.get("approved", False)
+        feedback = validation.get("feedback", "")
+        
+        if approved:
+            await state_manager.add_log(run_id, {
+                "type": "info",
+                "content": f"Plan approved by user: {feedback}"
+            })
+            # Continue execution
+            # TODO: Resume execution after user approval
+        else:
+            await state_manager.add_log(run_id, {
+                "type": "warning", 
+                "content": f"Plan rejected by user: {feedback}"
+            })
+            # TODO: Request plan revision
+        
+        return {"message": "Validation received", "approved": approved}
+        
+    except Exception as e:
+        logging.error(f"Error processing plan validation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/runs/{run_id}/validate-step")
+async def validate_step(run_id: str, step_number: int, validation: dict):
+    """User validation endpoint for individual steps"""
+    try:
+        approved = validation.get("approved", False)
+        feedback = validation.get("feedback", "")
+        
+        if approved:
+            await state_manager.add_log(run_id, {
+                "type": "info",
+                "content": f"Step {step_number} approved by user: {feedback}"
+            })
+        else:
+            await state_manager.add_log(run_id, {
+                "type": "warning",
+                "content": f"Step {step_number} rejected by user: {feedback}"
+            })
+        
+        return {"message": "Step validation received", "approved": approved}
+        
+    except Exception as e:
+        logging.error(f"Error processing step validation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/runs/{run_id}/interrupt")
+async def interrupt_run(run_id: str, reason: str = "User requested"):
+    """Interrupt a running execution gracefully"""
+    try:
+        await state_manager.add_log(run_id, {
+            "type": "warning",
+            "content": f"Execution interrupted: {reason}"
+        })
+        
+        # Update run status to cancelled
+        await state_manager.update_run_status(run_id, RunStatus.CANCELLED)
+        
+        return {"message": "Run interrupted successfully"}
+        
+    except Exception as e:
+        logging.error(f"Error interrupting run: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/runs/{run_id}/execution-context")
+async def get_execution_context(run_id: str):
+    """Get current execution context and status"""
+    try:
+        run_data = await db.runs.find_one({"id": run_id})
+        if not run_data:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        # Get latest logs to determine current phase
+        logs = run_data.get("logs", [])
+        latest_logs = logs[-10:] if logs else []
+        
+        # Determine current phase from logs
+        current_phase = "unknown"
+        for log in reversed(latest_logs):
+            content = log.get("content", "")
+            if "Phase 1:" in content:
+                current_phase = "planning"
+                break
+            elif "Phase 2:" in content:
+                current_phase = "execution"
+                break
+            elif "Phase 3:" in content or "completed" in content.lower():
+                current_phase = "finalization"
+                break
+        
+        return {
+            "run_id": run_id,
+            "status": run_data.get("status"),
+            "current_step": run_data.get("current_step", 0),
+            "current_phase": current_phase,
+            "plan_revision_count": len([log for log in logs if "plan revision" in log.get("content", "").lower()]),
+            "agent_conversations_count": len(run_data.get("agent_conversations", [])),
+            "latest_logs": latest_logs
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting execution context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Core orchestration logic
 
 async def execute_run(run_id: str, from_step: int = 0):
-    """Execute a run with AI orchestration"""
+    """
+    Execute a run with complete iterative cycle using AI agents.
+    
+    Architecture:
+    1. PlannerAgent generates initial plan
+    2. For each step:
+       - DeveloperAgent generates patch
+       - Apply patch via tool_manager
+       - Run tests
+       - ReviewerAgent evaluates results
+       - If failure: feedback to Developer (max 3 attempts)
+       - If repeated failures: return to Planner for plan revision
+    3. User validation points
+    4. Save agent conversations in StateManager
+    5. Handle timeouts and interruptions
+    """
+    execution_context = {
+        "run_id": run_id,
+        "from_step": from_step,
+        "start_time": datetime.now(timezone.utc),
+        "timeout_seconds": 3600,  # 1 hour timeout
+        "user_validation_required": False,
+        "plan_revision_count": 0,
+        "max_plan_revisions": 2
+    }
+    
     try:
         # Get run details
         run_data = await db.runs.find_one({"id": run_id})
         if not run_data:
+            await state_manager.add_log(run_id, {"type": "error", "content": "Run not found"})
             return
         
         run = Run(**run_data)
         
         # Update status to running
         await state_manager.update_run_status(run_id, RunStatus.RUNNING)
+        await state_manager.add_log(run_id, {"type": "info", "content": "Starting iterative execution cycle"})
         
         # Initialize RAG system with project context
         if run.project_path:
             await rag_system.index_project(run.project_path)
         
-        # Generate initial plan
+        # Phase 1: Planning with PlannerAgent
+        parsed_steps = []
         if from_step == 0:
-            plan = await generate_plan(run)
-            await state_manager.add_log(run_id, {"step": "plan", "status": "succeeded", "output": plan})
-
-            # 🆕 Parse du plan et enregistrement dans la base
-            parsed_steps = parse_plan(plan)
-            await db.runs.update_one(
-                {"id": run_id},
-                {"$set": {"plan": plan, "parsed_plan": parsed_steps}}
+            await state_manager.add_log(run_id, {"type": "info", "content": "Phase 1: Generating plan with PlannerAgent"})
+            
+            project_context = ProjectContext(
+                code_path=run.project_path,
+                metadata={
+                    "stack": run.stack,
+                    "project_path": run.project_path,
+                    "goal": run.goal
+                }
             )
+            
+            # Save agent conversation
+            await _save_agent_conversation(run_id, "planner", "input", {
+                "task": run.goal,
+                "context": project_context.__dict__
+            })
+            
+            try:
+                plan_result = await planner_agent.generate_plan(run.goal, project_context)
+                parsed_steps = plan_result.steps
+                
+                # Save plan and agent conversation
+                await db.runs.update_one(
+                    {"id": run_id},
+                    {"$set": {
+                        "plan": plan_result.plan_text,
+                        "parsed_plan": [step.__dict__ for step in parsed_steps],
+                        "plan_context": plan_result.context
+                    }}
+                )
+                
+                await _save_agent_conversation(run_id, "planner", "output", {
+                    "plan_text": plan_result.plan_text,
+                    "steps_count": len(parsed_steps),
+                    "context_used": len(plan_result.context)
+                })
+                
+                await state_manager.add_log(run_id, {
+                    "type": "success", 
+                    "content": f"Plan generated successfully with {len(parsed_steps)} steps"
+                })
+                
+                # User validation point for plan
+                if execution_context["user_validation_required"]:
+                    await _request_user_validation(run_id, "plan", plan_result.plan_text)
+                    
+            except Exception as e:
+                await state_manager.add_log(run_id, {"type": "error", "content": f"Planning failed: {str(e)}"})
+                await state_manager.update_run_status(run_id, RunStatus.FAILED)
+                return
+        else:
+            # Resume from existing plan
+            run_data = await db.runs.find_one({"id": run_id})
+            if run_data and "parsed_plan" in run_data:
+                parsed_steps = [Step(**step_data) for step_data in run_data["parsed_plan"]]
         
-        # Execute steps
-        current_step = from_step
+        # Phase 2: Iterative execution cycle
+        await state_manager.add_log(run_id, {"type": "info", "content": "Phase 2: Starting iterative execution cycle"})
+        
+        current_step_index = from_step
         steps_executed = 0
         completed_successfully = True
         
-        await state_manager.add_log(run_id, {"type": "info", "content": f"Starting execution from step {current_step}"})
-        
-        while current_step < run.max_steps:
-            try:
-                # Check if run was cancelled
-                run_data = await db.runs.find_one({"id": run_id})
-                if not run_data or Run(**run_data).status == RunStatus.CANCELLED:
-                    await state_manager.add_log(run_id, {"type": "warning", "content": "Run was cancelled"})
-                    completed_successfully = False
-                    break
-                
-                await state_manager.add_log(run_id, {"type": "info", "content": f"Executing step {current_step + 1}/{run.max_steps}"})
-
-                # Execute step
-                step_result = await execute_step(run_id, current_step)
+        while current_step_index < len(parsed_steps) and current_step_index < run.max_steps:
+            # Check for timeout
+            if _is_execution_timeout(execution_context):
+                await state_manager.add_log(run_id, {"type": "warning", "content": "Execution timeout reached"})
+                completed_successfully = False
+                break
+            
+            # Check if run was cancelled
+            run_data = await db.runs.find_one({"id": run_id})
+            if not run_data or Run(**run_data).status == RunStatus.CANCELLED:
+                await state_manager.add_log(run_id, {"type": "warning", "content": "Run was cancelled"})
+                completed_successfully = False
+                break
+            
+            current_step = parsed_steps[current_step_index]
+            await state_manager.add_log(run_id, {
+                "type": "info", 
+                "content": f"Executing step {current_step_index + 1}/{len(parsed_steps)}: {current_step.description}"
+            })
+            
+            # Execute step with iterative cycle
+            step_success = await _execute_step_with_agents(
+                run_id, run, current_step, current_step_index, execution_context
+            )
+            
+            if step_success:
+                await state_manager.add_log(run_id, {
+                    "type": "success", 
+                    "content": f"Step {current_step_index + 1} completed successfully"
+                })
+                current_step_index += 1
                 steps_executed += 1
-
-                # Check if step failed and needs retry
-                if not step_result.tests_passed and step_result.retries < step_result.max_retries:
-                    # Retry with higher model
-                    await state_manager.add_log(run_id, {"type": "warning", "content": f"Step {current_step + 1} failed, retrying with escalation (attempt {step_result.retries + 1})"})
-                    await retry_step_with_escalation(run_id, current_step, step_result.retries + 1)
-                    continue
-                elif not step_result.tests_passed:
-                    # Max retries reached, fail the run
-                    await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed after {step_result.max_retries} retries"})
-                    await state_manager.update_run_status(run_id, RunStatus.FAILED)
-                    completed_successfully = False
-                    break
-                
-                await state_manager.add_log(run_id, {"type": "success", "content": f"Step {current_step + 1} completed successfully"})
-                current_step += 1
-                # Update current step in database for progress tracking
-                await state_manager.update_current_step(run_id, current_step)
-                
-                # Check budget limit
-                run_data = await db.runs.find_one({"id": run_id})
-                if run_data and Run(**run_data).cost_used_eur >= run.daily_budget_eur:
-                    #await state_manager.add_log(run_id, {"step": "budget", "status": "failed", "output": "Daily budget limit reached"})
-                    await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached, stopping execution"})
-                    completed_successfully = False
-                    break
-                
-            except Exception as e:
-                logging.error(f"Error executing step {current_step}: {e}")
-                #await state_manager.add_log(run_id, {"step": f"step {current_step}", "status": "failed", "output": f"Step {current_step} failed: {str(e)}"})
-                await state_manager.add_log(run_id, {"type": "error", "content": f"Step {current_step + 1} failed with exception: {str(e)}"})
+                await state_manager.update_current_step(run_id, current_step_index)
+            else:
+                # Step failed after all retries and potential plan revision
+                await state_manager.add_log(run_id, {
+                    "type": "error", 
+                    "content": f"Step {current_step_index + 1} failed definitively"
+                })
+                completed_successfully = False
+                break
+            
+            # Check budget limit
+            run_data = await db.runs.find_one({"id": run_id})
+            if run_data and Run(**run_data).cost_used_eur >= run.daily_budget_eur:
+                await state_manager.add_log(run_id, {"type": "warning", "content": "Daily budget limit reached"})
                 completed_successfully = False
                 break
         
-        # Mark as completed if all steps successful
-        #if current_step >= run.max_steps or current_step == 0:
-        # Determine final status based on execution results
-        if completed_successfully and steps_executed > 0:
-            # ✅ PRIORITÉ 1 - Vérification des fichiers générés avant de marquer comme completed
-            project_code_path = project_manager.get_code_path(run_id)
-            if not await verify_code_files_generated(project_code_path, run.stack):
-                await state_manager.add_log(run_id, {"type": "error", "content": f"Run completed but no code files were generated in {project_code_path}"})
-                await state_manager.update_run_status(run_id, RunStatus.FAILED)
-            else:
-                await state_manager.add_log(run_id, {"type": "success", "content": f"All {steps_executed} steps completed successfully with code files generated"}) 
-                await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
-        elif steps_executed == 0 and from_step == 0:
-            # Only planning was done, no steps executed - this shouldn't mark as completed
-            await state_manager.add_log(run_id, {"type": "error", "content": "No steps were executed after planning phase"})
-            await state_manager.update_run_status(run_id, RunStatus.FAILED)
-        elif not completed_successfully:
-            # Steps were executed but run failed
-            await state_manager.add_log(run_id, {"type": "info", "content": f"Run terminated after {steps_executed} steps"})
-            # Status already set to FAILED in the loop if needed
-        else:
-            # Reached max steps
-            # ✅ PRIORITÉ 1 - Vérification des fichiers même quand max steps atteint
-            project_code_path = project_manager.get_code_path(run_id)
-            if not await verify_code_files_generated(project_code_path, run.stack):
-                await state_manager.add_log(run_id, {"type": "error", "content": f"Reached maximum steps but no code files were generated in {project_code_path}"})
-                await state_manager.update_run_status(run_id, RunStatus.FAILED)
-            else:
-                await state_manager.add_log(run_id, {"type": "info", "content": f"Reached maximum steps limit ({run.max_steps}) with code files generated"})
-                await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+        # Phase 3: Final validation and completion
+        await _finalize_execution(run_id, run, steps_executed, completed_successfully, execution_context)
         
     except Exception as e:
         logging.error(f"Error executing run {run_id}: {e}")
+        await state_manager.add_log(run_id, {"type": "error", "content": f"Execution failed: {str(e)}"})
         await state_manager.update_run_status(run_id, RunStatus.FAILED)
 
 async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
@@ -925,6 +1112,313 @@ async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
     except Exception as e:
         logging.error(f"Error verifying code files: {e}")
         return False
+
+# Helper functions for the new iterative cycle
+
+async def _save_agent_conversation(run_id: str, agent_type: str, direction: str, data: dict):
+    """Save agent conversation for traceability and debugging."""
+    try:
+        conversation_entry = {
+            "timestamp": datetime.now(timezone.utc),
+            "agent_type": agent_type,
+            "direction": direction,  # "input" or "output"
+            "data": data
+        }
+        
+        await db.runs.update_one(
+            {"id": run_id},
+            {"$push": {"agent_conversations": conversation_entry}}
+        )
+        
+        await state_manager.add_log(run_id, {
+            "type": "debug",
+            "content": f"Saved {agent_type} agent {direction} conversation"
+        })
+        
+    except Exception as e:
+        logging.warning(f"Failed to save agent conversation: {e}")
+
+async def _request_user_validation(run_id: str, validation_type: str, content: str):
+    """Request user validation for plan or step."""
+    try:
+        # For now, just log the validation request
+        # In a full implementation, this would pause execution and wait for user input
+        await state_manager.add_log(run_id, {
+            "type": "info",
+            "content": f"User validation requested for {validation_type}: {content[:200]}..."
+        })
+        
+        # TODO: Implement actual user validation mechanism
+        # This could involve:
+        # - Updating run status to "awaiting_validation"
+        # - Sending notification to user
+        # - Waiting for user response via API endpoint
+        
+    except Exception as e:
+        logging.warning(f"Failed to request user validation: {e}")
+
+def _is_execution_timeout(execution_context: dict) -> bool:
+    """Check if execution has timed out."""
+    elapsed = (datetime.now(timezone.utc) - execution_context["start_time"]).total_seconds()
+    return elapsed > execution_context["timeout_seconds"]
+
+async def _execute_step_with_agents(
+    run_id: str, 
+    run: Run, 
+    step: 'Step', 
+    step_index: int, 
+    execution_context: dict
+) -> bool:
+    """
+    Execute a single step using the complete agent cycle:
+    DeveloperAgent -> patch -> tests -> ReviewerAgent -> feedback loop
+    """
+    max_attempts = 3
+    attempt = 1
+    previous_feedback = None
+    
+    while attempt <= max_attempts:
+        try:
+            await state_manager.add_log(run_id, {
+                "type": "info",
+                "content": f"Step {step_index + 1}, attempt {attempt}/{max_attempts}"
+            })
+            
+            # Phase 1: DeveloperAgent generates patch
+            project_context = ProjectContext(
+                code_path=run.project_path,
+                metadata={
+                    "stack": run.stack,
+                    "project_path": run.project_path,
+                    "file_tree": await _get_project_file_tree(run.project_path)
+                }
+            )
+            
+            # Save developer agent input
+            await _save_agent_conversation(run_id, "developer", "input", {
+                "step": step.__dict__,
+                "attempt": attempt,
+                "previous_feedback": previous_feedback,
+                "context": project_context.metadata
+            })
+            
+            # Generate patch with DeveloperAgent
+            try:
+                patch_result = await developer_agent.generate_patch(
+                    step, project_context, rag_context=None
+                )
+                
+                await _save_agent_conversation(run_id, "developer", "output", {
+                    "patch_generated": True,
+                    "attempts": patch_result.attempts,
+                    "validated": patch_result.validated,
+                    "patch_length": len(patch_result.patch_text)
+                })
+                
+            except Exception as e:
+                await state_manager.add_log(run_id, {
+                    "type": "error",
+                    "content": f"DeveloperAgent failed: {str(e)}"
+                })
+                attempt += 1
+                continue
+            
+            # Phase 2: Apply patch
+            if patch_result.patch_text:
+                project_code_path = project_manager.get_code_path(run_id)
+                try:
+                    await tool_manager.apply_patch(patch_result.patch_text, str(project_code_path))
+                    await state_manager.add_log(run_id, {
+                        "type": "info",
+                        "content": "Patch applied successfully"
+                    })
+                except Exception as e:
+                    await state_manager.add_log(run_id, {
+                        "type": "error",
+                        "content": f"Failed to apply patch: {str(e)}"
+                    })
+                    attempt += 1
+                    continue
+            
+            # Phase 3: Run tests
+            project_code_path = project_manager.get_code_path(run_id)
+            test_results = await run_comprehensive_tests(str(project_code_path), run.stack)
+            
+            # Convert test results to ReviewerAgent format
+            reviewer_test_results = []
+            for test_result in test_results:
+                reviewer_test_results.append(ReviewerTestResult(
+                    test_type=test_result.test_type,
+                    status=test_result.status,
+                    output=test_result.output,
+                    details=test_result.details
+                ))
+            
+            # Phase 4: ReviewerAgent evaluates results
+            await _save_agent_conversation(run_id, "reviewer", "input", {
+                "step": step.__dict__,
+                "patch_text": patch_result.patch_text[:500],
+                "test_results": [{"type": tr.test_type, "status": tr.status} for tr in reviewer_test_results],
+                "attempt": attempt,
+                "previous_feedback": previous_feedback
+            })
+            
+            review_result = await reviewer_agent.review_step_result(
+                step=step,
+                patch_text=patch_result.patch_text,
+                test_results=reviewer_test_results,
+                attempt_number=attempt,
+                previous_feedback=previous_feedback,
+                stack=run.stack
+            )
+            
+            await _save_agent_conversation(run_id, "reviewer", "output", {
+                "decision": review_result.decision.value,
+                "confidence": review_result.confidence,
+                "feedback": review_result.feedback[:200],
+                "suggestions_count": len(review_result.suggestions),
+                "should_escalate": review_result.should_escalate
+            })
+            
+            # Phase 5: Handle ReviewerAgent decision
+            if review_result.decision == ReviewDecision.ACCEPT:
+                await state_manager.add_log(run_id, {
+                    "type": "success",
+                    "content": f"Step {step_index + 1} accepted by reviewer"
+                })
+                return True
+                
+            elif review_result.decision == ReviewDecision.ESCALATE_TO_PLANNER:
+                # Need to revise the plan
+                if execution_context["plan_revision_count"] < execution_context["max_plan_revisions"]:
+                    await state_manager.add_log(run_id, {
+                        "type": "warning",
+                        "content": f"Escalating to planner for plan revision: {review_result.feedback}"
+                    })
+                    
+                    # TODO: Implement plan revision with PlannerAgent
+                    # For now, we'll treat this as a failure
+                    execution_context["plan_revision_count"] += 1
+                    return False
+                else:
+                    await state_manager.add_log(run_id, {
+                        "type": "error",
+                        "content": "Maximum plan revisions reached, failing step"
+                    })
+                    return False
+                    
+            elif review_result.decision == ReviewDecision.FAIL:
+                await state_manager.add_log(run_id, {
+                    "type": "error",
+                    "content": f"Step {step_index + 1} marked as failed by reviewer: {review_result.feedback}"
+                })
+                return False
+                
+            elif review_result.decision == ReviewDecision.RETRY:
+                await state_manager.add_log(run_id, {
+                    "type": "warning",
+                    "content": f"Step {step_index + 1} needs retry: {review_result.feedback}"
+                })
+                previous_feedback = review_result.feedback
+                attempt += 1
+                continue
+            
+        except Exception as e:
+            logging.error(f"Error in step execution cycle: {e}")
+            await state_manager.add_log(run_id, {
+                "type": "error",
+                "content": f"Step execution failed with exception: {str(e)}"
+            })
+            attempt += 1
+            continue
+    
+    # All attempts exhausted
+    await state_manager.add_log(run_id, {
+        "type": "error",
+        "content": f"Step {step_index + 1} failed after {max_attempts} attempts"
+    })
+    return False
+
+async def _get_project_file_tree(project_path: str) -> str:
+    """Get a simplified file tree for context."""
+    try:
+        if not project_path or not os.path.exists(project_path):
+            return "No project files found"
+        
+        # Simple file tree generation
+        tree_lines = []
+        for root, dirs, files in os.walk(project_path):
+            # Skip hidden directories and common build/cache directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'vendor', '__pycache__']]
+            
+            level = root.replace(project_path, '').count(os.sep)
+            indent = ' ' * 2 * level
+            tree_lines.append(f"{indent}{os.path.basename(root)}/")
+            
+            subindent = ' ' * 2 * (level + 1)
+            for file in files[:10]:  # Limit to first 10 files per directory
+                if not file.startswith('.'):
+                    tree_lines.append(f"{subindent}{file}")
+            
+            if len(tree_lines) > 50:  # Limit total lines
+                tree_lines.append("... (truncated)")
+                break
+        
+        return '\n'.join(tree_lines)
+        
+    except Exception as e:
+        logging.warning(f"Failed to generate file tree: {e}")
+        return "File tree generation failed"
+
+async def _finalize_execution(
+    run_id: str, 
+    run: Run, 
+    steps_executed: int, 
+    completed_successfully: bool, 
+    execution_context: dict
+):
+    """Finalize execution with proper status and validation."""
+    try:
+        if completed_successfully and steps_executed > 0:
+            # Verify code files were generated
+            project_code_path = project_manager.get_code_path(run_id)
+            if not await verify_code_files_generated(project_code_path, run.stack):
+                await state_manager.add_log(run_id, {
+                    "type": "error", 
+                    "content": f"Run completed but no code files were generated in {project_code_path}"
+                })
+                await state_manager.update_run_status(run_id, RunStatus.FAILED)
+            else:
+                await state_manager.add_log(run_id, {
+                    "type": "success", 
+                    "content": f"All {steps_executed} steps completed successfully with code files generated"
+                })
+                await state_manager.update_run_status(run_id, RunStatus.COMPLETED)
+                
+        elif steps_executed == 0:
+            await state_manager.add_log(run_id, {
+                "type": "error", 
+                "content": "No steps were executed"
+            })
+            await state_manager.update_run_status(run_id, RunStatus.FAILED)
+            
+        else:
+            await state_manager.add_log(run_id, {
+                "type": "info", 
+                "content": f"Run terminated after {steps_executed} steps"
+            })
+            await state_manager.update_run_status(run_id, RunStatus.FAILED)
+        
+        # Log execution summary
+        execution_time = (datetime.now(timezone.utc) - execution_context["start_time"]).total_seconds()
+        await state_manager.add_log(run_id, {
+            "type": "info",
+            "content": f"Execution completed in {execution_time:.1f} seconds with {execution_context['plan_revision_count']} plan revisions"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error finalizing execution: {e}")
+        await state_manager.update_run_status(run_id, RunStatus.FAILED)
 
 async def generate_plan(run: Run) -> str:
     """Generate execution plan using LLM"""
