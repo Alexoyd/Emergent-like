@@ -10,61 +10,27 @@ from datetime import datetime, timezone
 import subprocess
 import tempfile
 
+from .stacks.registry import StackFactory
+from . import stacks  # triggers default handler registration
+
 logger = logging.getLogger(__name__)
 
 class ProjectManager:
+    """High-level orchestration, delegating stack duties to handlers."""
+
     def __init__(self):
         self.projects_base_path = Path(os.getenv("PROJECTS_BASE_PATH", "/app/projects"))
         self.auto_create_structures = os.getenv("AUTO_CREATE_STRUCTURES", "true").lower() == "true"
+        self.test_commands: Dict[str, List[str]] = {
+            # centralized defaults; handlers still own their defaults
+            "laravel": ["vendor/bin/pest", "-q"],
+            "react": ["npm", "test", "--", "--watchAll=false"],
+            "vue": ["npm", "test", "--", "--watchAll=false"],
+            "python": ["pytest", "-q"],
+            "node": ["npm", "test", "--", "--watchAll=false"],
+                }
         self.projects_base_path.mkdir(parents=True, exist_ok=True)
-
-    def sanitize_composer_name(name: str) -> str:
-        """
-        Validate and correct a Composer package name.
-
-        Accepts any string (including ``None``) and returns a valid Composer
-        package name of the form ``vendor/project`` comprised of lowercase
-        letters, digits and the separators ``.``, ``-`` or ``_``.  Unknown or
-        invalid names are mapped to ``default/project``.
-
-        This function also converts CamelCase segments to kebab‑case (e.g.,
-        ``vendor/MyPackage`` becomes ``vendor/my‑package``) and replaces
-        sequences of invalid characters with single hyphens.
-        """
-        if not name or not isinstance(name, str):
-            return "default/project"
-        # Insert hyphens before uppercase letters to convert camelCase to kebab-case
-        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
-        # Replace whitespace with hyphens
-        sanitized = split_camel.replace(" ", "-")
-        # Convert to lowercase
-        sanitized = sanitized.lower()
-        # Replace any disallowed characters with a hyphen
-        sanitized = re.sub(r"[^a-z0-9._/-]+", "-", sanitized)
-        # Collapse multiple consecutive hyphens into a single hyphen
-        sanitized = re.sub(r"-+", "-", sanitized)
-        # Ensure there is exactly one slash separating vendor and package
-        parts = sanitized.split("/", 1)
-        if len(parts) == 1:
-            vendor = "default"
-            project = parts[0]
-        else:
-            vendor, project = parts[0], parts[1]
-        # Strip leading/trailing separators from vendor and project names
-        vendor = re.sub(r"^[^a-z0-9]+", "", vendor)
-        vendor = re.sub(r"[^a-z0-9]+$", "", vendor)
-        project = re.sub(r"^[^a-z0-9]+", "", project)
-        project = re.sub(r"[^a-z0-9]+$", "", project)
-        if not vendor:
-            vendor = "default"
-        if not project:
-            project = "project"
-        normalized = f"{vendor}/{project}"
-        # Final validation against Composer regex
-        if re.match(r"^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$", normalized):
-            return normalized
-        return "default/project"
-    
+ 
     async def create_project_workspace(self, project_id: str, stack: str, project_name: str = None) -> Dict[str, Any]:
         """Create isolated workspace for a project"""
         try:
@@ -126,643 +92,82 @@ class ProjectManager:
             logger.error(f"Error creating project workspace: {e}")
             raise
     
-    async def _create_project_structure(self, code_path: Path, stack: str, project_name: str = None):
-        """Auto-create project structure based on stack"""
-        try:
-            if stack == "laravel":
-                await self._create_laravel_structure(code_path, project_name)
-            elif stack == "react":
-                await self._create_react_structure(code_path, project_name)
-            elif stack == "vue":
-                await self._create_vue_structure(code_path, project_name)
-            elif stack == "python":
-                await self._create_python_structure(code_path, project_name)
-            elif stack == "node":
-                await self._create_node_structure(code_path, project_name)
-                
-        except Exception as e:
-            logger.error(f"Error creating {stack} structure: {e}")
-            # Don't fail the workspace creation if structure creation fails
+    async def create_project_skeleton(self, project_id: str, stack: str, project_name: Optional[str] = None) -> None:
+        """Generic method to scaffold a project (exposed explicitly)."""
+        code_path = self.get_code_path(project_id)
+        handler = self._new_handler(stack)
+        await handler.create_project_skeleton(code_path, project_name)
     
-    async def _create_laravel_structure(self, code_path: Path, project_name: str = None):
-        """Create minimal Laravel structure"""
-        try:
-            # Create basic Laravel directory structure
-            directories = [
-                "app/Http/Controllers",
-                "app/Models", 
-                "app/Http/Requests",
-                "app/Http/Middleware",
-                "routes",
-                "database/migrations",
-                "database/seeders",
-                "tests/Feature",
-                "tests/Unit",
-                "config",
-                "resources/views",
-                "public"
-            ]
-            
-            for dir_path in directories:
-                (code_path / dir_path).mkdir(parents=True, exist_ok=True)
-            
-            # Create basic files
-            files = {
-                "routes/web.php": """<?php
-
-use Illuminate\Support\Facades\Route;
-
-Route::get('/', function () {
-    return view('welcome');
-});
-""",
-                "routes/api.php": """<?php
-
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
-""",
-                "composer.json": f"""{{
-    "name": "laravel/{project_name or 'project'}",
-    "type": "project",
-    "description": "The Laravel Framework.",
-    "keywords": ["framework", "laravel"],
-    "license": "MIT",
-    "require": {{
-        "php": "^8.1",
-        "laravel/framework": "^10.0"
-    }},
-    "require-dev": {{
-        "pestphp/pest": "^2.0",
-        "phpstan/phpstan": "^1.0",
-        "laravel/pint": "^1.0"
-    }},
-    "autoload": {{
-        "psr-4": {{
-            "App\\\\": "app/",
-            "Database\\\\Factories\\\\": "database/factories/",
-            "Database\\\\Seeders\\\\": "database/seeders/"
-        }}
-    }},
-    "scripts": {{
-        "test": "pest",
-        "analyse": "phpstan analyse",
-        "format": "pint"
-    }}
-}}""",
-                ".env": """APP_NAME=Laravel
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://localhost
-
-DB_CONNECTION=sqlite
-DB_DATABASE=database/database.sqlite
-""",
-                "phpunit.xml": """<?xml version="1.0" encoding="UTF-8"?>
-<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
-         colors="true">
-    <testsuites>
-        <testsuite name="Unit">
-            <directory suffix="Test.php">./tests/Unit</directory>
-        </testsuite>
-        <testsuite name="Feature">
-            <directory suffix="Test.php">./tests/Feature</directory>
-        </testsuite>
-    </testsuites>
-</phpunit>"""
-            }
-            
-            for file_path, content in files.items():
-                full_path = code_path / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_path, 'w') as f:
-                    f.write(content)
-            
-            logger.info(f"Created Laravel structure at {code_path}")
-            
-        except Exception as e:
-            logger.error(f"Error creating Laravel structure: {e}")
-            raise
-    
-    async def _create_react_structure(self, code_path: Path, project_name: str = None):
-        """Create minimal React structure"""
-        try:
-            # Create React directory structure
-            directories = [
-                "src/components",
-                "src/hooks",
-                "src/utils",
-                "src/pages",
-                "src/styles",
-                "public",
-                "tests"
-            ]
-            
-            for dir_path in directories:
-                (code_path / dir_path).mkdir(parents=True, exist_ok=True)
-            
-            # Create basic files
-            files = {
-                "package.json": f"""{{
-  "name": "{project_name or 'react-project'}",
-  "version": "0.1.0",
-  "private": true,
-  "dependencies": {{
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
-    "react-scripts": "5.0.1"
-  }},
-  "scripts": {{
-    "start": "react-scripts start",
-    "build": "react-scripts build", 
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "lint": "eslint src/"
-  }},
-  "devDependencies": {{
-    "@testing-library/jest-dom": "^5.0.0",
-    "@testing-library/react": "^13.0.0",
-    "@testing-library/user-event": "^13.0.0",
-    "eslint": "^8.0.0"
-  }}
-}}""",
-                "src/App.js": """import React from 'react';
-import './App.css';
-
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Welcome to React</h1>
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-      </header>
-    </div>
-  );
-}
-
-export default App;
-""",
-                "src/index.js": """import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-""",
-                "public/index.html": f"""<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{project_name or 'React App'}</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-  </body>
-</html>"""
-            }
-            
-            for file_path, content in files.items():
-                full_path = code_path / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_path, 'w') as f:
-                    f.write(content)
-            
-            logger.info(f"Created React structure at {code_path}")
-            
-        except Exception as e:
-            logger.error(f"Error creating React structure: {e}")
-            raise
-    
-    async def _create_python_structure(self, code_path: Path, project_name: str = None):
-        """Create minimal Python structure"""
-        try:
-            # Create Python directory structure
-            directories = [
-                f"{project_name or 'src'}",
-                "tests",
-                "docs"
-            ]
-            
-            for dir_path in directories:
-                (code_path / dir_path).mkdir(parents=True, exist_ok=True)
-            
-            # Create basic files
-            files = {
-                "requirements.txt": """# Core dependencies
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-
-# Development dependencies  
-pytest==7.4.3
-black==23.12.1
-mypy==1.8.0
-flake8==6.1.0
-""",
-                "setup.py": f"""from setuptools import setup, find_packages
-
-setup(
-    name='{project_name or 'python-project'}',
-    version='0.1.0',
-    packages=find_packages(),
-    install_requires=[
-        'fastapi',
-        'uvicorn',
-        'pydantic'
-    ],
-    python_requires='>=3.8',
-)""",
-                f"{project_name or 'src'}/__init__.py": "",
-                f"{project_name or 'src'}/main.py": """from fastapi import FastAPI
-
-app = FastAPI(title=f'{project_name or 'Python Project'}')
-
-@app.get('/')
-async def root():
-    return {'message': 'Hello World'}
-
-if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000)
-""",
-                "tests/__init__.py": "",
-                "tests/test_main.py": """import pytest
-from fastapi.testclient import TestClient
-from src.main import app
-
-client = TestClient(app)
-
-def test_read_main():
-    response = client.get('/')
-    assert response.status_code == 200
-    assert response.json() == {'message': 'Hello World'}
-"""
-            }
-            
-            for file_path, content in files.items():
-                full_path = code_path / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_path, 'w') as f:
-                    f.write(content)
-            
-            logger.info(f"Created Python structure at {code_path}")
-            
-        except Exception as e:
-            logger.error(f"Error creating Python structure: {e}")
-            raise
-    
-    async def _create_node_structure(self, code_path: Path, project_name: str = None):
-        """Create minimal Node.js structure"""
-        try:
-            # Create Node directory structure
-            directories = [
-                "src",
-                "tests",
-                "docs"
-            ]
-            
-            for dir_path in directories:
-                (code_path / dir_path).mkdir(parents=True, exist_ok=True)
-            
-            # Create basic files
-            files = {
-                "package.json": f"""{{
-  "name": "{project_name or 'node-project'}",
-  "version": "1.0.0",
-  "description": "",
-  "main": "src/index.js",
-  "scripts": {{
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
-    "lint": "eslint src/"
-  }},
-  "dependencies": {{
-    "express": "^4.18.0"
-  }},
-  "devDependencies": {{
-    "jest": "^29.0.0",
-    "nodemon": "^3.0.0",
-    "eslint": "^8.0.0"
-  }}
-}}""",
-                "src/index.js": f"""const express = require('express');
-const app = express();
-const port = process.env.PORT || 3000;
-
-app.use(express.json());
-
-app.get('/', (req, res) => {{
-  res.json({{ message: 'Hello World from {project_name or 'Node.js'}!' }});
-}});
-
-app.listen(port, () => {{
-  console.log(`Server running on port ${{port}}`);
-}});
-
-module.exports = app;
-""",
-                "tests/index.test.js": """const request = require('supertest');
-const app = require('../src/index');
-
-describe('GET /', () => {
-  it('should return Hello World message', async () => {
-    const response = await request(app).get('/');
-    expect(response.status).toBe(200);
-    expect(response.body.message).toContain('Hello World');
-  });
-});
-"""
-            }
-            
-            for file_path, content in files.items():
-                full_path = code_path / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_path, 'w') as f:
-                    f.write(content)
-            
-            logger.info(f"Created Node.js structure at {code_path}")
-            
-        except Exception as e:
-            logger.error(f"Error creating Node.js structure: {e}")
-            raise
-    
-    async def _create_vue_structure(self, code_path: Path, project_name: str = None):
-        """Create minimal Vue.js structure"""
-        try:
-            # Create Vue directory structure
-            directories = [
-                "src/components",
-                "src/views", 
-                "src/router",
-                "src/store",
-                "public",
-                "tests"
-            ]
-            
-            for dir_path in directories:
-                (code_path / dir_path).mkdir(parents=True, exist_ok=True)
-            
-            # Create basic files
-            files = {
-                "package.json": f"""{{
-  "name": "{project_name or 'vue-project'}",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {{
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "test": "vue-cli-service test:unit",
-    "lint": "vue-cli-service lint"
-  }},
-  "dependencies": {{
-    "vue": "^3.0.0",
-    "vue-router": "^4.0.0"
-  }},
-  "devDependencies": {{
-    "@vue/cli-service": "^5.0.0",
-    "@vue/test-utils": "^2.0.0",
-    "jest": "^29.0.0"
-  }}
-}}""",
-                "src/App.vue": """<template>
-  <div id="app">
-    <header>
-      <h1>Welcome to Vue.js</h1>
-    </header>
-    <main>
-      <p>This is a Vue.js application.</p>
-    </main>
-  </div>
-</template>
-
-<script>
-export default {
-  name: 'App'
-}
-</script>
-
-<style>
-#app {
-  font-family: 'Avenir', Helvetica, Arial, sans-serif;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
-</style>
-""",
-                "src/main.js": """import { createApp } from 'vue'
-import App from './App.vue'
-
-createApp(App).mount('#app')
-""",
-                "public/index.html": f"""<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <title>{project_name or 'Vue App'}</title>
-  </head>
-  <body>
-    <noscript>
-      <strong>We're sorry but this app doesn't work properly without JavaScript enabled.</strong>
-    </noscript>
-    <div id="app"></div>
-  </body>
-</html>"""
-            }
-            
-            for file_path, content in files.items():
-                full_path = code_path / file_path
-                full_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_path, 'w') as f:
-                    f.write(content)
-            
-            logger.info(f"Created Vue.js structure at {code_path}")
-            
-        except Exception as e:
-            logger.error(f"Error creating Vue.js structure: {e}")
-            raise
-    
+    async def install_dependencies(self, project_path: str, stack: str) -> bool:
+        """Backward compatible signature; delegates to stack handler."""
+        code_path = Path(project_path) / "code"
+        handler = self._new_handler(stack)
+        return await handler.install_dependencies(code_path)   
+      
     async def get_project_info(self, project_id: str) -> Optional[Dict[str, Any]]:
-        """Get project information"""
-        try:
-            project_path = self.projects_base_path / project_id
-            metadata_file = project_path / "project.json"
-            
-            if not metadata_file.exists():
-                return None
-            
-            with open(metadata_file, 'r') as f:
-                return json.load(f)
-                
-        except Exception as e:
-            logger.error(f"Error getting project info: {e}")
+        project_path = self.projects_base_path / project_id
+        meta = project_path / "project.json"
+        if not meta.exists():
             return None
-    
+        try:
+            return json.loads(meta.read_text())
+                    except Exception as e:
+            logger.error(f"Error reading project metadata: {e}")
+            return None
+
     async def list_projects(self) -> List[Dict[str, Any]]:
-        """List all projects"""
-        try:
-            projects = []
-            
-            for project_dir in self.projects_base_path.iterdir():
-                if project_dir.is_dir():
-                    project_info = await self.get_project_info(project_dir.name)
-                    if project_info:
-                        projects.append(project_info)
-            
-            return sorted(projects, key=lambda x: x.get('created_at', ''), reverse=True)
-            
-        except Exception as e:
-            logger.error(f"Error listing projects: {e}")
-            return []
-    
+        projects: List[Dict[str, Any]] = []
+        for d in self.projects_base_path.iterdir():
+            if d.is_dir():
+                info = await self.get_project_info(d.name)
+                if info:
+                    projects.append(info)
+        return sorted(projects, key=lambda x: x.get("created_at", ""), reverse=True)
+
     async def delete_project(self, project_id: str) -> bool:
-        """Delete project workspace"""
+        project_path = self.projects_base_path / project_id
         try:
-            project_path = self.projects_base_path / project_id
-            
             if project_path.exists():
                 shutil.rmtree(project_path)
                 logger.info(f"Deleted project {project_id}")
                 return True
             
-            return False
-            
         except Exception as e:
             logger.error(f"Error deleting project {project_id}: {e}")
             return False
-    
+
     def get_project_path(self, project_id: str) -> Path:
-        """Get project path"""
         return self.projects_base_path / project_id
-    
+
     def get_code_path(self, project_id: str) -> Path:
-        """Get project code path"""
         return self.projects_base_path / project_id / "code"
+
+    async def run_tests(self, project_id: str) -> Dict[str, Any]:
+        info = await self.get_project_info(project_id)
+        if not info:
+            return {"error": "project_not_found"}
+        stack = info.get("stack")
+        handler = self._new_handler(stack)
+        # central config wins
+        if stack in self.test_commands:
+            handler.config.setdefault("test_command", self.test_commands[stack])
+        result = await handler.run_tests(self.get_code_path(project_id))
+        return {
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
+    # ------------------------------ internals ------------------------------
+    def _new_handler(self, stack: str):
+        return StackFactory.create(
+            stack,
+            run_command=self._run_command,
+            logger=logger,
+            config={},
+        )
     
-    async def install_dependencies(self, project_path: str, stack: str) -> bool:
-        """Install dependencies for the project based on stack"""
-        try:
-            code_path = Path(project_path) / "code"
-            
-            if stack == "laravel":
-                # sanitize composer.json if it exists
-                composer_file = code_path / "composer.json"
-                if composer_file.exists():
-                    try:
-                        composer_data = json.loads(composer_file.read_text())
-                        original_name = composer_data.get("name")
-                        corrected = sanitize_composer_name(original_name)
-                        if original_name != corrected:
-                            composer_data["name"] = corrected
-                            composer_file.write_text(json.dumps(composer_data, indent=4))
-                            logger.info(f"Sanitized composer.json name from {original_name!r} to {corrected!r}")
-                        # Ensure require-dev section exists with required dev packages
-                        dev_packages = {
-                            "phpstan/phpstan": "^1.0",
-                            "laravel/pint": "^1.0",
-                            "pestphp/pest": "^2.0",
-                        }
-                        require_dev = composer_data.get("require-dev", {})
-                        # Add missing dev packages without overriding existing versions
-                        for pkg, version in dev_packages.items():
-                            if pkg not in require_dev:
-                                require_dev[pkg] = version
-                        if require_dev:
-                            composer_data["require-dev"] = require_dev
-                        # Write back to composer.json
-                        composer_file.write_text(json.dumps(composer_data, indent=4))
-                    except Exception as e:
-                        # do not fail if sanitization fails
-                        logger.warning(f"Error sanitizing composer.json: {e}")
-                # run composer install
-                result = await self._run_command(["composer", "install"], cwd=str(code_path))
-                if result.returncode != 0:
-                    logger.warning(f"Composer install failed: {result.stderr}")
-                    # Optionally install dev dependencies
-                dev_result = await self._run_command(
-                    ["composer", "require", "--dev", "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
-                    cwd=str(code_path)
-                )
-                if dev_result.returncode != 0:
-                    logger.warning(f"Laravel dev dependencies install failed: {dev_result.stderr}")
-                else:
-                    logger.info("Laravel dev dependencies installed successfully")
-                    
-            elif stack in {"react", "vue", "node"}:
-                # Yarn/NPM installation with fallback
-                yarn_lock = code_path / "yarn.lock"
-                # Prefer yarn if a lockfile exists
-                used_yarn = False
-                if yarn_lock.exists():
-                    result = await self._run_command(["yarn", "install"], cwd=str(code_path))
-                    used_yarn = True
-                    if result.returncode != 0:
-                        logger.warning(f"Yarn install failed: {result.stderr}; falling back to npm install")
-                else:
-                    result = type("CommandResult", (), {"returncode": 1, "stdout": "", "stderr": "No yarn.lock"})()
-                # If yarn was not used or failed, attempt npm install
-                if not yarn_lock.exists() or result.returncode != 0:
-                    npm_result = await self._run_command(["npm", "install"], cwd=str(code_path))
-                    if npm_result.returncode != 0:
-                        logger.warning(f"NPM install failed: {npm_result.stderr}")
-                    else:
-                        logger.info("NPM install completed successfully")
-                else:
-                    logger.info("Yarn install completed successfully")
-                    
-            elif stack == "python":
-                requirements = code_path / "requirements.txt"
-                if requirements.exists():
-                    result = await self._run_command([
-                        "pip",
-                        "install",
-                        "-r",
-                        "requirements.txt",
-                    ], cwd=str(code_path))
-                    if result.returncode != 0:
-                        logger.warning(f"Pip install failed: {result.stderr}")
-                else:
-                    logger.warning("No requirements.txt found for Python project")
-                # Create pytest skeleton
-                try:
-                    test_dir = code_path / "tests"
-                    test_file = test_dir / "test_main.py"
-                    if not test_file.exists():
-                        test_dir.mkdir(parents=True, exist_ok=True)
-                        test_file.write_text("def test_example():\\n    assert True\\n")
-                        logger.info(
-                            "Created Python test skeleton at tests/test_main.py"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not create Python test skeleton: {e}"
-                    )
-                    
-            logger.info(f"Dependencies installed successfully for {stack} project")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error installing dependencies for {stack}: {e}")
-            return False
-    
-    async def _run_command(self, command: List[str], cwd: str = None):
+    async def _run_command(self, command: List[str], cwd: Optional[str] = None):
         """Run shell command"""
         try:
             process = await asyncio.create_subprocess_exec(

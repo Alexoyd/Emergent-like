@@ -24,11 +24,13 @@ class StackHandler(ABC):
     @abstractmethod
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
         """Generate minimal scaffold for the stack inside code_path."""
+        pass
 
     @abstractmethod
     async def install_dependencies(self, code_path: Path) -> bool:
         """Install dependencies needed by this stack in code_path."""
-
+        pass
+        
     # --- testing -----------------------------------------------------------
     def get_test_command(self) -> List[str]:
         """Return the configured test command for this stack."""
