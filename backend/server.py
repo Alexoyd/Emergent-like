@@ -27,11 +27,11 @@ from backend.orchestrator.state_manager import StateManager
 from backend.orchestrator.rag_system import RAGSystem
 from backend.orchestrator.project_manager import ProjectManager
 from backend.orchestrator.github_integration import GitHubIntegration
-from backend.orchestrator.plan_parser import parse_plan
+from backend.orchestrator.plan_parser import PlanParser
 from backend.orchestrator.agents import PlannerAgent, DeveloperAgent, ReviewerAgent
 from backend.orchestrator.agents.planner import ProjectContext
 from backend.orchestrator.agents.reviewer import TestResult as ReviewerTestResult, ReviewDecision
-from backend.orchestrator.plan_parser import Step
+from backend.orchestrator.plan_parser import Step as PlanStep
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -48,6 +48,7 @@ state_manager = StateManager(db)
 rag_system = RAGSystem()
 project_manager = ProjectManager()
 github_integration = GitHubIntegration()
+plan_parser = PlanParser()
 
 # Initialize agents
 planner_agent = PlannerAgent(llm_router, rag_system)
@@ -995,7 +996,7 @@ async def execute_run(run_id: str, from_step: int = 0):
             # Resume from existing plan
             run_data = await db.runs.find_one({"id": run_id})
             if run_data and "parsed_plan" in run_data:
-                parsed_steps = [Step(**step_data) for step_data in run_data["parsed_plan"]]
+                parsed_steps = [PlanStep(**step_data) for step_data in run_data["parsed_plan"]]
         
         # Phase 2: Iterative execution cycle
         await state_manager.add_log(run_id, {"type": "info", "content": "Phase 2: Starting iterative execution cycle"})
@@ -1165,7 +1166,7 @@ def _is_execution_timeout(execution_context: dict) -> bool:
 async def _execute_step_with_agents(
     run_id: str, 
     run: Run, 
-    step: 'Step', 
+    step: PlanStep, 
     step_index: int, 
     execution_context: dict
 ) -> bool:
