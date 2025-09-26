@@ -34,6 +34,8 @@ import LogViewer from './components/LogViewer';
 import RunsList from './components/RunsList';
 import AdminPanel from './components/AdminPanel';
 import AdminGlobal from './components/AdminGlobal';
+import CreateRunForm from './components/CreateRunForm';
+import websocketService from './services/websocket';
 
 import './App.css';
 
@@ -53,10 +55,48 @@ const Dashboard = () => {
   const [showAdminGlobal, setShowAdminGlobal] = useState(false);
   const [connectedRepo, setConnectedRepo] = useState(null);
   const [repoUrl, setRepoUrl] = useState('');
+  const [useAdvancedForm, setUseAdvancedForm] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
 
-  // Load runs on component mount
+  // Load runs on component mount and setup WebSocket
   useEffect(() => {
     loadRuns();
+        
+    // Setup WebSocket listeners
+    websocketService.on('runStatusUpdate', (data) => {
+      setCurrentRun(prev => prev && prev.id === data.runId ? { ...prev, status: data.status } : prev);
+      loadRuns(); // Refresh runs list
+    });
+
+    websocketService.on('stepUpdate', (data) => {
+      setCurrentRun(prev => {
+        if (prev && prev.id === data.runId) {
+          const updatedSteps = [...(prev.steps || [])];
+          const stepIndex = updatedSteps.findIndex(s => s.step_number === data.stepNumber);
+          if (stepIndex >= 0) {
+            updatedSteps[stepIndex] = { ...updatedSteps[stepIndex], ...data };
+          } else {
+            updatedSteps.push(data);
+          }
+          return { ...prev, steps: updatedSteps, current_step: data.stepNumber };
+        }
+        return prev;
+      });
+    });
+
+    websocketService.on('logUpdate', (data) => {
+      setLogs(prev => [...prev, data]);
+    });
+
+    websocketService.on('progressUpdate', (data) => {
+      setCurrentRun(prev => prev && prev.id === data.runId ? { ...prev, ...data } : prev);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      websocketService.disconnect();
+    };
   }, []);
 
   // Poll for updates when there's an active run
@@ -175,6 +215,10 @@ const Dashboard = () => {
   const selectRun = (run) => {
     setCurrentRun(run);
     setLogs(run.logs || []);
+    
+    // Connect WebSocket to this specific run
+    websocketService.connect(run.id);
+    
     if (['pending', 'running'].includes(run.status)) {
       streamLogs(run.id);
     }
@@ -209,7 +253,55 @@ const Dashboard = () => {
 
   const disconnectGitHubRepo = () => {
     setConnectedRepo(null);
-    toast.success('Repository GitHub déconnecté');
+    setRepoUrl('');
+    toast.success('Repository disconnected');
+  };
+
+  const handlePreviewPlan = async (formData) => {
+    try {
+      const response = await axios.post(`${API}/runs/preview-plan`, formData);
+      setGeneratedPlan(response.data.plan);
+      setValidationErrors([]);
+    } catch (error) {
+      console.error('Error generating plan preview:', error);
+      setValidationErrors([error.response?.data?.detail || 'Failed to generate plan']);
+      throw error;
+    }
+  };
+
+  const handleAdvancedCreateRun = async (formData) => {
+    setIsCreatingRun(true);
+    try {
+      const runData = {
+        goal: formData.goal.trim(),
+        project_path: formData.projectPath.trim() || null,
+        stack: formData.stack,
+        max_steps: formData.maxSteps,
+        max_retries_per_step: formData.maxRetriesPerStep,
+        daily_budget_eur: formData.dailyBudgetEur,
+        context_files: formData.files || []
+      };
+
+      const response = await axios.post(`${API}/runs`, runData);
+      const newRun = response.data;
+      
+      setCurrentRun(newRun);
+      setRuns(prev => [newRun, ...prev]);
+      setGeneratedPlan(null);
+      setValidationErrors([]);
+      
+      toast.success('AI agent run created successfully!');
+      
+      // Connect WebSocket and start streaming
+      websocketService.connect(newRun.id);
+      streamLogs(newRun.id);
+      
+    } catch (error) {
+      console.error('Error creating run:', error);
+      toast.error('Failed to create run: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setIsCreatingRun(false);
+    }
   };
 
   const saveToGitHub = async () => {
@@ -306,8 +398,29 @@ const Dashboard = () => {
             animate={{ opacity: 1, x: 0 }}
             className="col-span-3"
           >
-            {/* Create New Run */}
-            <Card className="mb-6 border-0 shadow-xl bg-white/70 backdrop-blur-sm">
+            {/* Toggle for Advanced Form */}
+            <div className="mb-4 flex justify-center">
+              <button
+                onClick={() => setUseAdvancedForm(!useAdvancedForm)}
+                className="text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                {useAdvancedForm ? 'Use Simple Form' : 'Use Advanced Form'}
+              </button>
+            </div>
+
+            {/* Create New Run - Conditional Rendering */}
+            {useAdvancedForm ? (
+              <div className="mb-6">
+                <CreateRunForm
+                  onCreateRun={handleAdvancedCreateRun}
+                  isCreating={isCreatingRun}
+                  onPreviewPlan={handlePreviewPlan}
+                  generatedPlan={generatedPlan}
+                  validationErrors={validationErrors}
+                />
+              </div>
+            ) : (
+              <Card className="mb-6 border-0 shadow-xl bg-white/70 backdrop-blur-sm">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center text-lg">
                   <Code className="w-5 h-5 mr-2 text-blue-600" />
@@ -423,6 +536,7 @@ const Dashboard = () => {
                 </Button>
               </CardContent>
             </Card>
+            )} 
 
             {/* Recent Runs */}
             <RunsList 

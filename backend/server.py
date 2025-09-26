@@ -19,6 +19,7 @@ import tempfile
 import shutil
 import git
 from contextlib import asynccontextmanager
+from fastapi import WebSocket, WebSocketDisconnect
 
 # Import AI orchestrator components
 from backend.orchestrator.llm_router import LLMRouter
@@ -135,6 +136,33 @@ class TestResult(BaseModel):
 @api_router.get("/")
 async def root():
     return {"message": "AI Agent Orchestrator API v1.0.0", "status": "running"}
+
+@api_router.post("/runs/preview-plan")
+async def preview_plan(run_data: RunCreate):
+    """Generate a preview of the execution plan without creating a run"""
+    try:
+        # Create a temporary planner context
+        planner = PlannerAgent(llm_router, tool_manager)
+        context = ProjectContext(
+            goal=run_data.goal,
+            stack=run_data.stack,
+            project_path=run_data.project_path or f"/tmp/preview-{uuid.uuid4()}",
+            existing_files=[],
+            budget_constraints={"daily_budget_eur": run_data.daily_budget_eur}
+        )
+        
+        # Generate plan preview
+        plan = await planner.create_plan(context)
+        
+        return {
+            "plan": plan,
+            "estimated_steps": len(plan.split('')) if plan else 0,
+            "estimated_cost": 0.05 * run_data.max_steps,  # Rough estimate
+            "stack": run_data.stack
+        }
+    except Exception as e:
+        logging.error(f"Error generating plan preview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/runs", response_model=Run)
 async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
@@ -762,6 +790,32 @@ async def get_global_logs(limit: int = 100, project_id: str = None):
     except Exception as e:
         logging.error(f"Error getting global logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# WebSocket endpoint for real-time updates
+@app.websocket("/ws/{run_id}")
+async def websocket_endpoint(websocket: WebSocket, run_id: str):
+    await websocket.accept()
+    try:
+        while True:
+            # In a real implementation, you'd listen to run updates
+            # For now, just keep the connection alive and send periodic heartbeats
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected for run {run_id}")
+
+@app.websocket("/ws")
+async def websocket_global_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Global echo: {data}")
+    except WebSocketDisconnect:
+        print("Global WebSocket disconnected")
+
+# Mount the API router
+app.include_router(api_router, prefix="/api")
 
 # User validation and interaction endpoints
 

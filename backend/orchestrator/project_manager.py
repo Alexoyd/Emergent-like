@@ -69,15 +69,19 @@ class ProjectManager:
             if self.auto_create_structures:
                 await self._create_project_structure(directories["code"], stack, project_name)
             
-                # ✅ Install dependencies automatically after scaffolding
+                # ✅ Install dependencies automatically after scaffolding (optional)
                 logger.info(f"Auto-installing dependencies for {stack} project {project_id}")
-                install_success = await self.install_dependencies(str(project_path), stack)
-                if install_success:
-                    metadata["dependencies_installed"] = True
-                    logger.info(f"Dependencies successfully installed for {stack} project")
-                else:
+                try:
+                    install_success = await self.install_dependencies(str(project_path), stack)
+                    if install_success:
+                        metadata["dependencies_installed"] = True
+                        logger.info(f"Dependencies successfully installed for {stack} project")
+                    else:
+                        metadata["dependencies_installed"] = False
+                        logger.warning(f"Dependencies installation failed for {stack} project")
+                except Exception as e:
                     metadata["dependencies_installed"] = False
-                    logger.warning(f"Dependencies installation failed for {stack} project")
+                    logger.warning(f"Dependencies installation failed for {stack} project: {e}")
             
             logger.info(f"Created workspace for project {project_id} with stack {stack}")
             return {
@@ -159,6 +163,89 @@ class ProjectManager:
         }
 
     # ------------------------------ internals ------------------------------
+    async def _create_project_structure(self, code_path: Path, stack: str, project_name: str):
+        """Create project structure based on stack"""
+        try:
+            code_path.mkdir(parents=True, exist_ok=True)
+            
+            if stack == "laravel":
+                # Create basic Laravel structure
+                (code_path / "app").mkdir(exist_ok=True)
+                (code_path / "app" / "Http").mkdir(exist_ok=True)
+                (code_path / "app" / "Http" / "Controllers").mkdir(exist_ok=True)
+                (code_path / "routes").mkdir(exist_ok=True)
+                (code_path / "database").mkdir(exist_ok=True)
+                (code_path / "database" / "migrations").mkdir(exist_ok=True)
+                
+                # Create basic files
+                (code_path / "composer.json").write_text(json.dumps({
+                    "name": f"laravel/{project_name.lower().replace(' ', '-')}",
+                    "description": f"Laravel project: {project_name}",
+                    "require": {
+                        "php": "^8.1",
+                        "laravel/framework": "^10.0"
+                    }
+                }, indent=2))
+                
+            elif stack == "react":
+                # Create basic React structure
+                (code_path / "src").mkdir(exist_ok=True)
+                (code_path / "src" / "components").mkdir(exist_ok=True)
+                (code_path / "public").mkdir(exist_ok=True)
+                
+                # Create basic files
+                (code_path / "package.json").write_text(json.dumps({
+                    "name": project_name.lower().replace(' ', '-'),
+                    "version": "1.0.0",
+                    "dependencies": {
+                        "react": "^18.0.0",
+                        "react-dom": "^18.0.0"
+                    }
+                }, indent=2))
+                
+            elif stack == "vue":
+                # Create basic Vue structure
+                (code_path / "src").mkdir(exist_ok=True)
+                (code_path / "src" / "components").mkdir(exist_ok=True)
+                (code_path / "public").mkdir(exist_ok=True)
+                
+                # Create basic files
+                (code_path / "package.json").write_text(json.dumps({
+                    "name": project_name.lower().replace(' ', '-'),
+                    "version": "1.0.0",
+                    "dependencies": {
+                        "vue": "^3.0.0"
+                    }
+                }, indent=2))
+                
+            elif stack == "python":
+                # Create basic Python structure
+                (code_path / "src").mkdir(exist_ok=True)
+                (code_path / "tests").mkdir(exist_ok=True)
+                
+                # Create basic files
+                (code_path / "requirements.txt").write_text("# Python dependencies\n")
+                (code_path / "README.md").write_text(f"# {project_name}\n\nPython project created by AI Agent Orchestrator")
+                
+            elif stack == "node":
+                # Create basic Node.js structure
+                (code_path / "src").mkdir(exist_ok=True)
+                (code_path / "tests").mkdir(exist_ok=True)
+                
+                # Create basic files
+                (code_path / "package.json").write_text(json.dumps({
+                    "name": project_name.lower().replace(' ', '-'),
+                    "version": "1.0.0",
+                    "main": "src/index.js",
+                    "dependencies": {}
+                }, indent=2))
+            
+            logger.info(f"Created {stack} project structure at {code_path}")
+            
+        except Exception as e:
+            logger.error(f"Error creating project structure: {e}")
+            raise
+
     def _new_handler(self, stack: str):
         return StackFactory.create(
             stack,

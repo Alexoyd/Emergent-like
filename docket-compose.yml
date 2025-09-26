@@ -1,0 +1,124 @@
+"version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:6.0
+    container_name: orchestrator_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: orchestrator_db
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - orchestrator_network
+
+  # FastAPI Backend
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: orchestrator_backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - MONGO_URL=mongodb://admin:password@mongodb:27017/orchestrator_db?authSource=admin
+      - DB_NAME=orchestrator_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ENABLE_ANTHROPIC=true
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - AUTO_CREATE_STRUCTURES=true
+      - CLEANUP_OLD_RUNS_DAYS=7
+      - ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - DEFAULT_DAILY_BUDGET_EUR=5.0
+      - COST_TRACKING_ENABLED=true
+      - MAX_LOCAL_RETRIES=3
+      - MAX_ESCALATION_RETRIES=2
+      - DEFAULT_MODEL=gpt-4o-mini
+      - ENABLE_PROMPT_CACHING=true
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+    volumes:
+      - ./projects:/app/projects
+      - ./backend:/app/backend
+    depends_on:
+      - mongodb
+    networks:
+      - orchestrator_network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: orchestrator_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_BACKEND_URL=http://localhost:8001
+      - NODE_ENV=production
+    volumes:
+      - ./frontend:/app/frontend
+    depends_on:
+      - backend
+    networks:
+      - orchestrator_network
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: orchestrator_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - orchestrator_network
+
+  # Nginx Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: orchestrator_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - orchestrator_network
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  orchestrator_network:
+    driver: bridge
+
+# Environment variables template
+# Create a .env file in the root directory with these variables:
+#
+# OPENAI_API_KEY=your_openai_api_key_here
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# GITHUB_CLIENT_ID=your_github_client_id
+# GITHUB_CLIENT_SECRET=your_github_client_secret
+# SECRET_KEY=your-super-secret-key-for-production"
