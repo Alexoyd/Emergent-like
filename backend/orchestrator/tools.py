@@ -135,31 +135,46 @@ class ToolManager:
 
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
-        """Apply unified diff patch with pre-validation and automatic newline fix"""
+        """Apply unified diff patch with enhanced validation and error handling"""
         try:
             if not project_path:
                 project_path = os.getcwd()
                 
+            logger.info(f"Applying patch to project: {project_path}")
+            logger.debug(f"Patch content (first 200 chars): {patch[:200]}...")
+            
             # ✅ Validate patch format BEFORE applying
             if not is_valid_patch(patch):
                 logger.error("Patch validation failed: Invalid patch format. Please provide a valid unified diff patch.")
                 return False
             
+            # ✅ Check if project path exists and is a git repository
+            if not os.path.exists(project_path):
+                logger.error(f"Project path does not exist: {project_path}")
+                return False
+                
+            # Initialize git repo if needed
+            git_dir = os.path.join(project_path, '.git')
+            if not os.path.exists(git_dir):
+                logger.info(f"Initializing git repository in {project_path}")
+                init_result = await self._run_command(["git", "init"], cwd=project_path)
+                if init_result.returncode != 0:
+                    logger.warning(f"Failed to initialize git repo: {init_result.stderr}")
+            
             # ✅ Normalize patch and ensure final newline
             normalized_patch = self._normalize_patch(patch, project_path)
             appended_final_newline = False
             
-            if not normalized_patch.endswith(''):
-                normalized_patch += ''
+            if not normalized_patch.endswith('\n'):
+                normalized_patch += '\n'
                 appended_final_newline = True
-                logger.info("apply_patch: appended_final_newline=True")
+                logger.info("apply_patch: appended final newline")
             
-            # ✅ Save debug copy to /tmp/emergent_patches (exactly what will be tested/applied)
+            # ✅ Save debug copy to /tmp/emergent_patches
             timestamp = time.time()
             debug_dir = "/tmp/emergent_patches"
             debug_path = f"{debug_dir}/patch_{timestamp:.0f}.diff"
             
-            # ✅ PRIORITÉ 2 - Créer automatiquement le dossier tmp/ s'il n'existe pas
             try:
                 os.makedirs(debug_dir, exist_ok=True)
                 with open(debug_path, 'w', encoding='utf-8') as f:
@@ -174,30 +189,42 @@ class ToolManager:
                 patch_file = f.name
             
             try:
-                # ✅ First check if patch is valid
+                # ✅ First check if patch can be applied cleanly
                 check_result = await self._run_command(
                     ["git", "apply", "--check", patch_file],
                     cwd=project_path
                 )
                 
                 if check_result.returncode == 0:
-                    # Patch is valid, apply it
+                    # Patch can be applied cleanly
                     apply_result = await self._run_command(
                         ["git", "apply", patch_file],
                         cwd=project_path
                     )
                                       
                     if apply_result.returncode == 0:
-                        logger.info(f"Patch applied successfully. appended_final_newline={appended_final_newline}")
+                        logger.info(f"✅ Patch applied successfully (final_newline={appended_final_newline})")
                         return True
                     else:
-                        logger.error(f"Git apply failed: {apply_result.stderr}")
+                        logger.error(f"❌ Git apply failed: {apply_result.stderr}")
                         self._log_patch_failure_details(normalized_patch, apply_result.stderr, "git_apply_failed")
                         return False
                 else:
-                    logger.error(f"Git patch validation failed: {check_result.stderr}")
-                    self._log_patch_failure_details(normalized_patch, check_result.stderr, "git_check_failed")
-                    return False
+                    # Try applying with --3way for better conflict resolution
+                    logger.warning(f"Patch check failed, trying 3-way merge: {check_result.stderr}")
+                    
+                    threeway_result = await self._run_command(
+                        ["git", "apply", "--3way", patch_file],
+                        cwd=project_path
+                    )
+                    
+                    if threeway_result.returncode == 0:
+                        logger.info("✅ Patch applied with 3-way merge")
+                        return True
+                    else:
+                        logger.error(f"❌ Git 3-way apply failed: {threeway_result.stderr}")
+                        self._log_patch_failure_details(normalized_patch, check_result.stderr, "git_check_and_3way_failed")
+                        return False
                     
             finally:
                 # Clean up temporary file
@@ -207,7 +234,9 @@ class ToolManager:
                     pass
                 
         except Exception as e:
-            logger.error(f"Error applying patch: {e}")
+            logger.error(f"Critical error applying patch: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False
         
     def _log_patch_failure_details(self, patch: str, git_stderr: str, reason: str):
