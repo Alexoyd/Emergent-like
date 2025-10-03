@@ -7,7 +7,7 @@ import re
 
 from .base_handler import StackHandler
 from .registry import StackRegistry
-from backend.orchestrator.utils import json_utils
+from ..utils import json_utils
 
 class LaravelHandler(StackHandler):
     name = "laravel"
