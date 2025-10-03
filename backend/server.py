@@ -23,19 +23,19 @@ from contextlib import asynccontextmanager
 from fastapi import WebSocket, WebSocketDisconnect
 
 # Import AI orchestrator components
-from backend.orchestrator.llm_router import LLMRouter
-from backend.orchestrator.tools import ToolManager
-from backend.orchestrator.state_manager import StateManager
-from backend.orchestrator.rag_system import RAGSystem
-from backend.orchestrator.project_manager import ProjectManager
-from backend.orchestrator.github_integration import GitHubIntegration
-from backend.orchestrator.plan_parser import PlanParser
-from backend.orchestrator.agents import PlannerAgent, DeveloperAgent, ReviewerAgent
-from backend.orchestrator.agents.planner import ProjectContext
-from backend.orchestrator.agents.reviewer import TestResult as ReviewerTestResult, ReviewDecision
-from backend.orchestrator.plan_parser import Step as PlanStep
-from backend.orchestrator.utils import json_utils
-from backend.orchestrator.utils import bson_utils
+from orchestrator.llm_router import LLMRouter
+from orchestrator.tools import ToolManager
+from orchestrator.state_manager import StateManager
+from orchestrator.rag_system import RAGSystem
+from orchestrator.project_manager import ProjectManager
+from orchestrator.github_integration import GitHubIntegration
+from orchestrator.plan_parser import PlanParser
+from orchestrator.agents import PlannerAgent, DeveloperAgent, ReviewerAgent
+from orchestrator.agents.planner import ProjectContext
+from orchestrator.agents.reviewer import TestResult as ReviewerTestResult, ReviewDecision
+from orchestrator.plan_parser import Step as PlanStep
+from orchestrator.utils import json_utils
+from orchestrator.utils import bson_utils
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
