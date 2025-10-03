@@ -80,6 +80,7 @@ class TestResult:
 class ToolManager:
     def __init__(self):
         self.timeout = 300  # 5 minutes default timeout
+        self.development_mode = os.environ.get("DEVELOPMENT_MODE", "true").lower() == "true"
     
     async def read_file(self, file_path: str) -> str:
         """Read file content"""
