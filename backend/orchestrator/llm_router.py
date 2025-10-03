@@ -487,7 +487,7 @@ class LLMRouter:
                 return False
             
             # 2) Vérification basique de structure unified diff
-            lines = content.split('\\')
+            lines = content.split('\n')
             
             has_file_headers = False
             has_hunk_header = False
