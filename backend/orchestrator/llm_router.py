@@ -637,7 +637,7 @@ index 0000000..b3d9bbc
 END_PATCH'''
             
             else:
-                content = """BEGIN_PATCH
+                content = '''BEGIN_PATCH
 diff --git a/hello.txt b/hello.txt
 new file mode 100644
 index 0000000..b376c99
@@ -645,7 +645,7 @@ index 0000000..b376c99
 +++ b/hello.txt
 @@ -0,0 +1 @@
 +Hello World!
-END_PATCH"""
+END_PATCH'''
         
         elif task_type == "review":
             content = """{
