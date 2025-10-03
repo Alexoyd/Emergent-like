@@ -311,18 +311,59 @@ Patch lines: {len(patch_lines)}
             )
     
     def _get_test_commands(self, test_type: str) -> List[List[str]]:
-        """Get commands for specific test type"""
+        """
+        Get commands for specific test type with fallback options.
+        Returns multiple command options in order of preference.
+        """
         commands_map = {
-            "pest": [["php", "artisan", "test"]],
-            "phpstan": [["./vendor/bin/phpstan", "analyse"]],
-            "pint": [["./vendor/bin/pint", "--test"]],
-            "jest": [["npm", "test"]],
-            "eslint": [["npm", "run", "lint"]],
+            # Laravel tests with fallbacks
+            "pest": [
+                ["php", "artisan", "test"],
+                ["./vendor/bin/pest"],
+                ["composer", "test"]
+            ],
+            "phpstan": [
+                ["./vendor/bin/phpstan", "analyse"],
+                ["vendor/bin/phpstan", "analyse"],
+                ["composer", "phpstan"]
+            ],
+            "pint": [
+                ["./vendor/bin/pint", "--test"],
+                ["vendor/bin/pint", "--test"],
+                ["composer", "pint"]
+            ],
+            
+            # JavaScript/Node tests with fallbacks
+            "jest": [
+                ["npm", "test"],
+                ["yarn", "test"],
+                ["npx", "jest"]
+            ],
+            "eslint": [
+                ["npm", "run", "lint"],
+                ["yarn", "lint"],
+                ["npx", "eslint", "."]
+            ],
+            
+            # Vue.js tests with multiple options
+            "vue": [
+                ["npm", "run", "test:unit"],
+                ["yarn", "test:unit"], 
+                ["npx", "vitest", "run"],
+                ["npm", "test"]
+            ],
+            
+            # Python tests with fallbacks
+            "python": [
+                ["pytest"],
+                ["python", "-m", "pytest"],
+                ["python3", "-m", "pytest"]
+            ],
+            
+            # Other test types
             "playwright": [["npx", "playwright", "test"]],
             "composer": [["composer", "test"]],
             "npm": [["npm", "test"]],
-            "vue": [["npx", "vitest", "run"], ["npm", "test"]],
-            "python": [["pytest"]],
         }
         
         return commands_map.get(test_type, [])
