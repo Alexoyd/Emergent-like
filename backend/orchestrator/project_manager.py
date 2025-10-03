@@ -12,7 +12,7 @@ import tempfile
 
 from .stacks.registry import StackFactory
 from . import stacks  # triggers default handler registration
-from backend.orchestrator.utils import json_utils
+from .utils import json_utils
 
 logger = logging.getLogger(__name__)
 
