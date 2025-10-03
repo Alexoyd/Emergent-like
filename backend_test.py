@@ -5,7 +5,11 @@ import time
 from datetime import datetime
 
 class EmergentSystemTester:
-    def __init__(self, base_url="http://localhost:8001"):
+    def __init__(self, base_url=None):
+        # Use environment variable or fallback to localhost
+        if base_url is None:
+            import os
+            base_url = os.environ.get('base_url', 'http://localhost:8001')
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.tests_run = 0
