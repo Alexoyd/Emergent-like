@@ -112,11 +112,20 @@ class ProjectManager:
             logger.error(f"Error creating project workspace: {e}")
             raise
     
-    async def create_project_skeleton(self, project_id: str, stack: str, project_name: Optional[str] = None) -> None:
+    async def create_project_skeleton(self, project_id: str, stack: str, project_name: Optional[str] = None) -> str:
         """Generic method to scaffold a project (exposed explicitly)."""
+        project_path = self.get_project_path(project_id)
         code_path = self.get_code_path(project_id)
         handler = self._new_handler(stack)
         await handler.create_project_skeleton(code_path, project_name)
+        
+        # Call install_dependencies after scaffolding
+        await self.install_dependencies(str(code_path), stack)
+        
+        # Create test skeletons for better test coverage
+        await self.create_test_skeletons(str(code_path), stack)
+        
+        return str(project_path)
     
     async def install_dependencies(self, project_path: str, stack: str) -> bool:
         """Backward compatible signature; delegates to stack handler."""
