@@ -9,13 +9,42 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 STRICT_PATCH_SUFFIX = """
-OUTPUT CONTRACT (STRICT):
-Return ONLY a valid unified diff suitable for `git apply`.
-- First line MUST be: diff --git a/<file> b/<file>
-- Include --- and +++ headers (--- /dev/null for new files).
-- Include at least one @@ hunk header.
-- Added lines start with + ; removed with - ; context with a space.
-- Repo-relative paths only. No prose/HTML/Markdown fences. Diff only.
+
+CRITICAL OUTPUT FORMAT - THIS IS MANDATORY:
+You MUST return ONLY a valid git unified diff that can be applied with `git apply`. 
+NO explanations, NO markdown, NO code fences, NO prose - ONLY the diff content.
+
+REQUIRED FORMAT:
+diff --git a/path/to/file.ext b/path/to/file.ext
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/path/to/file.ext
+@@ -0,0 +1,N @@
++line1 content
++line2 content
++line3 content
+
+MANDATORY ELEMENTS:
+- Line 1: diff --git a/<filepath> b/<filepath>
+- Line 2: new file mode OR index line  
+- Line 3: --- /dev/null OR --- a/<filepath>
+- Line 4: +++ b/<filepath>
+- Line 5+: @@ -old,count +new,count @@ hunks
+- Content lines: + for additions, - for deletions, space for context
+
+Example for creating main.py:
+diff --git a/main.py b/main.py
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/main.py
+@@ -0,0 +1,3 @@
++def hello():
++    return "Hello World"
++print(hello())
+
+Return ONLY the diff. No other text.
 """.strip()
 
 @dataclass
