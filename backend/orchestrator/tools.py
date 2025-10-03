@@ -111,27 +111,57 @@ class ToolManager:
             return False
     
     def _normalize_patch(self, patch: str, project_path: str) -> str:
-        """Normalize patch paths to be repo-relative and fix line endings (minimaliste)"""
-        code_root = os.path.abspath(project_path)
-        normalized_lines = []
+        """
+        Normalize patch paths to be repo-relative and fix line endings.
+        Ensures paths are relative to project root for proper git application.
+        """
+        try:
+            code_root = os.path.abspath(project_path)
+            normalized_lines = []
 
-        for line in patch.splitlines():
-            if line.startswith(("---", "+++")):
-            # Extraire le chemin après a/ ou b/
-                prefix, path_part = line.split(" ", 1)
-                # Supprimer le préfixe absolu jusqu'au dossier code/ si présent
-                if code_root in path_part:
-                     path_part = path_part.replace(code_root + "/", "")
-                normalized_lines.append(f"{prefix} {path_part}")
-            else: 
-                # ✅ Ne pas modifier le contenu des hunks - juste passer la ligne telle quelle
-                normalized_lines.append(line) 
-         
-        # 🔧 Normalisation EOL seulement (CRLF/CR -> LF)
-        text = "\n".join(normalized_lines)
-        text = text.replace("\r\n", "\n").replace("\r", "\n")  # CRLF/CR -> LF
-        # ✅ NE PAS ajouter de newline finale ici - c'est fait dans apply_patch()
-        return text
+            for line in patch.splitlines():
+                if line.startswith(("---", "+++")):
+                    # Handle file path lines
+                    parts = line.split(" ", 1)
+                    if len(parts) >= 2:
+                        prefix, path_part = parts[0], parts[1]
+                        
+                        # Remove absolute path prefix if present
+                        if code_root in path_part:
+                            # Remove absolute prefix, keep relative path
+                            relative_path = path_part.replace(code_root + "/", "")
+                            # Ensure it doesn't start with / 
+                            if relative_path.startswith("/"):
+                                relative_path = relative_path[1:]
+                            path_part = relative_path
+                        
+                        # Handle a/ and b/ prefixes properly
+                        if not path_part.startswith(("a/", "b/")) and not path_part in ["/dev/null"]:
+                            if prefix == "---":
+                                path_part = f"a/{path_part}" if path_part != "/dev/null" else path_part
+                            elif prefix == "+++":
+                                path_part = f"b/{path_part}" if path_part != "/dev/null" else path_part
+                        
+                        normalized_lines.append(f"{prefix} {path_part}")
+                    else:
+                        # Malformed line, keep as-is
+                        normalized_lines.append(line)
+                else:
+                    # Content lines, hunks, diff headers - keep unchanged
+                    normalized_lines.append(line)
+            
+            # Join with proper line endings
+            text = "\n".join(normalized_lines)
+            
+            # Normalize line endings (CRLF/CR -> LF)
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+            
+            return text
+            
+        except Exception as e:
+            logger.warning(f"Error normalizing patch: {e}")
+            # Return original patch if normalization fails
+            return patch.replace("\r\n", "\n").replace("\r", "\n")
 
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
