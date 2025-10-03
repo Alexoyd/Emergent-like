@@ -132,7 +132,67 @@ class ProjectManager:
         code_path = Path(project_path) / "code"
         handler = self._new_handler(stack)
         return await handler.install_dependencies(code_path)   
-      
+    
+    async def create_test_skeletons(self, code_path: str, stack: str) -> bool:
+        """Create test skeleton files for better test coverage."""
+        try:
+            code_path_obj = Path(code_path)
+            
+            if stack == "laravel":
+                # Create Laravel test skeletons
+                test_dirs = [
+                    code_path_obj / "tests" / "Feature",
+                    code_path_obj / "tests" / "Unit"
+                ]
+                for test_dir in test_dirs:
+                    test_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create basic test files
+                (code_path_obj / "tests" / "Feature" / "ExampleTest.php").write_text(
+                    '<?php\n\nnamespace Tests\\Feature;\n\nuse Illuminate\\Foundation\\Testing\\RefreshDatabase;\nuse Tests\\TestCase;\n\nclass ExampleTest extends TestCase\n{\n    public function test_the_application_returns_a_successful_response(): void\n    {\n        $response = $this->get(\'/\');\n        $response->assertStatus(200);\n    }\n}\n'
+                )
+                
+            elif stack in ["react", "vue", "node"]:
+                # Create JavaScript/Node test skeletons
+                test_dir = code_path_obj / "tests"
+                test_dir.mkdir(parents=True, exist_ok=True)
+                
+                if stack == "react":
+                    (test_dir / "App.test.js").write_text(
+                        'import { render, screen } from \'@testing-library/react\';\nimport App from \'../src/App\';\n\ntest(\'renders learn react link\', () => {\n  render(<App />);\n  const linkElement = screen.getByText(/learn react/i);\n  expect(linkElement).toBeInTheDocument();\n});\n'
+                    )
+                elif stack == "vue":
+                    (test_dir / "App.test.js").write_text(
+                        'import { mount } from \'@vue/test-utils\';\nimport App from \'../src/App.vue\';\n\ndescribe(\'App.vue\', () => {\n  it(\'renders properly\', () => {\n    const wrapper = mount(App);\n    expect(wrapper.text()).toContain(\'Hello Vue\');\n  });\n});\n'
+                    )
+                else:  # node
+                    (test_dir / "index.test.js").write_text(
+                        'const request = require(\'supertest\');\nconst app = require(\'../src/index\');\n\ndescribe(\'GET /\', () => {\n  it(\'should return 200 OK\', async () => {\n    const response = await request(app).get(\'/\');\n    expect(response.status).toBe(200);\n  });\n});\n'
+                    )
+                    
+            elif stack == "python":
+                # Create Python test skeletons
+                test_dir = code_path_obj / "tests"
+                test_dir.mkdir(parents=True, exist_ok=True)
+                
+                (test_dir / "__init__.py").write_text("")
+                (test_dir / "test_main.py").write_text(
+                    'import pytest\nfrom src.main import hello_world\n\ndef test_hello_world():\n    """Test the hello_world function."""\n    result = hello_world()\n    assert result == "Hello, World!"\n\ndef test_example():\n    """Example test case."""\n    assert 1 + 1 == 2\n'
+                )
+                
+                # Create a basic main.py if it doesn't exist
+                main_file = code_path_obj / "src" / "main.py"
+                if not main_file.exists():
+                    main_file.write_text(
+                        'def hello_world():\n    """Return a greeting message."""\n    return "Hello, World!"\n\nif __name__ == "__main__":\n    print(hello_world())\n'
+                    )
+            
+            logger.info(f"Created test skeletons for {stack} project at {code_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error creating test skeletons: {e}")
+            return False
     async def get_project_info(self, project_id: str) -> Optional[Dict[str, Any]]:
         project_path = self.projects_base_path / project_id
         meta = project_path / "project.json"
