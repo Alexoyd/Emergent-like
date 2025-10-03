@@ -268,46 +268,91 @@ Patch lines: {len(patch_lines)}
             )
     
     async def run_test(self, project_path: Optional[str], test_type: str) -> TestResult:
-        """Run specific test type"""
+        """
+        Run specific test type with multiple command fallbacks.
+        Tries each command option until one succeeds or all fail.
+        """
         try:
             if not project_path:
                 project_path = os.getcwd()
+            
+            if not os.path.exists(project_path):
+                return TestResult(
+                    test_type=test_type,
+                    status="failed",
+                    output=f"Project path does not exist: {project_path}"
+                )
             
             commands = self._get_test_commands(test_type)
             if not commands:
                 return TestResult(
                     test_type=test_type,
                     status="failed",
-                    output=f"Unknown test type: {test_type}"
+                    output=f"No commands defined for test type: {test_type}"
                 )
             
+            last_error = None
+            commands_tried = []
+            
+            # Try each command until one succeeds
             for command in commands:
-                result = await self._run_command(command, cwd=project_path)
-                
-                if result.returncode != 0:
-                    return TestResult(
-                        test_type=test_type,
-                        status="failed",
-                        output=f"Command failed: {' '.join(command)}\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}",
-                        details={
-                            "command": " ".join(command),
-                            "return_code": result.returncode
-                        }
-                    )
+                try:
+                    logger.info(f"Trying {test_type} command: {' '.join(command)}")
+                    result = await self._run_command(command, cwd=project_path)
+                    commands_tried.append(' '.join(command))
+                    
+                    if result.returncode == 0:
+                        # Success!
+                        return TestResult(
+                            test_type=test_type,
+                            status="passed",
+                            output=f"✅ {test_type} tests passed\n\nCommand: {' '.join(command)}\nOutput:\n{result.stdout}",
+                            details={
+                                "command": " ".join(command),
+                                "return_code": result.returncode,
+                                "commands_tried": commands_tried
+                            }
+                        )
+                    else:
+                        # Command failed, try next one
+                        last_error = f"Command '{' '.join(command)}' failed (exit {result.returncode})\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+                        logger.warning(f"{test_type} command failed, trying next: {last_error[:200]}...")
+                        continue
+                        
+                except FileNotFoundError:
+                    # Command not found, try next one
+                    last_error = f"Command '{' '.join(command)}' not found"
+                    logger.info(f"{test_type} command not found: {' '.join(command)}")
+                    commands_tried.append(' '.join(command) + " (not found)")
+                    continue
+                    
+                except Exception as e:
+                    # Other error, try next command
+                    last_error = f"Command '{' '.join(command)}' error: {str(e)}"
+                    logger.warning(f"{test_type} command error: {e}")
+                    commands_tried.append(' '.join(command) + f" (error: {e})")
+                    continue
             
-            return TestResult(
-                test_type=test_type,
-                status="passed",
-                output=f"All {test_type} tests passed",
-                details={"commands_run": len(commands)}
-            )
-            
-        except Exception as e:
-            logger.error(f"Error running {test_type} tests: {e}")
+            # All commands failed
             return TestResult(
                 test_type=test_type,
                 status="failed",
-                output=f"Error: {str(e)}"
+                output=f"❌ All {test_type} commands failed\n\nCommands tried:\n" + 
+                       "\n".join(f"- {cmd}" for cmd in commands_tried) + 
+                       f"\n\nLast error:\n{last_error}",
+                details={
+                    "commands_tried": commands_tried,
+                    "last_error": last_error
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Critical error running {test_type} tests: {e}")
+            return TestResult(
+                test_type=test_type,
+                status="failed",
+                output=f"Critical error: {str(e)}",
+                details={"exception": str(e)}
             )
     
     def _get_test_commands(self, test_type: str) -> List[List[str]]:
