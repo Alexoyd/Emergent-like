@@ -648,7 +648,7 @@ index 0000000..b376c99
 END_PATCH'''
         
         elif task_type == "review":
-            content = """{
+            content = '''{
     "decision": "accept",
     "confidence": 0.9,
     "feedback": "Code looks good. Basic Hello World implementation is correct and follows best practices.",
@@ -656,7 +656,7 @@ END_PATCH'''
         "Consider adding error handling",
         "Add documentation"
     ]
-}"""
+}'''
         else:
             content = f"Mock response for {task_type} task. This is generated in development mode."
         
