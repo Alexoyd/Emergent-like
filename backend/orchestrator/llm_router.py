@@ -95,6 +95,11 @@ class LLMRouter:
     async def generate(self, prompt: str, task_type: str, current_cost: float, budget_limit: float, run_id: str = None) -> LLMResponse:
         """Generate response with improved automatic model selection and escalation"""
         try:
+            # ✅ Development mode fallback if no API keys available
+            if self.development_mode and not self._has_any_api_keys():
+                logger.warning("🧪 Development mode: No API keys available, using mock responses")
+                return self._generate_mock_response(prompt, task_type)
+            
             # Reset attempt counter for new generation
             self.current_attempt = 0
             
