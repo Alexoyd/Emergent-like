@@ -602,7 +602,7 @@ class LLMRouter:
         elif task_type == "coding":
             # Extract target files from prompt for realistic patch
             if "python" in prompt.lower() or "main.py" in prompt.lower():
-                content = """BEGIN_PATCH
+                content = '''BEGIN_PATCH
 diff --git a/main.py b/main.py
 new file mode 100644
 index 0000000..b376c99
@@ -617,7 +617,7 @@ index 0000000..b376c99
 +
 +if __name__ == "__main__":
 +    main()
-END_PATCH"""
+END_PATCH'''
             
             elif "laravel" in prompt.lower():
                 content = """BEGIN_PATCH
