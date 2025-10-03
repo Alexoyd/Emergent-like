@@ -1185,6 +1185,13 @@ def main():
         ("LLM Router Cache Integration", tester.test_llm_router_cache_integration),
     ]
     
+    # Agent orchestration tests - NEW PRIORITY TESTS
+    orchestration_tests = [
+        ("Orchestration Endpoints", tester.test_orchestration_endpoints),
+        ("Agent Orchestration Cycle - Python", tester.test_agent_orchestration_cycle_python),
+        ("Agent Orchestration Cycle - Laravel", tester.test_agent_orchestration_cycle_laravel),
+    ]
+    
     # Run management tests
     run_tests = [
         ("Create Basic Run", tester.test_create_run_basic),
