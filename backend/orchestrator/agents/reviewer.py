@@ -87,6 +87,7 @@ class ReviewerAgent:
         attempt_number: int = 1,
         previous_feedback: Optional[str] = None,
         stack: str = "generic",
+        run: Any = None, 
     ) -> ReviewResult:
         """
         Review the results of a development step.
@@ -124,7 +125,7 @@ class ReviewerAgent:
         if should_escalate:
             # Use LLM to determine if this requires plan revision
             escalation_decision = await self._should_escalate_to_planner(
-                step, patch_text, test_results, previous_feedback, stack
+                step, patch_text, test_results, previous_feedback, stack, run
             )
             
             if escalation_decision["should_escalate"]:
@@ -148,7 +149,7 @@ class ReviewerAgent:
         
         # Generate feedback for retry
         feedback_result = await self._generate_retry_feedback(
-            step, patch_text, test_results, previous_feedback, stack
+            step, patch_text, test_results, previous_feedback, stack, run
         )
         
         return ReviewResult(
@@ -200,6 +201,7 @@ class ReviewerAgent:
         test_results: List[TestResult],
         previous_feedback: Optional[str],
         stack: str,
+        run: Any,
     ) -> Dict[str, Any]:
         """
         Use LLM to determine if the issue requires plan revision.
@@ -279,6 +281,7 @@ Respond in JSON format:
         test_results: List[TestResult],
         previous_feedback: Optional[str],
         stack: str,
+        run: Any,
     ) -> Dict[str, Any]:
         """
         Generate specific feedback for retry attempts.

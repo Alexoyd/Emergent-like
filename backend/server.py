@@ -65,30 +65,19 @@ app = FastAPI(title="AI Agent Orchestrator", version="1.0.0")
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-def json_default(o):
-    if isinstance(o, Enum):
-        return o.value
-    if dataclasses.is_dataclass(o):
-        return dataclasses.asdict(o)
-    if isinstance(o, Path):
-        return str(o)
-    # fallback raisonnable
-    return str(o)
+async def _upsert_step(step: Any) -> None:
+    """Upsert d'un step dans Mongo, en BSON-safe."""
+    if hasattr(step, "to_dict"):
+        payload = step.to_dict()
+    elif hasattr(step, "dict"):
+        payload = step.dict()
+    else:
+        payload = dataclasses.asdict(step)  # dataclass
 
-# Construire un dict du step (selon ton type)
-if hasattr(step, "to_dict"):
-    payload = step.to_dict()
-elif hasattr(step, "dict"):
-    payload = step.dict()
-else:
-    payload = dataclasses.asdict(step)  # dataclass
+    # Récupère l'ID de manière robuste
+    step_id = payload.get("id", getattr(step, "id", None))
 
-# Upsert + $set + BSON-safe
-await db.steps.update_one(
-    {"id": step.id},
-    {"$set": bson_utils.bson_safe(payload)},
-    upsert=True,
-)
+    await _upsert_step(step)
 
 # Models
 class RunStatus(str, Enum):
@@ -1198,26 +1187,26 @@ async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
 
 # Helper functions for the new iterative cycle
 
-async def _save_agent_conversation(run_id: str, agent_type: str, direction: str, data: dict):
+async def _save_agent_conversation(run_id: str, agent_type: str, direction: str, data: Dict[str, Any]) -> None:
     """Save agent conversation for traceability and debugging."""
     try:
-        conversation_entry = {
+        entry = {
             "timestamp": datetime.now(timezone.utc),
-            "agent_type": agent_type,
-            "direction": direction,  # "input" or "output"
-            "data": data
+            "agent_type": agent_type,   # "planner" | "developer" | "reviewer" ...
+            "direction": direction,     # "input" | "output"
+            "data": data,               # peut contenir Path / Enums / dataclasses
         }
-        
+
         await db.runs.update_one(
             {"id": run_id},
-            {"$push": {"agent_conversations": conversation_entry}}
+            {"$push": {"agent_conversations": bson_utils.bson_safe(entry)}}  # ✅ BSON-safe
         )
-        
+
         await state_manager.add_log(run_id, {
             "type": "debug",
             "content": f"Saved {agent_type} agent {direction} conversation"
         })
-        
+
     except Exception as e:
         logging.warning(f"Failed to save agent conversation: {e}")
 
@@ -1287,9 +1276,7 @@ async def _execute_step_with_agents(
             
             # Generate patch with DeveloperAgent
             try:
-                patch_result = await developer_agent.generate_patch(
-                    step, project_context, rag_context=None
-                )
+                patch_result = await developer_agent.generate_patch(step, project_context, run)
                 
                 await _save_agent_conversation(run_id, "developer", "output", {
                     "patch_generated": True,
@@ -1352,7 +1339,8 @@ async def _execute_step_with_agents(
                 test_results=reviewer_test_results,
                 attempt_number=attempt,
                 previous_feedback=previous_feedback,
-                stack=run.stack
+                stack=run.stack,
+                run=run,
             )
             
             await _save_agent_conversation(run_id, "reviewer", "output", {
@@ -1555,7 +1543,7 @@ async def execute_step(run_id: str, step_number: int) -> Step:
         
         # Update step to running
         step.status = StepStatus.RUNNING
-        await db.steps.insert_one(bson_utils.bson_safe(step.dict()))
+        await _upsert_step(step)
         
         # Generate step prompt
         context = await rag_system.get_relevant_context(run.goal) if run.project_path else ""
@@ -1615,7 +1603,7 @@ Be specific, focused, and ensure changes are minimal and testable.
         step.cost_eur = response.cost_eur
         
         # Update database
-        await db.steps.replace_one({"id": step.id}, step.dict())
+        await _upsert_step(step)
         
         # Update run cost
         await state_manager.add_cost(run_id, response.cost_eur)
@@ -1626,7 +1614,7 @@ Be specific, focused, and ensure changes are minimal and testable.
         logging.error(f"Error executing step: {e}")
         step.status = StepStatus.FAILED
         step.error = str(e)
-        await db.steps.replace_one({"id": step.id}, step.dict())
+        await _upsert_step(step)
         return step
 
 async def retry_step_with_escalation(run_id: str, step_number: int, retry_count: int):
