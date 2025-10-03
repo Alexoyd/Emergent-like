@@ -47,6 +47,9 @@ class LLMRouter:
         # ✅ Check if Anthropic is enabled
         self.anthropic_enabled = os.getenv("ENABLE_ANTHROPIC", "true").lower() == "true"
         
+        # ✅ Development mode for testing without API keys
+        self.development_mode = os.getenv("DEVELOPMENT_MODE", "true").lower() == "true"
+        
          # Initialize prompt cache manager
         self.prompt_cache = PromptCacheManager()
         
