@@ -377,9 +377,7 @@ metadata:
   
 test_plan:
   current_focus:
-    - "Fonction is_valid_patch pour validation des patches"
-    - "Installation automatique des dépendances par stack" 
-    - "Option ENABLE_ANTHROPIC pour désactiver Anthropic"
+    - "Système d'orchestration d'agents complet"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
