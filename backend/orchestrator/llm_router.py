@@ -520,27 +520,29 @@ class LLMRouter:
         # Pour les autres types, on valide par défaut si non vide
         return True
  
-    def _save_invalid_response(self, content: str, reason: str) -> None:
-        """Save invalid response to debug file"""
+    def _save_invalid_response(self, content: str, reason: str):
+        """Save invalid responses for debugging"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            debug_dir = "/tmp/emergent_patches"
-            debug_path = f"{debug_dir}/invalid_{timestamp}_{reason}.txt"
+            filename = f"/tmp/emergent_patches/invalid_{timestamp}_{reason}.txt"
             
-            # ✅ PRIORITÉ 2 - Créer automatiquement le dossier tmp/ s'il n'existe pas
-            os.makedirs(debug_dir, exist_ok=True)
+            # Make sure directory exists
+            import os
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
             
-            with open(debug_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== Invalid Response Debug ===")
-                f.write(f"Reason: {reason}")
-                f.write(f"Timestamp: {datetime.now().isoformat()}")
-                f.write(f"Length: {len(content)} characters")
-                f.write("=== Content ===")
+            with open(filename, 'w') as f:
+                f.write(f"Reason: {reason}\n")
+                f.write(f"Timestamp: {timestamp}\n")
+                f.write(f"Content length: {len(content)}\n")
+                f.write(f"First 200 chars: {repr(content[:200])}\n")
+                f.write("="*50 + "\n")
                 f.write(content)
-                
-            logger.info(f"Saved invalid response to {debug_path}")
+            
+            logger.info(f"Saved invalid response to {filename}")
+            logger.debug(f"Invalid response preview: {repr(content[:100])}...")
+            
         except Exception as e:
-            logger.error(f"Failed to save invalid response: {e}")
+            logger.warning(f"Failed to save invalid response: {e}")
 
     async def _retry_for_valid_diff(self, tier: ModelTier, task_type: str, run_id: str = None) -> Optional[LLMResponse]:
         """Retry with strict message for invalid coding responses"""
