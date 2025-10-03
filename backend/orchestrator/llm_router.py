@@ -576,3 +576,89 @@ class LLMRouter:
         except Exception as e:
             logger.warning(f"Ollama not available: {e}")
             return False
+
+    def _generate_mock_response(self, prompt: str, task_type: str) -> LLMResponse:
+        """Generate mock responses for development mode when no API keys available"""
+        logger.info(f"🧪 Development mode: generating mock response for {task_type}")
+        
+        if task_type == "planning":
+            content = """1. Create main application file
+   Files: main.py, hello.py
+   Duration: 5 minutes
+   
+2. Add basic functionality
+   Files: main.py
+   Duration: 3 minutes
+   
+3. Create simple tests
+   Files: tests/test_main.py
+   Duration: 2 minutes"""
+        
+        elif task_type == "coding":
+            # Extract target files from prompt for realistic patch
+            if "python" in prompt.lower() or "main.py" in prompt.lower():
+                content = """BEGIN_PATCH
+diff --git a/main.py b/main.py
+new file mode 100644
+index 0000000..b376c99
+--- /dev/null
++++ b/main.py
+@@ -0,0 +1,7 @@
++#!/usr/bin/env python3
++"""Simple Hello World application"""
++
++def main():
++    print("Hello World!")
++
++if __name__ == "__main__":
++    main()
+END_PATCH"""
+            
+            elif "laravel" in prompt.lower():
+                content = """BEGIN_PATCH
+diff --git a/routes/web.php b/routes/web.php
+new file mode 100644
+index 0000000..b3d9bbc
+--- /dev/null
++++ b/routes/web.php
+@@ -0,0 +1,7 @@
++<?php
++
++use Illuminate\\Support\\Facades\\Route;
++
++Route::get('/', function () {
++    return 'Hello World!';
++});
+END_PATCH"""
+            
+            else:
+                content = """BEGIN_PATCH
+diff --git a/hello.txt b/hello.txt
+new file mode 100644
+index 0000000..b376c99
+--- /dev/null
++++ b/hello.txt
+@@ -0,0 +1 @@
++Hello World!
+END_PATCH"""
+        
+        elif task_type == "review":
+            content = """{
+    "decision": "accept",
+    "confidence": 0.9,
+    "feedback": "Code looks good. Basic Hello World implementation is correct and follows best practices.",
+    "suggestions": [
+        "Consider adding error handling",
+        "Add documentation"
+    ]
+}"""
+        else:
+            content = f"Mock response for {task_type} task. This is generated in development mode."
+        
+        return LLMResponse(
+            content=content,
+            model="mock-dev-model",
+            prompt_tokens=len(prompt.split()),
+            completion_tokens=len(content.split()),
+            cost_eur=0.0
+        )
