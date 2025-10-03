@@ -78,6 +78,10 @@ class ReviewerAgent:
         self.llm_router = llm_router
         self.max_retry_attempts = max_retry_attempts
         self.log = logger or logging.getLogger(__name__)
+        
+        # Development mode for simplified behavior
+        import os
+        self.development_mode = os.environ.get("DEVELOPMENT_MODE", "true").lower() == "true"
     
     async def review_step_result(
         self,
