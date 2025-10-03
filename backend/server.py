@@ -76,8 +76,13 @@ async def _upsert_step(step: Any) -> None:
 
     # Récupère l'ID de manière robuste
     step_id = payload.get("id", getattr(step, "id", None))
-
-    await _upsert_step(step)
+    
+    # TODO: Implémenter la logique d'upsert dans MongoDB
+    # await db.steps.update_one(
+    #     {"id": step_id},
+    #     {"$set": bson_utils.bson_safe(payload)},
+    #     upsert=True
+    # )
 
 # Models
 class RunStatus(str, Enum):
