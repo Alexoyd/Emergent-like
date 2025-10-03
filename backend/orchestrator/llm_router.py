@@ -620,7 +620,7 @@ index 0000000..b376c99
 END_PATCH'''
             
             elif "laravel" in prompt.lower():
-                content = """BEGIN_PATCH
+                content = '''BEGIN_PATCH
 diff --git a/routes/web.php b/routes/web.php
 new file mode 100644
 index 0000000..b3d9bbc
@@ -634,7 +634,7 @@ index 0000000..b3d9bbc
 +Route::get('/', function () {
 +    return 'Hello World!';
 +});
-END_PATCH"""
+END_PATCH'''
             
             else:
                 content = """BEGIN_PATCH
