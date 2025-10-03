@@ -1207,6 +1207,7 @@ def main():
     
     all_tests = [
         ("🔧 CORE FUNCTIONALITY", core_tests),
+        ("🤖 AGENT ORCHESTRATION", orchestration_tests),  # Priority tests first
         ("🆕 NEW FEATURES", feature_tests),
         ("🌐 ADMIN GLOBAL FEATURES", admin_global_tests),
         ("🔍 PROJECT PREVIEW", preview_tests),
