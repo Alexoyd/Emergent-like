@@ -559,3 +559,51 @@ Patch lines: {len(patch_lines)}
         except Exception as e:
             logger.error(f"Error backing up file: {e}")
             raise
+    
+    async def validate_patch(self, project_path: Optional[str], patch_text: str, stack: str) -> bool:
+        """
+        Validate if a patch can be applied and meets basic quality checks.
+        Used by DeveloperAgent to validate patches before applying.
+        """
+        try:
+            logger.info(f"Validating patch for stack '{stack}' in project: {project_path}")
+            
+            # 1. Basic format validation
+            if not is_valid_patch(patch_text):
+                logger.warning("Patch validation failed: Invalid patch format")
+                return False
+            
+            # 2. Check if project path exists
+            if not project_path or not os.path.exists(project_path):
+                logger.warning(f"Patch validation failed: Project path does not exist: {project_path}")
+                return False
+            
+            # 3. Try to apply patch with --check (dry run)
+            normalized_patch = self._normalize_patch(patch_text, project_path)
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as f:
+                f.write(normalized_patch)
+                patch_file = f.name
+            
+            try:
+                check_result = await self._run_command(
+                    ["git", "apply", "--check", patch_file],
+                    cwd=project_path
+                )
+                
+                if check_result.returncode == 0:
+                    logger.info("✅ Patch validation successful - can be applied cleanly")
+                    return True
+                else:
+                    logger.warning(f"❌ Patch validation failed - git check failed: {check_result.stderr}")
+                    return False
+                    
+            finally:
+                try:
+                    os.unlink(patch_file)
+                except:
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Error validating patch: {e}")
+            return False
