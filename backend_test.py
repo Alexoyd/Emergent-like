@@ -780,6 +780,367 @@ class EmergentSystemTester:
         
         return success, response
 
+    def test_agent_orchestration_cycle_python(self):
+        """Test complete agent orchestration cycle with Python stack"""
+        print("\n🤖 Testing Agent Orchestration Cycle - Python Stack")
+        
+        # Create a simple Hello World run as requested
+        run_data = {
+            "goal": "Create a simple Hello World file",
+            "stack": "python",
+            "max_steps": 5,
+            "max_retries_per_step": 2,
+            "daily_budget_eur": 2.0
+        }
+        
+        # Step 1: Create the run
+        success, response = self.run_test(
+            "Create Hello World Run (Python)",
+            "POST",
+            "runs",
+            200,
+            data=run_data,
+            timeout=30
+        )
+        
+        if not success:
+            success, response = self.run_test(
+                "Create Hello World Run (Python) - 201",
+                "POST",
+                "runs",
+                201,
+                data=run_data,
+                timeout=30
+            )
+        
+        if not success or 'id' not in response:
+            print("❌ Failed to create orchestration test run")
+            return False, {}
+        
+        run_id = response['id']
+        print(f"✅ Created orchestration test run: {run_id}")
+        
+        # Step 2: Monitor the run progress for agent cycle
+        max_wait_time = 120  # 2 minutes max wait
+        check_interval = 5   # Check every 5 seconds
+        elapsed_time = 0
+        
+        orchestration_phases = {
+            "planning": False,
+            "execution": False,
+            "completion": False
+        }
+        
+        while elapsed_time < max_wait_time:
+            time.sleep(check_interval)
+            elapsed_time += check_interval
+            
+            # Get run status
+            run_success, run_response = self.run_test(
+                f"Monitor Run Progress ({elapsed_time}s)",
+                "GET",
+                f"runs/{run_id}",
+                200,
+                timeout=10
+            )
+            
+            if not run_success:
+                print(f"❌ Failed to get run status at {elapsed_time}s")
+                continue
+            
+            status = run_response.get('status', 'unknown')
+            current_step = run_response.get('current_step', 0)
+            logs = run_response.get('logs', [])
+            
+            print(f"   Status: {status}, Step: {current_step}, Logs: {len(logs)}")
+            
+            # Check for orchestration phases in logs
+            for log in logs[-5:]:  # Check last 5 logs
+                content = log.get('content', '').lower()
+                if 'phase 1:' in content or 'planning' in content:
+                    orchestration_phases["planning"] = True
+                    print(f"   ✅ Planning phase detected")
+                elif 'phase 2:' in content or 'execution' in content:
+                    orchestration_phases["execution"] = True
+                    print(f"   ✅ Execution phase detected")
+                elif 'completed' in content or 'phase 3:' in content:
+                    orchestration_phases["completion"] = True
+                    print(f"   ✅ Completion phase detected")
+            
+            # Check if run completed or failed
+            if status in ['completed', 'failed', 'cancelled']:
+                print(f"   🏁 Run finished with status: {status}")
+                break
+            
+            # Check if we're making progress
+            if current_step > 0:
+                print(f"   📈 Progress: Step {current_step}")
+        
+        # Step 3: Get final run state and analyze results
+        final_success, final_response = self.run_test(
+            "Get Final Run State",
+            "GET",
+            f"runs/{run_id}",
+            200
+        )
+        
+        if not final_success:
+            print("❌ Failed to get final run state")
+            return False, {}
+        
+        final_status = final_response.get('status', 'unknown')
+        final_step = final_response.get('current_step', 0)
+        final_logs = final_response.get('logs', [])
+        
+        # Step 4: Check for agent conversations
+        conversations_success, conversations_response = self.run_test(
+            "Get Agent Conversations",
+            "GET",
+            f"runs/{run_id}/agent-conversations",
+            200
+        )
+        
+        agent_conversations = []
+        if conversations_success:
+            agent_conversations = conversations_response.get('conversations', [])
+            print(f"   📝 Agent conversations: {len(agent_conversations)}")
+        
+        # Step 5: Analyze orchestration success
+        orchestration_success = self._analyze_orchestration_results(
+            final_status, final_step, final_logs, orchestration_phases, agent_conversations
+        )
+        
+        return orchestration_success, {
+            "run_id": run_id,
+            "final_status": final_status,
+            "final_step": final_step,
+            "logs_count": len(final_logs),
+            "phases_detected": orchestration_phases,
+            "agent_conversations": len(agent_conversations),
+            "elapsed_time": elapsed_time
+        }
+
+    def test_agent_orchestration_cycle_laravel(self):
+        """Test complete agent orchestration cycle with Laravel stack"""
+        print("\n🤖 Testing Agent Orchestration Cycle - Laravel Stack")
+        
+        # Create a simple Laravel run
+        run_data = {
+            "goal": "Create a simple Hello World file",
+            "stack": "laravel",
+            "max_steps": 5,
+            "max_retries_per_step": 2,
+            "daily_budget_eur": 2.0
+        }
+        
+        # Step 1: Create the run
+        success, response = self.run_test(
+            "Create Hello World Run (Laravel)",
+            "POST",
+            "runs",
+            200,
+            data=run_data,
+            timeout=30
+        )
+        
+        if not success:
+            success, response = self.run_test(
+                "Create Hello World Run (Laravel) - 201",
+                "POST",
+                "runs",
+                201,
+                data=run_data,
+                timeout=30
+            )
+        
+        if not success or 'id' not in response:
+            print("❌ Failed to create Laravel orchestration test run")
+            return False, {}
+        
+        run_id = response['id']
+        print(f"✅ Created Laravel orchestration test run: {run_id}")
+        
+        # Step 2: Monitor for shorter time since we're testing both stacks
+        max_wait_time = 90   # 1.5 minutes for Laravel
+        check_interval = 5
+        elapsed_time = 0
+        
+        orchestration_phases = {
+            "planning": False,
+            "execution": False,
+            "completion": False
+        }
+        
+        while elapsed_time < max_wait_time:
+            time.sleep(check_interval)
+            elapsed_time += check_interval
+            
+            # Get run status
+            run_success, run_response = self.run_test(
+                f"Monitor Laravel Run ({elapsed_time}s)",
+                "GET",
+                f"runs/{run_id}",
+                200,
+                timeout=10
+            )
+            
+            if not run_success:
+                continue
+            
+            status = run_response.get('status', 'unknown')
+            current_step = run_response.get('current_step', 0)
+            logs = run_response.get('logs', [])
+            
+            print(f"   Laravel Status: {status}, Step: {current_step}")
+            
+            # Check for orchestration phases
+            for log in logs[-3:]:  # Check last 3 logs
+                content = log.get('content', '').lower()
+                if 'phase 1:' in content or 'planning' in content:
+                    orchestration_phases["planning"] = True
+                elif 'phase 2:' in content or 'execution' in content:
+                    orchestration_phases["execution"] = True
+                elif 'completed' in content:
+                    orchestration_phases["completion"] = True
+            
+            if status in ['completed', 'failed', 'cancelled']:
+                break
+        
+        # Get final state
+        final_success, final_response = self.run_test(
+            "Get Final Laravel Run State",
+            "GET",
+            f"runs/{run_id}",
+            200
+        )
+        
+        if not final_success:
+            return False, {}
+        
+        final_status = final_response.get('status', 'unknown')
+        final_step = final_response.get('current_step', 0)
+        final_logs = final_response.get('logs', [])
+        
+        # Analyze results
+        orchestration_success = self._analyze_orchestration_results(
+            final_status, final_step, final_logs, orchestration_phases, []
+        )
+        
+        return orchestration_success, {
+            "run_id": run_id,
+            "final_status": final_status,
+            "final_step": final_step,
+            "phases_detected": orchestration_phases,
+            "elapsed_time": elapsed_time
+        }
+
+    def _analyze_orchestration_results(self, status, step, logs, phases, conversations):
+        """Analyze orchestration test results"""
+        print(f"\n📊 Analyzing Orchestration Results:")
+        print(f"   Final Status: {status}")
+        print(f"   Steps Executed: {step}")
+        print(f"   Total Logs: {len(logs)}")
+        print(f"   Phases Detected: {phases}")
+        print(f"   Agent Conversations: {len(conversations)}")
+        
+        # Success criteria
+        success_criteria = []
+        
+        # 1. Run should not crash (status should not be unknown)
+        if status != 'unknown':
+            success_criteria.append("✅ No Python crashes detected")
+        else:
+            success_criteria.append("❌ Python crash or unknown status")
+        
+        # 2. At least planning phase should be detected
+        if phases.get("planning", False):
+            success_criteria.append("✅ Planning phase executed")
+        else:
+            success_criteria.append("❌ Planning phase not detected")
+        
+        # 3. Some execution should occur (step > 0)
+        if step > 0:
+            success_criteria.append("✅ Execution steps performed")
+        else:
+            success_criteria.append("❌ No execution steps performed")
+        
+        # 4. Logs should show progress
+        if len(logs) > 0:
+            success_criteria.append("✅ Logs generated showing progress")
+        else:
+            success_criteria.append("❌ No logs generated")
+        
+        # 5. Check for specific error patterns in logs
+        error_patterns = ['error', 'failed', 'exception', 'crash']
+        critical_errors = []
+        
+        for log in logs[-10:]:  # Check last 10 logs
+            content = log.get('content', '').lower()
+            for pattern in error_patterns:
+                if pattern in content and 'recursion' in content:
+                    critical_errors.append(f"Recursion error: {content[:100]}")
+                elif pattern in content and 'patch' in content:
+                    critical_errors.append(f"Patch error: {content[:100]}")
+        
+        if not critical_errors:
+            success_criteria.append("✅ No critical errors in logs")
+        else:
+            success_criteria.append(f"❌ Critical errors found: {len(critical_errors)}")
+            for error in critical_errors[:3]:  # Show first 3 errors
+                print(f"      {error}")
+        
+        # Print all criteria
+        for criterion in success_criteria:
+            print(f"   {criterion}")
+        
+        # Overall success: at least 3 out of 5 criteria should pass
+        passed_criteria = len([c for c in success_criteria if c.startswith("✅")])
+        overall_success = passed_criteria >= 3
+        
+        if overall_success:
+            print(f"   🎉 Orchestration test PASSED ({passed_criteria}/5 criteria)")
+        else:
+            print(f"   ❌ Orchestration test FAILED ({passed_criteria}/5 criteria)")
+        
+        return overall_success
+
+    def test_orchestration_endpoints(self):
+        """Test orchestration-specific endpoints"""
+        print("\n🔗 Testing Orchestration Endpoints")
+        
+        # Test runs endpoint
+        runs_success, runs_response = self.run_test(
+            "List Runs Endpoint",
+            "GET",
+            "runs",
+            200
+        )
+        
+        if not runs_success:
+            return False, {}
+        
+        runs = runs_response if isinstance(runs_response, list) else []
+        print(f"   Found {len(runs)} runs")
+        
+        # Test specific run endpoint if we have runs
+        if runs and len(runs) > 0:
+            first_run = runs[0]
+            run_id = first_run.get('id')
+            
+            if run_id:
+                run_success, run_response = self.run_test(
+                    "Get Specific Run Endpoint",
+                    "GET",
+                    f"runs/{run_id}",
+                    200
+                )
+                
+                if run_success:
+                    print(f"   ✅ Successfully retrieved run {run_id}")
+                    return True, {"runs_count": len(runs), "test_run": run_response}
+        
+        return runs_success, {"runs_count": len(runs)}
+
 def main():
     print("🚀 Starting Emergent-like System Comprehensive Tests")
     print("=" * 70)
