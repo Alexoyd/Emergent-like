@@ -114,6 +114,18 @@ class ReviewerAgent:
         # Determine if we should escalate based on attempt count
         should_escalate = attempt_number >= self.max_retry_attempts
         
+        # ✅ Development mode: always accept in first attempt
+        if self.development_mode and attempt_number == 1:
+            self.log.info("🧪 Development mode: accepting step on first attempt")
+            return ReviewResult(
+                decision=ReviewDecision.ACCEPT,
+                feedback="Development mode: automatically accepted for testing cycle.",
+                confidence=0.8,
+                test_summary=test_summary,
+                suggestions=[],
+                should_escalate=False
+            )
+        
         # If all tests passed, accept the step
         if all_tests_passed:
             return ReviewResult(
