@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from enum import Enum
 import dataclasses
 from pathlib import Path
-from backend.orchestrator.utils import bson_utils
+from .utils import bson_utils
 from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
