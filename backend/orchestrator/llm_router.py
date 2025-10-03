@@ -667,3 +667,19 @@ END_PATCH"""
             completion_tokens=len(content.split()),
             cost_eur=0.0
         )
+    
+    def _has_any_api_keys(self) -> bool:
+        """Check if any API keys are configured"""
+        has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+        has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+        ollama_available = False
+        
+        # Quick check for Ollama without async
+        try:
+            import requests
+            response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=2)
+            ollama_available = response.status_code == 200
+        except:
+            pass
+        
+        return has_openai or has_anthropic or ollama_available
