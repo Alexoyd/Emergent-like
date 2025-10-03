@@ -95,3 +95,7 @@ backend/.env
 
 # Generated runs
 projects/
+-e 
+# Environment files
+*.env
+*.env.*
