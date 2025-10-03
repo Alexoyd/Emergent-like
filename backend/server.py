@@ -927,6 +927,88 @@ async def interrupt_run(run_id: str, reason: str = "User requested"):
         logging.error(f"Error interrupting run: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.post("/runs/{run_id}/validate-plan")
+async def validate_plan(run_id: str, validation: dict):
+    """User validation of generated plan"""
+    try:
+        run_data = await db.runs.find_one({"id": run_id})
+        if not run_data:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        approved = validation.get("approved", False)
+        feedback = validation.get("feedback", "")
+        
+        # Update run with validation result
+        await db.runs.update_one(
+            {"id": run_id},
+            {"$set": {
+                "plan_validated": approved,
+                "plan_feedback": feedback,
+                "plan_validation_time": datetime.now(timezone.utc)
+            }}
+        )
+        
+        await state_manager.add_log(run_id, {
+            "type": "info",
+            "content": f"Plan validation: {'approved' if approved else 'rejected'}. Feedback: {feedback}"
+        })
+        
+        return {"status": "validated", "approved": approved}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error validating plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/runs/{run_id}/export")
+async def export_run(run_id: str, export_format: str = "zip"):
+    """Export run results as ZIP or prepare for GitHub push"""
+    try:
+        run_data = await db.runs.find_one({"id": run_id})
+        if not run_data:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        run = Run(**run_data)
+        project_code_path = project_manager.get_code_path(run_id)
+        
+        if export_format == "zip":
+            # Create ZIP archive of the project
+            import zipfile
+            import tempfile
+            
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_file:
+                with zipfile.ZipFile(tmp_file.name, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for root, dirs, files in os.walk(project_code_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            arc_name = os.path.relpath(file_path, project_code_path)
+                            zip_file.write(file_path, arc_name)
+                
+                return FileResponse(
+                    tmp_file.name,
+                    media_type="application/zip",
+                    filename=f"project-{run_id}.zip"
+                )
+        
+        elif export_format == "github":
+            # Prepare for GitHub integration
+            return {
+                "status": "ready_for_github",
+                "project_path": str(project_code_path),
+                "files_count": len(list(project_code_path.rglob("*"))),
+                "instructions": "Use the GitHub integration tab to push to repository"
+            }
+        
+        else:
+            raise HTTPException(status_code=400, detail="Invalid export format")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error exporting run: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/runs/{run_id}/execution-context")
 async def get_execution_context(run_id: str):
     """Get current execution context and status"""
