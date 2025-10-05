@@ -38,14 +38,23 @@ class LLMRouter:
         self.anthropic_client = None
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+        
+        # ✅ New LLM Provider Configuration
+        self.mode_inference = os.getenv("MODE_INFERENCE", "hybrid")  # hybrid, local, paid
+        self.paid_provider = os.getenv("PAID_PROVIDER", "openai")   # openai, anthropic
+        self.ollama_retries = int(os.getenv("OLLAMA_RETRIES", "3"))
         self.max_local_retries = int(os.getenv("MAX_LOCAL_RETRIES", "3"))
         self.max_escalation_retries = int(os.getenv("MAX_ESCALATION_RETRIES", "2"))
+        
+        # Legacy compatibility
         self.force_escalation = False
         self.current_attempt = 0
         self.local_failures = 0
         
-        # ✅ Check if Anthropic is enabled
+        # ✅ Anthropic Circuit Breaker
         self.anthropic_enabled = os.getenv("ENABLE_ANTHROPIC", "true").lower() == "true"
+        self.anthropic_circuit_breaker_minutes = int(os.getenv("ANTHROPIC_CIRCUIT_BREAKER_MINUTES", "15"))
+        self.anthropic_circuit_breaker_until = None  # datetime when circuit breaker expires
         
         # ✅ Development mode for testing without API keys
         self.development_mode = os.getenv("DEVELOPMENT_MODE", "true").lower() == "true"
