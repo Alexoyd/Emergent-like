@@ -1189,7 +1189,7 @@ async def execute_run(run_id: str, from_step: int = 0):
                 completed_successfully = False
                 break
             
-            current_step = parsed_steps[current_step_index]
+            current_step = execution_steps[current_step_index]
             await state_manager.add_log(run_id, {
                 "type": "info", 
                 "content": f"Executing step {current_step_index + 1}/{len(parsed_steps)}: {current_step.description}"
