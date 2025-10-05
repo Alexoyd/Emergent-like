@@ -102,19 +102,32 @@ class PlannerAgent:
                 + "\n".join(context_docs[:5])
             )
         prompt_parts.append(
-            f"""PLANNING GUIDELINES (Critical - Follow Emergent.sh Best Practices):
-- Focus on 1-2 core features maximum per development cycle
-- Each step should be a concrete, testable code change
-- Avoid non-code steps (wireframes, requirements analysis, documentation-only steps)
-- Maximum {project_context.max_steps if hasattr(project_context, 'max_steps') else 15} implementation steps
-- Prioritize working code over perfect architecture
-- Each step should produce immediately testable results
+            f"""HIERARCHICAL PLANNING GUIDELINES (Emergent.sh Style):
+- Create 2-5 main steps maximum per development cycle
+- Each main step should be a major feature/component
+- Break down main steps into 2-4 substeps each
+- Each substep should be atomic (completable in 10-15 minutes)
+- Focus ONLY on concrete code implementation (no wireframes, analysis, docs)
 
-Please produce a numbered plan where each step:
-1. Is a concrete code implementation (no planning/analysis/wireframe steps)
-2. Produces working, testable functionality
-3. Includes specific files to modify/create
-4. Can be completed in 10-30 minutes""")
+OUTPUT FORMAT REQUIRED:
+1. Main Step: [High-level feature description]
+   1.1. Substep: [Specific code task]
+   1.2. Substep: [Specific code task] 
+   1.3. Substep: [Specific code task]
+
+2. Main Step: [Another high-level feature]
+   2.1. Substep: [Specific code task]
+   2.2. Substep: [Specific code task]
+
+RULES:
+- Each substep must specify exact files to create/modify
+- Each substep must be immediately testable
+- Use hierarchical numbering (1.1, 1.2, 2.1, etc.)
+- Maximum 3 main steps, 3-4 substeps each
+
+Task: {task.strip()}
+
+Generate a hierarchical plan following the exact format above.""")
         prompt_parts.append(f"Task: {task.strip()}")
         prompt_parts.append("Return ONLY the numbered steps in plain text. No JSON, no metadata sections.")
         prompt = "\n\n".join(prompt_parts)
