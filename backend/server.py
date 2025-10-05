@@ -1121,6 +1121,18 @@ async def execute_run(run_id: str, from_step: int = 0):
                 plan_result = await planner_agent.generate_plan(run.goal, project_context, run)
                 parsed_steps = plan_result.steps
                 
+                # ✅ Flatten hierarchical steps into executable sequence (Emergent.sh style)
+                execution_steps = []
+                for main_step in parsed_steps:
+                    if main_step.substeps:
+                        # Add all substeps to execution queue
+                        execution_steps.extend(main_step.get_all_substeps_flat())
+                    else:
+                        # Main step has no substeps, execute it directly
+                        execution_steps.append(main_step)
+                
+                # Use flattened steps for execution but keep original for display
+                
                 # Save plan and agent conversation
                 await db.runs.update_one(
                     {"id": run_id},
@@ -1139,7 +1151,7 @@ async def execute_run(run_id: str, from_step: int = 0):
                 
                 await state_manager.add_log(run_id, {
                     "type": "success", 
-                    "content": f"Plan generated successfully with {len(parsed_steps)} steps"
+                    "content": f"Plan generated successfully with {len(parsed_steps)} main steps ({len(execution_steps)} executable substeps)"
                 })
                 
                 # User validation point for plan
