@@ -128,8 +128,7 @@ RULES:
 Task: {task.strip()}
 
 Generate a hierarchical plan following the exact format above.""")
-        prompt_parts.append(f"Task: {task.strip()}")
-        prompt_parts.append("Return ONLY the numbered steps in plain text. No JSON, no metadata sections.")
+        # Task and format instructions now included in main prompt above
         prompt = "\n\n".join(prompt_parts)
 
         # Construct a conversation payload for the LLM router.  The router
