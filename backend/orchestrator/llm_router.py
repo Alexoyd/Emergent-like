@@ -748,3 +748,28 @@ END_PATCH'''
             return False
             
         return True
+    
+    async def _try_paid_direct(self, prompt: str, task_type: str, run_id: str = None) -> LLMResponse:
+        """Try paid providers directly based on PAID_PROVIDER setting"""
+        try:
+            if self.paid_provider == "anthropic" and self._should_use_anthropic():
+                logger.info("🤖 Using Anthropic directly (paid mode)")
+                return await self._generate_with_anthropic(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="claude-3-5-sonnet-20241022",
+                    task_type=task_type,
+                    run_id=run_id
+                )
+            else:
+                # Default to OpenAI
+                logger.info("🤖 Using OpenAI directly (paid mode)")
+                return await self._generate_with_openai(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="gpt-4o-mini",
+                    task_type=task_type,
+                    run_id=run_id
+                )
+        except Exception as e:
+            logger.error(f"Paid provider failed: {e}")
+            # Fallback to mock in paid mode if all fails
+            return self._generate_mock_response(prompt, task_type)
