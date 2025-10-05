@@ -694,3 +694,39 @@ END_PATCH'''
             pass
         
         return has_openai or has_anthropic or ollama_available
+    
+    def _is_anthropic_circuit_breaker_active(self) -> bool:
+        """Check if Anthropic circuit breaker is currently active"""
+        if not self.anthropic_circuit_breaker_until:
+            return False
+        
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        if now >= self.anthropic_circuit_breaker_until:
+            # Circuit breaker expired, reset it
+            self.anthropic_circuit_breaker_until = None
+            logger.info("🔄 Anthropic circuit breaker expired, re-enabling Anthropic calls")
+            return False
+        
+        return True
+    
+    def _activate_anthropic_circuit_breaker(self):
+        """Activate circuit breaker for Anthropic after 401 error"""
+        from datetime import datetime, timezone, timedelta
+        self.anthropic_circuit_breaker_until = datetime.now(timezone.utc) + timedelta(minutes=self.anthropic_circuit_breaker_minutes)
+        logger.warning(f"🚫 Anthropic circuit breaker activated for {self.anthropic_circuit_breaker_minutes} minutes due to authentication error")
+    
+    def _should_use_anthropic(self) -> bool:
+        """Determine if Anthropic should be used based on config and circuit breaker"""
+        if not self.anthropic_enabled:
+            return False
+        
+        if self._is_anthropic_circuit_breaker_active():
+            return False
+            
+        # Check if we have a valid API key
+        api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+        if not api_key or api_key == "invalid":
+            return False
+            
+        return True
