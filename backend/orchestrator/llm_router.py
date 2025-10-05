@@ -112,18 +112,28 @@ class LLMRouter:
             # Reset attempt counter for new generation
             self.current_attempt = 0
             
-            # Determine initial model tier
-            tier = self._determine_tier(task_type, current_cost, budget_limit, len(prompt))
+            # ✅ New routing logic based on MODE_INFERENCE
+            if self.mode_inference == "local":
+                # Local only mode
+                return await self._try_local_with_retries(prompt, task_type, run_id) or self._generate_mock_response(prompt, task_type)
             
-            # Try local model first with configured retries
-            if tier == ModelTier.LOCAL and not self.force_escalation:
-                local_response = await self._try_local_with_retries(prompt, task_type, run_id)
-                if local_response:
-                    return local_response
-                    
-                # Local failed, escalate
-                logger.warning(f"Local model failed after {self.max_local_retries} attempts, escalating...")
-                self.local_failures += 1
+            elif self.mode_inference == "paid":
+                # Paid only mode - skip local
+                return await self._try_paid_direct(prompt, task_type, run_id)
+                
+            else:  # hybrid mode (default)
+                # Determine initial tier
+                tier = self._determine_tier(task_type, current_cost, budget_limit, len(prompt))
+                
+                # Try local model first with configured retries  
+                if tier == ModelTier.LOCAL and not self.force_escalation:
+                    local_response = await self._try_local_with_retries(prompt, task_type, run_id)
+                    if local_response:
+                        return local_response
+                        
+                    # Local failed, escalate
+                    logger.warning(f"Local model failed after {self.ollama_retries} attempts, escalating...")
+                    self.local_failures += 1
             
             # Try escalation path
             for attempt_tier in self._get_escalation_path(tier):
