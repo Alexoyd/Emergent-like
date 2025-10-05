@@ -102,8 +102,19 @@ class PlannerAgent:
                 + "\n".join(context_docs[:5])
             )
         prompt_parts.append(
-            "Please produce a numbered plan where each step begins with the step number followed by a description.\n"
-            "Include additional metadata when available, such as files involved, commands to run, durations and dependencies.")
+            f"""PLANNING GUIDELINES (Critical - Follow Emergent.sh Best Practices):
+- Focus on 1-2 core features maximum per development cycle
+- Each step should be a concrete, testable code change
+- Avoid non-code steps (wireframes, requirements analysis, documentation-only steps)
+- Maximum {project_context.max_steps if hasattr(project_context, 'max_steps') else 15} implementation steps
+- Prioritize working code over perfect architecture
+- Each step should produce immediately testable results
+
+Please produce a numbered plan where each step:
+1. Is a concrete code implementation (no planning/analysis/wireframe steps)
+2. Produces working, testable functionality
+3. Includes specific files to modify/create
+4. Can be completed in 10-30 minutes""")
         prompt_parts.append(f"Task: {task.strip()}")
         prompt_parts.append("Return ONLY the numbered steps in plain text. No JSON, no metadata sections.")
         prompt = "\n\n".join(prompt_parts)
