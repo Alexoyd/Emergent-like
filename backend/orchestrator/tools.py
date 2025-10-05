@@ -426,6 +426,59 @@ Patch lines: {len(patch_lines)}
                 details={"exception": str(e), "reason": "missing_config"}
             )
     
+    def _is_frontend_project(self, project_path: str) -> bool:
+        """
+        Check if project is a frontend project (Vue, React, etc.)
+        """
+        try:
+            package_json = Path(project_path) / "package.json"
+            if not package_json.exists():
+                return False
+            
+            import json
+            with open(package_json, 'r', encoding='utf-8') as f:
+                package_data = json.load(f)
+            
+            # Check for frontend frameworks in dependencies
+            dependencies = {**package_data.get("dependencies", {}), **package_data.get("devDependencies", {})}
+            frontend_indicators = ["vue", "react", "@vue/", "vite", "webpack", "eslint"]
+            
+            return any(indicator in dep for dep in dependencies.keys() for indicator in frontend_indicators)
+            
+        except Exception as e:
+            logger.debug(f"Error checking if frontend project: {e}")
+            return False
+    
+    def _has_test_config(self, project_path: str, test_type: str) -> bool:
+        """
+        Check if project has configuration for specific test type
+        """
+        try:
+            project_root = Path(project_path)
+            
+            if test_type == "vue":
+                # Check for Vue test configuration files
+                vue_configs = [
+                    "vitest.config.js", "vitest.config.ts", 
+                    "jest.config.js", "jest.config.ts",
+                    "vue.config.js", "vue.config.ts"
+                ]
+                return any((project_root / config).exists() for config in vue_configs)
+            
+            elif test_type == "eslint":
+                # Check for ESLint configuration files
+                eslint_configs = [
+                    ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml",
+                    "eslint.config.js", "eslint.config.mjs"
+                ]
+                return any((project_root / config).exists() for config in eslint_configs)
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking test config for {test_type}: {e}")
+            return False
+    
     def _get_test_commands(self, test_type: str) -> List[List[str]]:
         """
         Get commands for specific test type with fallback options.
