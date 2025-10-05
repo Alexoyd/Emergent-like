@@ -105,7 +105,7 @@ class PlannerAgent:
             "Please produce a numbered plan where each step begins with the step number followed by a description.\n"
             "Include additional metadata when available, such as files involved, commands to run, durations and dependencies.")
         prompt_parts.append(f"Task: {task.strip()}")
-        prompt_parts.append("Return the plan in plain text. Do not wrap it in JSON or any other format.")
+        prompt_parts.append("Return ONLY the numbered steps in plain text. No JSON, no metadata sections.")
         prompt = "\n\n".join(prompt_parts)
 
         # Construct a conversation payload for the LLM router.  The router
