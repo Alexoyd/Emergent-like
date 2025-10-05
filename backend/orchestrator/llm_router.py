@@ -754,18 +754,16 @@ END_PATCH'''
         try:
             if self.paid_provider == "anthropic" and self._should_use_anthropic():
                 logger.info("🤖 Using Anthropic directly (paid mode)")
-                return await self._generate_with_anthropic(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="claude-3-5-sonnet-20241022",
+                return await self._generate_anthropic(
+                    prompt=prompt,
                     task_type=task_type,
                     run_id=run_id
                 )
             else:
                 # Default to OpenAI
                 logger.info("🤖 Using OpenAI directly (paid mode)")
-                return await self._generate_with_openai(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="gpt-4o-mini",
+                return await self._generate_openai(
+                    prompt=prompt,
                     task_type=task_type,
                     run_id=run_id
                 )
