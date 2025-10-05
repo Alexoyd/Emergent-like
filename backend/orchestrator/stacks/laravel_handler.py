@@ -53,7 +53,7 @@ class LaravelHandler(StackHandler):
                 temp_project_path = Path(temp_dir) / "laravel_project"
                 
                 if self.logger:
-                    self.logger.info(f"Creating Laravel project via composer create-project...")
+                    self.logger.info("Creating Laravel project via composer create-project...")
                 
                 # Run composer create-project
                 create_cmd = [
