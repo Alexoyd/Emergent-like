@@ -1133,12 +1133,13 @@ async def execute_run(run_id: str, from_step: int = 0):
                 
                 # Use flattened steps for execution but keep original for display
                 
-                # Save plan and agent conversation
+                # Save plan and agent conversation (keep original hierarchical structure for display)
                 await db.runs.update_one(
                     {"id": run_id},
                     {"$set": bson_utils.bson_safe({
                         "plan": plan_result.plan_text,
-                        "parsed_plan": plan_result.steps,
+                        "parsed_plan": plan_result.steps,  # Original hierarchical steps
+                        "execution_steps": execution_steps,  # Flattened for execution
                         "plan_context": plan_result.context
                     })}
                 )
