@@ -148,6 +148,7 @@ class PlanParser:
         steps: List[Step] = []
         i = 0
         step_counter = 1
+        current_main_step: Optional[Step] = None
 
         while i < len(lines):
             line = lines[i].rstrip()
@@ -156,6 +157,22 @@ class PlanParser:
                 i += 1
                 continue
 
+            # ✅ Check for substeps first (Emergent.sh hierarchical parsing)
+            substep_match = self._parse_substep(line)
+            if substep_match and current_main_step:
+                substep_id, substep_description = substep_match
+                substep = Step(
+                    id=step_counter,
+                    description=substep_description.strip(),
+                    type_action=self._detect_action_type(substep_description),
+                    step_path=f"{current_main_step.step_path}.{len(current_main_step.substeps) + 1}"
+                )
+                current_main_step.add_substep(substep)
+                step_counter += 1
+                i += 1
+                continue
+
+            # Parse main steps
             match = None
             description = None
             for pattern in self.STEP_PATTERNS:
