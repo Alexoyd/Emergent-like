@@ -421,15 +421,16 @@ Patch lines: {len(patch_lines)}
         Returns multiple command options in order of preference.
         """
         commands_map = {
-            # Laravel tests with fallbacks
+            # Laravel tests with improved fallbacks (prefer vendor/bin over artisan)
             "pest": [
+                ["./vendor/bin/pest", "-q"],
+                ["vendor/bin/pest", "-q"],  
                 ["php", "artisan", "test"],
-                ["./vendor/bin/pest"],
                 ["composer", "test"]
             ],
             "phpstan": [
-                ["./vendor/bin/phpstan", "analyse"],
-                ["vendor/bin/phpstan", "analyse"],
+                ["./vendor/bin/phpstan", "analyse", "--no-progress"],
+                ["vendor/bin/phpstan", "analyse", "--no-progress"],
                 ["composer", "phpstan"]
             ],
             "pint": [
