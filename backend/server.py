@@ -1175,7 +1175,7 @@ async def execute_run(run_id: str, from_step: int = 0):
         steps_executed = 0
         completed_successfully = True
         
-        while current_step_index < len(parsed_steps) and current_step_index < run.max_steps:
+        while current_step_index < len(execution_steps) and current_step_index < run.max_steps:
             # Check for timeout
             if _is_execution_timeout(execution_context):
                 await state_manager.add_log(run_id, {"type": "warning", "content": "Execution timeout reached"})
