@@ -48,6 +48,13 @@ class Step:
     commands: List[str] = field(default_factory=list)
     estimated_duration: Optional[int] = None  # duration in minutes
     priority: Optional[int] = None  # lower numbers mean higher priority
+    
+    # ✅ Hierarchical structure support (Emergent.sh style)
+    parent_step_id: Optional[int] = None  # Parent step ID if this is a substep
+    substeps: List['Step'] = field(default_factory=list)  # Child substeps
+    level: int = 0  # 0 = main step, 1 = substep, 2 = sub-substep, etc.
+    is_substep: bool = False  # True if this is a substep of another step
+    step_path: str = ""  # e.g., "1", "1.1", "1.2.1" for hierarchical numbering
 
 
 class PlanParser:
