@@ -231,6 +231,8 @@ class PlanParser:
 
             # Add step
             steps.append(step)
+            current_main_step = step  # ✅ Track current main step for substeps
+            step.step_path = str(len(steps))  # Set main step path (1, 2, 3, etc.)
             step_counter += 1
             i = j
 
@@ -240,12 +242,31 @@ class PlanParser:
                 id=1,
                 description=text.strip(),
                 type_action=self._detect_action_type(text),
+                step_path="1"
             )
             # Attempt to extract files and commands from the entire text
             self._parse_metadata(fallback_step, [])
             steps.append(fallback_step)
 
         return steps
+    
+    def _parse_substep(self, line: str) -> Optional[tuple[int, str]]:
+        """Parse a line as a substep and return (substep_id, description) or None"""
+        for pattern in self.SUBSTEP_PATTERNS:
+            match = pattern.match(line)
+            if match:
+                groups = match.groups()
+                if len(groups) >= 2:
+                    # Handle different pattern formats
+                    if len(groups) == 4:  # "1.1: Description" format
+                        return (int(groups[2]), groups[3])
+                    elif len(groups) == 3:  # "1.1. Description" format  
+                        return (int(groups[1]), groups[2])
+                    elif len(groups) == 2:  # "  - Description" format
+                        return (1, groups[1])  # Use 1 as default substep id
+                    else:  # "├── Description" format
+                        return (1, groups[0])
+        return None
 
     def _is_step_start(self, line: str) -> bool:
         """Return True if the line appears to start a new step."""
