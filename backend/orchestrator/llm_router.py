@@ -466,7 +466,15 @@ class LLMRouter:
             )
             
         except Exception as e:
-            logger.error(f"Anthropic generation error: {e}")
+            error_str = str(e)
+            
+            # ✅ Activate circuit breaker on 401 authentication errors
+            if "401" in error_str or "authentication_error" in error_str or "invalid x-api-key" in error_str:
+                logger.error(f"Anthropic 401 authentication error: {e}")
+                self._activate_anthropic_circuit_breaker()
+            else:
+                logger.error(f"Anthropic generation error: {e}")
+            
             raise
     
     def _calculate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
