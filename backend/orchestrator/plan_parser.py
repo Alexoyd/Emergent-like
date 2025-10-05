@@ -55,6 +55,26 @@ class Step:
     level: int = 0  # 0 = main step, 1 = substep, 2 = sub-substep, etc.
     is_substep: bool = False  # True if this is a substep of another step
     step_path: str = ""  # e.g., "1", "1.1", "1.2.1" for hierarchical numbering
+    
+    def add_substep(self, substep: 'Step') -> None:
+        """Add a substep to this step"""
+        substep.parent_step_id = self.id
+        substep.level = self.level + 1
+        substep.is_substep = True
+        substep.step_path = f"{self.step_path}.{len(self.substeps) + 1}" if self.step_path else f"{self.id}.{len(self.substeps) + 1}"
+        self.substeps.append(substep)
+    
+    def get_all_substeps_flat(self) -> List['Step']:
+        """Get all substeps and sub-substeps in a flat list"""
+        result = []
+        for substep in self.substeps:
+            result.append(substep)
+            result.extend(substep.get_all_substeps_flat())
+        return result
+    
+    def is_atomic(self) -> bool:
+        """Check if this step has no substeps (is atomic/executable)"""
+        return len(self.substeps) == 0
 
 
 class PlanParser:
