@@ -331,6 +331,7 @@ Patch lines: {len(patch_lines)}
         """
         Run specific test type with multiple command fallbacks.
         Tries each command option until one succeeds or all fail.
+        Enhanced with proper configuration detection for frontend projects.
         """
         try:
             if not project_path:
@@ -342,6 +343,16 @@ Patch lines: {len(patch_lines)}
                     status="failed",
                     output=f"Project path does not exist: {project_path}"
                 )
+            
+            # ✅ Frontend-specific pre-checks for Vue/React
+            if test_type in ["vue", "eslint"] and self._is_frontend_project(project_path):
+                if not self._has_test_config(project_path, test_type):
+                    return TestResult(
+                        test_type=test_type,
+                        status="skipped",
+                        output=f"No {test_type} configuration found - this is normal for new frontend projects",
+                        details={"reason": "no_config", "project_type": "frontend"}
+                    )
             
             commands = self._get_test_commands(test_type)
             if not commands:
