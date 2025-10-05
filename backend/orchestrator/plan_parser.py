@@ -92,11 +92,23 @@ class PlanParser:
     STEP_PATTERNS = [
         # e.g. "1. Step description", "2) Step description"
         re.compile(r"^\s*(\d+)[\.\)]\s+(.*)$"),
-        # e.g. "- Step description", "* Step description"
+        # e.g. "- Step description", "* Step description"  
         re.compile(r"^\s*[-*+]\s+(.*)$"),
         # e.g. "Étape 1: description" or "Etape 1 : description"
         re.compile(r"^\s*Étape\s*(\d+)\s*[:.-]\s*(.*)$", re.IGNORECASE),
         re.compile(r"^\s*Etape\s*(\d+)\s*[:.-]\s*(.*)$", re.IGNORECASE),
+    ]
+    
+    # ✅ Hierarchical substep patterns (Emergent.sh style)
+    SUBSTEP_PATTERNS = [
+        # e.g. "1.1. Substep description", "2.3) Substep description"
+        re.compile(r"^\s*(\d+)\.(\d+)[\.\)]\s+(.*)$"),
+        # e.g. "  - Substep description" (indented)
+        re.compile(r"^(\s{2,})[-*+]\s+(.*)$"),
+        # e.g. "├── Substep" or "└── Substep" (tree symbols)
+        re.compile(r"^\s*[├└│]\s*[─]*\s*(.*)$"),
+        # e.g. "1.1: Substep", "  1.1 Substep"
+        re.compile(r"^(\s*)(\d+)\.(\d+)\s*[:.-]?\s*(.*)$"),
     ]
 
     DEPENDENCY_PATTERNS = [
