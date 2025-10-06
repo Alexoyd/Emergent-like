@@ -1009,6 +1009,41 @@ async def export_run(run_id: str, export_format: str = "zip"):
         logging.error(f"Error exporting run: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.post("/validate-patch")
+async def validate_patch_endpoint(request: dict):
+    """
+    Advanced patch validation endpoint (Phase 3)
+    Tests patch quality, validation, and repair capabilities
+    """
+    try:
+        patch_content = request.get("patch_content", "")
+        project_path = request.get("project_path", "/tmp/test_project")
+        
+        if not patch_content:
+            raise HTTPException(status_code=400, detail="patch_content is required")
+        
+        # Create test project if needed
+        if not os.path.exists(project_path):
+            os.makedirs(project_path, exist_ok=True)
+            # Initialize git
+            import subprocess
+            subprocess.run(["git", "init"], cwd=project_path, capture_output=True)
+        
+        # Run comprehensive patch validation
+        quality_report = await tool_manager.validate_patch_quality(patch_content, project_path)
+        
+        return {
+            "status": "validation_complete",
+            "quality_report": quality_report,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in patch validation endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/runs/{run_id}/execution-context")
 async def get_execution_context(run_id: str):
     """Get current execution context and status"""
