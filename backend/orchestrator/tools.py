@@ -906,7 +906,29 @@ Patch lines: {len(patch_lines)}
                         return True
                     # Note: artisan creation is handled by environment_manager
             
-            return False  # No specific repair found
+            # ===== LLM-POWERED REPAIR FALLBACK =====
+            # If no standard repair found, use LLM to analyze and fix
+            logger.info("🤖 No standard repair found, attempting LLM-powered analysis...")
+            
+            try:
+                repair_result = await self.repair_agent.analyze_and_repair(
+                    project_path=project_path,
+                    stack=self._detect_project_stack(project_path),
+                    error_output=error_output,
+                    failed_command=' '.join(command),
+                    context={"test_type": test_type}
+                )
+                
+                if repair_result.success:
+                    logger.info(f"✅ LLM repair successful: {repair_result.description}")
+                    return True
+                else:
+                    logger.warning(f"❌ LLM repair failed: {repair_result.error_message}")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Error in LLM-powered repair: {e}")
+                return False
             
         except Exception as e:
             logger.error(f"Error in command repair analysis: {e}")
