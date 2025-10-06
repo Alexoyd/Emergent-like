@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 # Import EnvironmentManager for auto-setup and self-healing
 from .environment_manager import EnvironmentManager
+from .repair_agent import RepairAgent
 
 logger = logging.getLogger(__name__)
 
