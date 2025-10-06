@@ -90,6 +90,8 @@ class ToolManager:
         self.environment_manager = EnvironmentManager()
         # ✅ Initialize LLM-powered repair agent for complex issues
         self.repair_agent = RepairAgent(llm_router=llm_router)
+        # ✅ Initialize advanced patch validator and repairer (Phase 3)
+        self.patch_validator = PatchValidator()
     
     async def read_file(self, file_path: str) -> str:
         """Read file content"""
