@@ -1230,6 +1230,7 @@ Patch lines: {len(patch_lines)}
                 quality_report["recommendations"].append("Patch requires significant manual intervention")
             
             # Add specific recommendations based on issues
+            from .patch_validator import PatchIssue
             if PatchIssue.MISSING_DIFF_HEADER in validation_result.issues_found:
                 quality_report["recommendations"].append("Auto-added missing git diff header")
             
