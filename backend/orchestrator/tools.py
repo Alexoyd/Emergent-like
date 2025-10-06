@@ -713,3 +713,232 @@ Patch lines: {len(patch_lines)}
         except Exception as e:
             logger.error(f"Error validating patch: {e}")
             return False
+    
+    async def auto_setup_environment(self, project_path: Optional[str], stack: str) -> bool:
+        """
+        Auto-detect and fix environment issues before running commands.
+        This is the main entry point for Phase 1 + Phase 2 (Environment + Self-Healing).
+        """
+        if not project_path or not os.path.exists(project_path):
+            logger.warning(f"Cannot auto-setup: project path invalid: {project_path}")
+            return False
+        
+        try:
+            logger.info(f"🔧 Auto-setting up environment for {stack} project...")
+            
+            # Phase 1: Detect and fix environment issues
+            fixes_applied = await self.environment_manager.detect_and_fix_environment(project_path, stack)
+            
+            if fixes_applied:
+                logger.info(f"✅ Applied {len(fixes_applied)} environment fixes:")
+                for fix in fixes_applied:
+                    logger.info(f"   - {fix}")
+            else:
+                logger.info("ℹ️ No environment fixes needed")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in auto-setup environment: {e}")
+            return False
+    
+    async def smart_command_execution(self, commands: List[List[str]], project_path: str, test_type: str) -> 'TestResult':
+        """
+        Phase 2: Self-Healing Command Execution
+        Try commands with automatic error detection and repair
+        """
+        last_error = None
+        commands_tried = []
+        
+        for attempt, command in enumerate(commands, 1):
+            try:
+                logger.info(f"Attempting {test_type} command (attempt {attempt}/{len(commands)}): {' '.join(command)}")
+                result = await self._run_command(command, cwd=project_path)
+                commands_tried.append(' '.join(command))
+                
+                if result.returncode == 0:
+                    # Success!
+                    return TestResult(
+                        test_type=test_type,
+                        status="passed",
+                        output=f"✅ {test_type} command succeeded\n\nCommand: {' '.join(command)}\nOutput:\n{result.stdout}",
+                        details={
+                            "command": " ".join(command),
+                            "return_code": result.returncode,
+                            "attempts": attempt,
+                            "commands_tried": commands_tried
+                        }
+                    )
+                else:
+                    # Command failed - try to auto-repair
+                    last_error = f"Command '{' '.join(command)}' failed (exit {result.returncode})\nSTDERR:\n{result.stderr}"
+                    logger.warning(f"Command failed, attempting auto-repair: {last_error[:200]}...")
+                    
+                    # ✅ Phase 2: Self-Healing - Analyze error and attempt repair
+                    repair_success = await self._attempt_command_repair(
+                        project_path, command, result.stderr, test_type
+                    )
+                    
+                    if repair_success:
+                        logger.info("🔧 Auto-repair successful, retrying command...")
+                        # Retry the same command after repair
+                        retry_result = await self._run_command(command, cwd=project_path)
+                        if retry_result.returncode == 0:
+                            return TestResult(
+                                test_type=test_type,
+                                status="passed",
+                                output=f"✅ {test_type} command succeeded after auto-repair\n\nCommand: {' '.join(command)}\nOutput:\n{retry_result.stdout}",
+                                details={
+                                    "command": " ".join(command),
+                                    "return_code": retry_result.returncode,
+                                    "attempts": attempt,
+                                    "auto_repaired": True,
+                                    "commands_tried": commands_tried
+                                }
+                            )
+                        else:
+                            logger.warning("Auto-repair applied but command still fails, trying next command...")
+                    
+                    continue
+                    
+            except FileNotFoundError:
+                last_error = f"Command '{' '.join(command)}' not found"
+                logger.info(f"Command not found: {' '.join(command)}, trying next...")
+                commands_tried.append(' '.join(command) + " (not found)")
+                continue
+                
+            except Exception as e:
+                last_error = f"Command '{' '.join(command)}' error: {str(e)}"
+                logger.warning(f"Command error: {e}, trying next...")
+                commands_tried.append(' '.join(command) + f" (error: {e})")
+                continue
+        
+        # All commands failed even with auto-repair attempts
+        return TestResult(
+            test_type=test_type,
+            status="failed",
+            output=f"❌ All {test_type} commands failed even after auto-repair attempts\n\nCommands tried:\n" + 
+                   "\n".join(f"- {cmd}" for cmd in commands_tried) + 
+                   f"\n\nLast error:\n{last_error}",
+            details={
+                "commands_tried": commands_tried,
+                "last_error": last_error,
+                "auto_repair_attempted": True
+            }
+        )
+    
+    async def _attempt_command_repair(self, project_path: str, command: List[str], error_output: str, test_type: str) -> bool:
+        """
+        Phase 2: Analyze command failure and attempt automatic repair
+        Returns True if repair was attempted (not necessarily successful)
+        """
+        try:
+            command_str = ' '.join(command)
+            error_lower = error_output.lower()
+            
+            logger.info(f"🔍 Analyzing failure for auto-repair: {command_str}")
+            
+            # ===== COMPOSER/PHP REPAIRS =====
+            if "composer" in command_str:
+                # Vendor directory missing
+                if "vendor" in error_lower or "autoload" in error_lower:
+                    logger.info("🔧 Detected missing vendor directory, running composer install...")
+                    try:
+                        result = await self._run_command(["composer", "install", "--no-interaction"], cwd=project_path)
+                        return result.returncode == 0
+                    except:
+                        return False
+                
+                # Script not found in composer.json
+                if "script" in error_lower and ("not defined" in error_lower or "not found" in error_lower):
+                    logger.info("🔧 Detected missing composer script, adding to composer.json...")
+                    return await self._add_missing_composer_script(project_path, test_type)
+            
+            # ===== PHPSTAN REPAIRS =====
+            if "phpstan" in command_str:
+                # Path issue - "At least one path must be specified"
+                if "at least one path" in error_lower or "path must be specified" in error_lower:
+                    logger.info("🔧 Detected PHPStan path issue, will suggest path-specific command...")
+                    return True  # Let the command fallback system handle phpstan analyse app/
+            
+            # ===== NPM/YARN REPAIRS =====
+            if any(mgr in command_str for mgr in ["npm", "yarn", "node"]):
+                # Node modules missing
+                if "node_modules" in error_lower or "module not found" in error_lower:
+                    logger.info("🔧 Detected missing node_modules, running npm install...")
+                    try:
+                        # Check if yarn.lock exists to determine package manager
+                        yarn_lock = Path(project_path) / "yarn.lock"
+                        cmd = ["yarn", "install"] if yarn_lock.exists() else ["npm", "install"]
+                        result = await self._run_command(cmd, cwd=project_path)
+                        return result.returncode == 0
+                    except:
+                        return False
+            
+            # ===== PYTHON REPAIRS =====
+            if "pip" in command_str or "python" in command_str:
+                # Module not found
+                if "module" in error_lower and "not found" in error_lower:
+                    logger.info("🔧 Detected missing Python modules, running pip install...")
+                    try:
+                        requirements_path = Path(project_path) / "requirements.txt"
+                        if requirements_path.exists():
+                            result = await self._run_command(["pip", "install", "-r", "requirements.txt"], cwd=project_path)
+                            return result.returncode == 0
+                    except:
+                        return False
+            
+            # ===== LARAVEL ARTISAN REPAIRS =====
+            if "artisan" in command_str:
+                # Artisan file missing or not executable
+                if "permission denied" in error_lower or "no such file" in error_lower:
+                    logger.info("🔧 Detected artisan issues, attempting to fix...")
+                    artisan_path = Path(project_path) / "artisan"
+                    if artisan_path.exists():
+                        # Make executable
+                        os.chmod(artisan_path, 0o755)
+                        return True
+                    # Note: artisan creation is handled by environment_manager
+            
+            return False  # No specific repair found
+            
+        except Exception as e:
+            logger.error(f"Error in command repair analysis: {e}")
+            return False
+    
+    async def _add_missing_composer_script(self, project_path: str, script_name: str) -> bool:
+        """Add missing script to composer.json"""
+        try:
+            composer_path = Path(project_path) / "composer.json"
+            if not composer_path.exists():
+                return False
+            
+            # Map script names to commands
+            script_commands = {
+                "test": "pest",
+                "phpstan": "phpstan analyse app/",
+                "pint": "pint"
+            }
+            
+            if script_name not in script_commands:
+                return False
+            
+            # Read, update, write composer.json
+            import json
+            with open(composer_path, 'r') as f:
+                composer_data = json.load(f)
+            
+            if 'scripts' not in composer_data:
+                composer_data['scripts'] = {}
+            
+            composer_data['scripts'][script_name] = script_commands[script_name]
+            
+            with open(composer_path, 'w') as f:
+                json.dump(composer_data, f, indent=2)
+            
+            logger.info(f"✅ Added missing script to composer.json: {script_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding composer script: {e}")
+            return False
