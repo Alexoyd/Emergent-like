@@ -82,11 +82,13 @@ class TestResult:
     details: Optional[Dict[str, Any]] = None
 
 class ToolManager:
-    def __init__(self):
+    def __init__(self, llm_router=None):
         self.timeout = 300  # 5 minutes default timeout
         self.development_mode = os.environ.get("DEVELOPMENT_MODE", "true").lower() == "true"
         # ✅ Initialize environment manager for auto-setup and self-healing
         self.environment_manager = EnvironmentManager()
+        # ✅ Initialize LLM-powered repair agent for complex issues
+        self.repair_agent = RepairAgent(llm_router=llm_router)
     
     async def read_file(self, file_path: str) -> str:
         """Read file content"""
