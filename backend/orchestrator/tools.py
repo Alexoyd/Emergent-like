@@ -1186,3 +1186,100 @@ Patch lines: {len(patch_lines)}
             return "fair"  
         else:
             return "excellent"
+    
+    async def validate_patch_quality(self, patch_text: str, project_path: str) -> Dict:
+        """
+        Comprehensive patch quality assessment (Phase 3)
+        Returns detailed quality metrics and suggestions
+        """
+        try:
+            logger.info("📊 Running comprehensive patch quality assessment...")
+            
+            # Use advanced validator
+            validation_result = self.patch_validator.validate_and_repair_patch(patch_text, project_path)
+            
+            # Get preview information
+            preview_result = self.patch_validator.preview_patch_application(
+                validation_result.repaired_patch or patch_text, project_path
+            )
+            
+            quality_report = {
+                "overall_quality": "unknown",
+                "validation_score": validation_result.confidence_score,
+                "is_valid": validation_result.is_valid,
+                "issues_detected": [issue.value for issue in validation_result.issues_found],
+                "repairs_available": validation_result.repairs_applied or [],
+                "can_apply_safely": preview_result.get('can_apply', False),
+                "application_preview": preview_result.get('preview'),
+                "recommendations": []
+            }
+            
+            # Generate quality score and recommendations
+            if validation_result.confidence_score >= 0.9:
+                quality_report["overall_quality"] = "excellent"
+                quality_report["recommendations"].append("Patch is high quality and ready for application")
+            elif validation_result.confidence_score >= 0.7:
+                quality_report["overall_quality"] = "good"
+                if validation_result.repaired_patch:
+                    quality_report["recommendations"].append("Patch was successfully auto-repaired")
+            elif validation_result.confidence_score >= 0.5:
+                quality_report["overall_quality"] = "fair"
+                quality_report["recommendations"].append("Consider manual review before application")
+            else:
+                quality_report["overall_quality"] = "poor"
+                quality_report["recommendations"].append("Patch requires significant manual intervention")
+            
+            # Add specific recommendations based on issues
+            if PatchIssue.MISSING_DIFF_HEADER in validation_result.issues_found:
+                quality_report["recommendations"].append("Auto-added missing git diff header")
+            
+            if not preview_result.get('can_apply', False):
+                quality_report["recommendations"].append("Patch cannot be applied cleanly - check for conflicts")
+            
+            return quality_report
+            
+        except Exception as e:
+            logger.error(f"Error in patch quality assessment: {e}")
+            return {
+                "overall_quality": "error",
+                "validation_score": 0.0,
+                "is_valid": False,
+                "error": str(e)
+            }
+    
+    def generate_patch_from_changes(self, file_changes: Dict[str, Dict]) -> str:
+        """
+        Generate high-quality patch from file changes (Phase 3 utility)
+        
+        Args:
+            file_changes: Dict with structure {
+                'file_path': {
+                    'old_content': 'original content',
+                    'new_content': 'modified content'
+                }
+            }
+        """
+        try:
+            patches = []
+            
+            for file_path, changes in file_changes.items():
+                old_content = changes.get('old_content', '')
+                new_content = changes.get('new_content', '')
+                
+                # Generate enhanced patch for this file
+                patch = self.patch_validator.create_enhanced_patch(
+                    file_path, old_content, new_content
+                )
+                
+                if patch:
+                    patches.append(patch)
+            
+            # Combine all patches
+            combined_patch = '\n'.join(patches)
+            
+            logger.info(f"Generated enhanced patch for {len(file_changes)} files")
+            return combined_patch
+            
+        except Exception as e:
+            logger.error(f"Error generating patch from changes: {e}")
+            return ""
