@@ -177,18 +177,31 @@ class ToolManager:
 
 
     async def apply_patch(self, patch: str, project_path: Optional[str] = None) -> bool:
-        """Apply unified diff patch with enhanced validation and error handling"""
+        """
+        Apply unified diff patch with advanced validation and auto-repair (Phase 3)
+        """
         try:
             if not project_path:
                 project_path = os.getcwd()
                 
-            logger.info(f"Applying patch to project: {project_path}")
+            logger.info(f"🔧 Applying patch with advanced validation to: {project_path}")
             logger.debug(f"Patch content (first 200 chars): {patch[:200]}...")
             
-            # ✅ Validate patch format BEFORE applying
-            if not is_valid_patch(patch):
-                logger.error("Patch validation failed: Invalid patch format. Please provide a valid unified diff patch.")
+            # ✅ PHASE 3: Advanced patch validation and auto-repair
+            validation_result = self.patch_validator.validate_and_repair_patch(patch, project_path)
+            
+            if not validation_result.is_valid:
+                logger.error(f"❌ Patch validation failed even after auto-repair attempts")
+                logger.error(f"Issues found: {[issue.value for issue in validation_result.issues_found]}")
+                logger.error(f"Validation errors: {validation_result.validation_errors}")
                 return False
+            
+            # Use repaired patch if available, otherwise original
+            final_patch = validation_result.repaired_patch or patch
+            
+            if validation_result.repaired_patch:
+                logger.info(f"🔧 Using auto-repaired patch (confidence: {validation_result.confidence_score:.2f})")
+                logger.info(f"Repairs applied: {validation_result.repairs_applied}")
             
             # ✅ Check if project path exists and is a git repository
             if not os.path.exists(project_path):
@@ -203,60 +216,55 @@ class ToolManager:
                 if init_result.returncode != 0:
                     logger.warning(f"Failed to initialize git repo: {init_result.stderr}")
             
-            # ✅ Normalize patch and ensure final newline
-            normalized_patch = self._normalize_patch(patch, project_path)
-            appended_final_newline = False
+            # ✅ Enhanced normalization (Phase 3 improvement)
+            normalized_patch = self._normalize_patch_enhanced(final_patch, project_path)
             
-            if not normalized_patch.endswith('\n'):
-                normalized_patch += '\n'
-                appended_final_newline = True
-                logger.info("apply_patch: appended final newline")
-            
-            # ✅ Save debug copy to /tmp/emergent_patches
+            # ✅ Save debug copy with validation info
             timestamp = time.time()
             debug_dir = "/tmp/emergent_patches"
-            debug_path = f"{debug_dir}/patch_{timestamp:.0f}.diff"
+            debug_path = f"{debug_dir}/validated_patch_{timestamp:.0f}.diff"
             
             try:
                 os.makedirs(debug_dir, exist_ok=True)
                 with open(debug_path, 'w', encoding='utf-8') as f:
+                    f.write(f"# Validation Score: {validation_result.confidence_score:.2f}\n")
+                    f.write(f"# Repairs Applied: {validation_result.repairs_applied}\n") 
+                    f.write("# " + "="*50 + "\n")
                     f.write(normalized_patch)
-                logger.info(f"Saved patch debug copy to {debug_path}")
+                logger.info(f"Saved validated patch to {debug_path}")
             except Exception as e:
                 logger.warning(f"Failed to save debug patch copy: {e}")
             
-            # Create temporary patch file with normalized content
+            # ✅ Preview patch before applying (Phase 3 feature)
+            preview_result = self.patch_validator.preview_patch_application(normalized_patch, project_path)
+            
+            if not preview_result['can_apply']:
+                logger.error(f"❌ Patch preview failed: {preview_result['errors']}")
+                return False
+            
+            logger.info(f"✅ Patch preview successful: {preview_result['preview']['stats']}")
+            
+            # Create temporary patch file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as f:
                 f.write(normalized_patch)
                 patch_file = f.name
             
             try:
-                # ✅ First check if patch can be applied cleanly
-                check_result = await self._run_command(
-                    ["git", "apply", "--check", patch_file],
+                # ✅ Apply with enhanced error handling
+                apply_result = await self._run_command(
+                    ["git", "apply", patch_file],
                     cwd=project_path
                 )
-                
-                if check_result.returncode == 0:
-                    # Patch can be applied cleanly
-                    apply_result = await self._run_command(
-                        ["git", "apply", patch_file],
-                        cwd=project_path
-                    )
-                                      
-                    if apply_result.returncode == 0:
-                        logger.info(f"✅ Patch applied successfully (final_newline={appended_final_newline})")
-                        return True
-                    else:
-                        logger.error(f"❌ Git apply failed: {apply_result.stderr}")
-                        self._log_patch_failure_details(normalized_patch, apply_result.stderr, "git_apply_failed")
-                        return False
+                                  
+                if apply_result.returncode == 0:
+                    logger.info(f"✅ Patch applied successfully (validation score: {validation_result.confidence_score:.2f})")
+                    return True
                 else:
-                    # Try applying with --3way for better conflict resolution
-                    logger.warning(f"Patch check failed, trying 3-way merge: {check_result.stderr}")
+                    # ✅ Enhanced 3-way merge fallback
+                    logger.warning(f"Standard apply failed, trying enhanced 3-way merge...")
                     
                     threeway_result = await self._run_command(
-                        ["git", "apply", "--3way", patch_file],
+                        ["git", "apply", "--3way", "--verbose", patch_file],
                         cwd=project_path
                     )
                     
@@ -264,8 +272,8 @@ class ToolManager:
                         logger.info("✅ Patch applied with 3-way merge")
                         return True
                     else:
-                        logger.error(f"❌ Git 3-way apply failed: {threeway_result.stderr}")
-                        self._log_patch_failure_details(normalized_patch, check_result.stderr, "git_check_and_3way_failed")
+                        logger.error(f"❌ All patch application methods failed")
+                        self._log_enhanced_patch_failure(validation_result, apply_result.stderr, threeway_result.stderr)
                         return False
                     
             finally:
@@ -276,10 +284,80 @@ class ToolManager:
                     pass
                 
         except Exception as e:
-            logger.error(f"Critical error applying patch: {e}")
+            logger.error(f"Critical error in enhanced patch application: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return False
+    
+    def _normalize_patch_enhanced(self, patch: str, project_path: str) -> str:
+        """
+        Enhanced patch normalization with Phase 3 improvements
+        """
+        try:
+            # Use the original normalization as base
+            normalized = self._normalize_patch(patch, project_path)
+            
+            # Phase 3 enhancements
+            # Ensure consistent line endings
+            normalized = normalized.replace('\r\n', '\n').replace('\r', '\n')
+            
+            # Ensure proper final newline
+            if not normalized.endswith('\n'):
+                normalized += '\n'
+            
+            # Remove any trailing whitespace from lines (but preserve intentional spaces)
+            lines = normalized.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                # Don't strip context lines that start with space (they might be intentional)
+                if line.startswith((' ', '+', '-')):
+                    cleaned_lines.append(line)
+                else:
+                    # Strip trailing whitespace from headers and metadata
+                    cleaned_lines.append(line.rstrip())
+            
+            return '\n'.join(cleaned_lines)
+            
+        except Exception as e:
+            logger.warning(f"Enhanced normalization failed, using basic: {e}")
+            return self._normalize_patch(patch, project_path)
+    
+    def _log_enhanced_patch_failure(self, validation_result, apply_error: str, threeway_error: str) -> None:
+        """Enhanced logging for patch failures with validation context"""
+        logger.error("📋 ENHANCED PATCH FAILURE ANALYSIS:")
+        logger.error(f"   Validation Score: {validation_result.confidence_score:.2f}")
+        logger.error(f"   Issues Found: {[issue.value for issue in validation_result.issues_found]}")
+        logger.error(f"   Repairs Applied: {validation_result.repairs_applied}")
+        logger.error(f"   Standard Apply Error: {apply_error}")
+        logger.error(f"   3-Way Merge Error: {threeway_error}")
+        
+        # Save detailed failure report
+        try:
+            timestamp = time.time()
+            failure_report_path = f"/tmp/emergent_patches/failure_report_{timestamp:.0f}.txt"
+            
+            with open(failure_report_path, 'w') as f:
+                f.write("PATCH FAILURE ANALYSIS REPORT\n")
+                f.write("=" * 50 + "\n\n")
+                f.write(f"Timestamp: {timestamp}\n")
+                f.write(f"Validation Score: {validation_result.confidence_score:.2f}\n")
+                f.write(f"Issues Found: {[issue.value for issue in validation_result.issues_found]}\n")
+                f.write(f"Repairs Applied: {validation_result.repairs_applied}\n\n")
+                f.write("STANDARD APPLY ERROR:\n")
+                f.write(apply_error + "\n\n")
+                f.write("3-WAY MERGE ERROR:\n")
+                f.write(threeway_error + "\n\n")
+                f.write("ORIGINAL PATCH:\n")
+                f.write(validation_result.original_patch)
+                if validation_result.repaired_patch:
+                    f.write("\n\nREPAIRED PATCH:\n")
+                    f.write(validation_result.repaired_patch)
+            
+            logger.info(f"Detailed failure report saved to: {failure_report_path}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save failure report: {e}")
         
     def _log_patch_failure_details(self, patch: str, git_stderr: str, reason: str):
         """Log detailed information about patch application failure"""
