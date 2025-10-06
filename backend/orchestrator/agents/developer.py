@@ -151,33 +151,53 @@ class DeveloperAgent:
                 self.log.info(f"Attempt {attempt}: {last_error}")
                 continue
 
-            # 4) Validate the patch via tool_manager if available
-            is_valid = True
-            if self.tool_manager is not None and hasattr(self.tool_manager, "validate_patch"):
+            # 4) ✅ PHASE 3: Advanced patch validation and auto-repair
+            validation_result = None
+            if self.tool_manager is not None and hasattr(self.tool_manager, "patch_validator"):
+                try:
+                    validation_result = self.tool_manager.patch_validator.validate_and_repair_patch(
+                        patch_content=patch_text,
+                        project_path=project_path
+                    )
+                    
+                    if validation_result.is_valid:
+                        self.log.info(f"✅ Patch validation successful (score: {validation_result.confidence_score:.2f})")
+                        if validation_result.repaired_patch:
+                            self.log.info(f"🔧 Patch auto-repaired: {validation_result.repairs_applied}")
+                            patch_text = validation_result.repaired_patch  # Use repaired version
+                    else:
+                        last_error = f"Patch validation failed: {validation_result.validation_errors}"
+                        self.log.warning(f"❌ Attempt {attempt} validation failed (score: {validation_result.confidence_score:.2f})")
+                        continue
+                        
+                except Exception as e:
+                    self.log.warning(f"Patch validation error: {e}")
+                    last_error = f"Validation system error: {e}"
+                    continue
+            else:
+                # Fallback to basic validation
                 try:
                     is_valid = await self.tool_manager.validate_patch(
                         project_path=project_path,
                         patch_text=patch_text,
-                        stack=stack,
+                        stack=stack
                     )
+                    if not is_valid:
+                        last_error = "Basic patch validation failed"
+                        self.log.info(f"Attempt {attempt} failed validation; retrying…")
+                        continue
                 except Exception as e:
-                    # Treat exceptions as validation failure but keep retrying
-                    is_valid = False
-                    last_error = f"Validation error: {e}"
-                    self.log.warning(last_error)
+                    self.log.warning(f"Basic patch validation error: {e}")
+                    # Continue anyway in development mode
+                    pass
 
-            if is_valid:
-                return PatchGenerationResult(
-                    step_id=step.id,
-                    stack=stack,
-                    patch_text=patch_text,
-                    attempts=attempt,
-                    validated=True,
-                )
-
-            # Prepare next attempt
-            last_error = "Patch validation failed"
-            self.log.info(f"Attempt {attempt} failed validation; retrying…")
+            return PatchGenerationResult(
+                step_id=step.id,
+                stack=stack,
+                patch_text=patch_text,
+                attempts=attempt,
+                validated=True,
+            )
 
         # All attempts exhausted
         raise PatchValidationError(
