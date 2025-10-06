@@ -47,7 +47,7 @@ db = client[os.environ['DB_NAME']]
 
 # Initialize orchestrator components
 llm_router = LLMRouter()
-tool_manager = ToolManager()
+tool_manager = ToolManager(llm_router=llm_router)
 state_manager = StateManager(db)
 rag_system = RAGSystem()
 project_manager = ProjectManager()
