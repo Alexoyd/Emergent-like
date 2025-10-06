@@ -493,3 +493,42 @@ $status = $kernel->handle(
 $kernel->terminate($input, $status);
 exit($status);
 '''
+
+    def _get_phpstan_config(self) -> str:
+        """Get PHPStan configuration content"""
+        return '''parameters:
+    paths:
+        - app
+    level: 5
+    ignoreErrors:
+        - '#Call to an undefined method Illuminate\\\\Database\\\\Eloquent\\\\Builder#'
+        - '#Call to an undefined method Illuminate\\\\Database\\\\Eloquent\\\\Collection#'
+    excludePaths:
+        - 'vendor/*'
+'''
+
+    def _get_bootstrap_app_stub(self) -> str:
+        """Get Laravel bootstrap/app.php stub"""
+        return '''<?php
+
+$app = new Illuminate\\Foundation\\Application(
+    $_ENV['APP_BASE_PATH'] ?? dirname(__DIR__)
+);
+
+$app->singleton(
+    Illuminate\\Contracts\\Http\\Kernel::class,
+    App\\Http\\Kernel::class
+);
+
+$app->singleton(
+    Illuminate\\Contracts\\Console\\Kernel::class,
+    App\\Console\\Kernel::class
+);
+
+$app->singleton(
+    Illuminate\\Contracts\\Debug\\ExceptionHandler::class,
+    App\\Exceptions\\Handler::class
+);
+
+return $app;
+'''
