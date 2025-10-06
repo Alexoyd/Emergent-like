@@ -499,8 +499,10 @@ Patch lines: {len(patch_lines)}
                 ["composer", "test"]
             ],
             "phpstan": [
-                ["./vendor/bin/phpstan", "analyse", "--no-progress"],
-                ["vendor/bin/phpstan", "analyse", "--no-progress"],
+                ["./vendor/bin/phpstan", "analyse", "app/", "--no-progress"],
+                ["vendor/bin/phpstan", "analyse", "app/", "--no-progress"],
+                ["./vendor/bin/phpstan", "analyse", "src/", "--no-progress"],  # Fallback for non-Laravel
+                ["./vendor/bin/phpstan", "analyse", "--no-progress"],  # Last resort
                 ["composer", "phpstan"]
             ],
             "pint": [
