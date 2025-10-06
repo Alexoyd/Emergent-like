@@ -431,6 +431,49 @@ Patch lines: {len(patch_lines)}
                 details={"exception": str(e), "reason": "missing_config"}
             )
     
+    def _detect_project_stack(self, project_path: str) -> str:
+        """
+        Auto-detect project technology stack based on files and structure.
+        Returns: 'laravel', 'vue', 'react', 'python', 'node', 'unknown'
+        """
+        try:
+            project_root = Path(project_path)
+            
+            # Laravel detection
+            if (project_root / "artisan").exists() and (project_root / "composer.json").exists():
+                return "laravel"
+            
+            # Vue.js detection
+            if (project_root / "package.json").exists():
+                try:
+                    import json
+                    with open(project_root / "package.json", 'r') as f:
+                        package_data = json.load(f)
+                    dependencies = {**package_data.get("dependencies", {}), **package_data.get("devDependencies", {})}
+                    
+                    if any("vue" in dep for dep in dependencies.keys()):
+                        return "vue"
+                    elif any("react" in dep for dep in dependencies.keys()):
+                        return "react"
+                    else:
+                        return "node"
+                except:
+                    return "node"
+            
+            # Python detection
+            if (project_root / "requirements.txt").exists() or (project_root / "pyproject.toml").exists():
+                return "python"
+            
+            # PHP detection (non-Laravel)
+            if (project_root / "composer.json").exists():
+                return "php"
+            
+            return "unknown"
+            
+        except Exception as e:
+            logger.debug(f"Error detecting project stack: {e}")
+            return "unknown"
+    
     def _is_frontend_project(self, project_path: str) -> bool:
         """
         Check if project is a frontend project (Vue, React, etc.)
