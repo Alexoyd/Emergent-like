@@ -970,3 +970,138 @@ Patch lines: {len(patch_lines)}
         except Exception as e:
             logger.error(f"Error adding composer script: {e}")
             return False
+    
+    async def comprehensive_health_check(self, project_path: str, stack: str) -> Dict:
+        """
+        Perform comprehensive health check and auto-healing verification
+        Returns detailed status of project health
+        """
+        health_report = {
+            "overall_health": "unknown",
+            "stack": stack,
+            "issues_found": [],
+            "fixes_applied": [],
+            "test_results": {},
+            "critical_missing": [],
+            "warnings": []
+        }
+        
+        try:
+            logger.info(f"🏥 Running comprehensive health check for {stack} project...")
+            
+            # 1. Basic structure validation
+            project_root = Path(project_path)
+            if not project_root.exists():
+                health_report["overall_health"] = "critical"
+                health_report["critical_missing"].append("Project directory missing")
+                return health_report
+            
+            # 2. Stack-specific health checks
+            health_report.update(await self._stack_specific_health_check(project_path, stack))
+            
+            # 3. Run environment auto-setup and track fixes
+            fixes_applied = await self.environment_manager.detect_and_fix_environment(project_path, stack)
+            health_report["fixes_applied"] = fixes_applied
+            
+            # 4. Test essential commands
+            test_results = await self._test_essential_commands(project_path, stack)
+            health_report["test_results"] = test_results
+            
+            # 5. Determine overall health
+            health_report["overall_health"] = self._calculate_overall_health(health_report)
+            
+            logger.info(f"📊 Health check complete: {health_report['overall_health']}")
+            return health_report
+            
+        except Exception as e:
+            logger.error(f"Error in comprehensive health check: {e}")
+            health_report["overall_health"] = "error"
+            health_report["critical_missing"].append(f"Health check error: {str(e)}")
+            return health_report
+    
+    async def _stack_specific_health_check(self, project_path: str, stack: str) -> Dict:
+        """Perform stack-specific health validations"""
+        project_root = Path(project_path)
+        health_data = {"issues_found": [], "warnings": []}
+        
+        if stack == "laravel":
+            # Laravel health checks
+            required_files = ["composer.json", "artisan", "bootstrap/app.php"]
+            for req_file in required_files:
+                if not (project_root / req_file).exists():
+                    health_data["issues_found"].append(f"Missing Laravel file: {req_file}")
+            
+            # Check vendor directory
+            if not (project_root / "vendor").exists():
+                health_data["issues_found"].append("Missing vendor directory (composer install needed)")
+            
+        elif stack in ["vue", "react", "node"]:
+            # Frontend health checks
+            if not (project_root / "package.json").exists():
+                health_data["issues_found"].append("Missing package.json")
+            
+            if not (project_root / "node_modules").exists():
+                health_data["issues_found"].append("Missing node_modules (npm install needed)")
+        
+        elif stack == "python":
+            # Python health checks  
+            if (project_root / "requirements.txt").exists():
+                health_data["warnings"].append("requirements.txt found - consider running pip install")
+        
+        return health_data
+    
+    async def _test_essential_commands(self, project_path: str, stack: str) -> Dict:
+        """Test essential commands for each stack"""
+        test_results = {}
+        
+        essential_commands = {
+            "laravel": [
+                ["composer", "--version"],
+                ["php", "--version"],
+            ],
+            "vue": [
+                ["node", "--version"],
+                ["npm", "--version"],
+            ],
+            "react": [
+                ["node", "--version"], 
+                ["npm", "--version"],
+            ],
+            "python": [
+                ["python", "--version"],
+                ["pip", "--version"],
+            ]
+        }
+        
+        commands = essential_commands.get(stack, [])
+        
+        for command in commands:
+            try:
+                result = await self._run_command(command, cwd=project_path)
+                test_results[" ".join(command)] = {
+                    "status": "pass" if result.returncode == 0 else "fail",
+                    "output": result.stdout[:100] if result.returncode == 0 else result.stderr[:100]
+                }
+            except Exception as e:
+                test_results[" ".join(command)] = {
+                    "status": "error",
+                    "output": str(e)
+                }
+        
+        return test_results
+    
+    def _calculate_overall_health(self, health_report: Dict) -> str:
+        """Calculate overall health status"""
+        if health_report.get("critical_missing"):
+            return "critical"
+        
+        issues_count = len(health_report.get("issues_found", []))
+        failed_tests = sum(1 for test in health_report.get("test_results", {}).values() 
+                          if test.get("status") != "pass")
+        
+        if issues_count > 3 or failed_tests > 2:
+            return "poor"
+        elif issues_count > 0 or failed_tests > 0:
+            return "fair"  
+        else:
+            return "excellent"
