@@ -334,9 +334,10 @@ Patch lines: {len(patch_lines)}
     
     async def run_test(self, project_path: Optional[str], test_type: str) -> TestResult:
         """
-        Run specific test type with multiple command fallbacks.
-        Tries each command option until one succeeds or all fail.
-        Enhanced with proper configuration detection for frontend projects.
+        Enhanced test runner with auto-setup and self-healing capabilities.
+        
+        Phase 1: Environment auto-setup (detect and fix missing deps, configs)  
+        Phase 2: Self-healing command execution (auto-repair on failures)
         """
         try:
             if not project_path:
@@ -348,6 +349,15 @@ Patch lines: {len(patch_lines)}
                     status="failed",
                     output=f"Project path does not exist: {project_path}"
                 )
+            
+            # ✅ PHASE 1: Auto-detect project stack and setup environment
+            stack = self._detect_project_stack(project_path)
+            logger.info(f"Detected stack: {stack} for test type: {test_type}")
+            
+            # Auto-setup environment (Phase 1: detect and fix issues)
+            setup_success = await self.auto_setup_environment(project_path, stack)
+            if not setup_success:
+                logger.warning("Auto-setup had issues, but continuing with tests...")
             
             # ✅ Frontend-specific pre-checks for Vue/React
             if test_type in ["vue", "eslint"] and self._is_frontend_project(project_path):
