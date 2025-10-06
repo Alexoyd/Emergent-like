@@ -111,7 +111,7 @@ class EnvironmentManager:
     # ========== STACK-SPECIFIC DETECTORS ==========
     
     async def _detect_laravel_issues(self, project_path: str) -> List[Tuple[EnvironmentIssue, EnvironmentFix]]:
-        """Detect Laravel/PHP specific issues"""
+        """Detect Laravel/PHP specific issues with enhanced coverage"""
         issues = []
         project_root = Path(project_path)
         
@@ -144,6 +144,36 @@ class EnvironmentManager:
                 )
             ))
         
+        # Check phpstan.neon.dist for static analysis
+        if not (project_root / "phpstan.neon.dist").exists():
+            issues.append((
+                EnvironmentIssue.MISSING_CONFIG_FILE,
+                EnvironmentFix(
+                    issue_type=EnvironmentIssue.MISSING_CONFIG_FILE,
+                    description="Create PHPStan configuration",
+                    commands=[],
+                    files_to_create={
+                        "phpstan.neon.dist": self._get_phpstan_config()
+                    },
+                    success_indicators=["phpstan.neon.dist"]
+                )
+            ))
+        
+        # Check if bootstrap/app.php exists (Laravel structure validation)
+        if not (project_root / "bootstrap").exists():
+            issues.append((
+                EnvironmentIssue.MISSING_CONFIG_FILE,
+                EnvironmentFix(
+                    issue_type=EnvironmentIssue.MISSING_CONFIG_FILE,
+                    description="Create Laravel bootstrap structure",
+                    commands=[],
+                    files_to_create={
+                        "bootstrap/app.php": self._get_bootstrap_app_stub()
+                    },
+                    success_indicators=["bootstrap/app.php"]
+                )
+            ))
+        
         # Check composer.json scripts
         composer_json = project_root / "composer.json"
         if composer_json.exists():
@@ -159,6 +189,18 @@ class EnvironmentManager:
                         success_indicators=[]
                     )
                 ))
+        
+        # Check .env file
+        if not (project_root / ".env").exists() and (project_root / ".env.example").exists():
+            issues.append((
+                EnvironmentIssue.MISSING_CONFIG_FILE,
+                EnvironmentFix(
+                    issue_type=EnvironmentIssue.MISSING_CONFIG_FILE,
+                    description="Create .env file from .env.example",
+                    commands=[["cp", ".env.example", ".env"]],
+                    success_indicators=[".env"]
+                )
+            ))
         
         return issues
     
