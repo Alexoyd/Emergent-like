@@ -128,7 +128,10 @@ class ProjectManager:
         # ✅ Phase 1: Auto-setup environment after project creation
         try:
             from .tools import ToolManager
-            tool_manager = ToolManager()
+            # Import LLMRouter for auto-setup
+            from .llm_router import LLMRouter
+            llm_router = LLMRouter()
+            tool_manager = ToolManager(llm_router=llm_router)
             setup_success = await tool_manager.auto_setup_environment(str(code_path), stack)
             if setup_success:
                 logger.info(f"✅ Environment auto-setup completed for {stack} project")
