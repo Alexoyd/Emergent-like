@@ -125,6 +125,18 @@ class ProjectManager:
         # Create test skeletons for better test coverage
         await self.create_test_skeletons(str(code_path), stack)
         
+        # ✅ Phase 1: Auto-setup environment after project creation
+        try:
+            from .tools import ToolManager
+            tool_manager = ToolManager()
+            setup_success = await tool_manager.auto_setup_environment(str(code_path), stack)
+            if setup_success:
+                logger.info(f"✅ Environment auto-setup completed for {stack} project")
+            else:
+                logger.warning("⚠️ Environment auto-setup had issues, but project created")
+        except Exception as e:
+            logger.warning(f"Environment auto-setup error: {e}")
+        
         return str(project_path)
     
     async def install_dependencies(self, project_path: str, stack: str) -> bool:
