@@ -11,6 +11,9 @@ from typing import Optional, Dict, Any, List
 import git
 from dataclasses import dataclass
 
+# Import EnvironmentManager for auto-setup and self-healing
+from .environment_manager import EnvironmentManager
+
 logger = logging.getLogger(__name__)
 
 def is_valid_patch(patch_text: str) -> bool:
