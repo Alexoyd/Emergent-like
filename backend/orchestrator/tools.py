@@ -1279,8 +1279,7 @@ test('basic test example', function () {
             
             # Extract file paths from patch
             file_paths = []
-            for line in patch_text.split('
-'):
+            for line in patch_text.split(''):
                 # Look for file headers in diff format
                 if line.startswith('---') or line.startswith('+++'):
                     # Extract path (skip a/ or b/ prefix)
