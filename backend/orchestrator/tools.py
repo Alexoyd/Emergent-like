@@ -57,7 +57,7 @@ class TestResult:
 
 class ToolManager:
     def __init__(self, llm_router=None):
-        self.timeout = 120  # Reduced to 2 minutes to avoid hanging
+        self.timeout = 300  # 🔥 INCREASED: 5 minutes for composer/Laravel commands
         self.kill_timeout = 10  # Additional time before force kill
         self.development_mode = os.environ.get("DEVELOPMENT_MODE", "true").lower() == "true"
         # ✅ Initialize environment manager for auto-setup and self-healing
@@ -69,7 +69,10 @@ class ToolManager:
         # 🔥 NEW: Anti-loop tracking for repairs
         self.repair_attempts = {}  # track repair attempts per project+error
         self.max_repair_attempts = 2  # Max attempts per unique error
-    
+        # 🔥 NEW: Global repair counter per project to prevent infinite loops
+        self.project_repair_counts = {}  # track total repairs per project
+        self.max_total_repairs_per_project = 5  # Absolute limit
+
     def extract_patch(self, text: str) -> Optional[str]:
         """Extract patch from text"""
         if not text:
@@ -348,19 +351,19 @@ class ToolManager:
     
     async def _validate_laravel_environment(self, project_path: str) -> bool:
         """
-        🔥 NEW: Strict Laravel environment validation
+        🔥 ENHANCED: Strict Laravel environment validation with deeper checks
         """
         try:
             project_root = Path(project_path)
             
-            # Check essential Laravel files
+            # 1. Check essential Laravel files
             required_files = ["composer.json", "artisan"]
             for req_file in required_files:
                 if not (project_root / req_file).exists():
                     logger.warning(f"❌ Missing essential Laravel file: {req_file}")
                     return False
             
-            # Validate composer.json is actually Laravel
+            # 2. Validate composer.json is actually Laravel
             composer_json = project_root / "composer.json"
             try:
                 with open(composer_json, 'r') as f:
@@ -372,18 +375,28 @@ class ToolManager:
                     logger.warning("❌ composer.json doesn't contain Laravel framework dependency")
                     return False
                 
+                # 🔥 NEW: Check if name field is present (root package indicator)
+                if not composer_data.get("name"):
+                    logger.warning("❌ composer.json missing 'name' field - not a valid root package")
+                    return False
+                
                 # Check for proper Laravel project structure markers
-                name = composer_data.get("name", "")
                 project_type = composer_data.get("type", "")
-                if project_type and project_type not in ["project", "library"]:
+                if project_type and project_type not in ["project", "library", ""]:
                     logger.warning(f"❌ Invalid composer project type: {project_type}")
+                    return False
+                    
+       
+                # 🔥 NEW: Check for autoload configuration
+                if "autoload" not in composer_data and "autoload-dev" not in composer_data:
+                    logger.warning("❌ composer.json missing autoload configuration")
                     return False
                     
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"❌ Invalid composer.json: {e}")
                 return False
             
-            # Check vendor directory exists and has autoload
+            # 3. Check vendor directory exists and has autoload
             vendor_dir = project_root / "vendor"
             if not vendor_dir.exists():
                 logger.warning("❌ Missing vendor directory - composer install needed")
@@ -394,7 +407,13 @@ class ToolManager:
                 logger.warning("❌ Missing vendor/autoload.php - corrupted installation")
                 return False
             
-            # Check for Laravel directory structure
+            # 🔥 NEW: Check for composer.lock (indicates dependencies are locked)
+            composer_lock = project_root / "composer.lock"
+            if not composer_lock.exists():
+                logger.warning("⚠️ Missing composer.lock - dependencies not locked (may cause issues)")
+                # Don't fail, but log warning
+            
+            # 4. Check for Laravel directory structure
             laravel_dirs = ["app", "bootstrap", "config"]
             missing_dirs = []
             for req_dir in laravel_dirs:
@@ -404,6 +423,23 @@ class ToolManager:
             if missing_dirs:
                 logger.warning(f"❌ Missing Laravel directories: {missing_dirs}")
                 return False
+            
+            # 🔥 NEW: Check for Laravel-specific files in directories
+            essential_structure = {
+                "app/Http": False,
+                "bootstrap/app.php": False,
+                "config/app.php": False,
+            }
+            
+            for path_str, _ in essential_structure.items():
+                path = project_root / path_str
+                if path.exists():
+                    essential_structure[path_str] = True
+            
+            missing_structure = [k for k, v in essential_structure.items() if not v]
+            if missing_structure:
+                logger.warning(f"⚠️ Missing Laravel structure elements: {missing_structure}")
+                # Don't fail on this, but it's suspicious
             
             logger.info("✅ Laravel environment validation passed")
             return True
@@ -571,28 +607,30 @@ class ToolManager:
     
     def _get_test_commands(self, test_type: str) -> List[List[str]]:
         """
-        Get commands for specific test type with fallback options.
+        🔥 ENHANCED: Get commands with non-interactive flags to prevent hanging
         Returns multiple command options in order of preference.
         """
         commands_map = {
-            # Laravel tests with improved fallbacks (prefer vendor/bin over artisan)
+            # 🔥 FIXED: Laravel tests with non-interactive flags and timeouts
             "pest": [
-                ["./vendor/bin/pest", "-q"],
-                ["vendor/bin/pest", "-q"],  
-                ["php", "artisan", "test"],
-                ["composer", "test"]
+                ["./vendor/bin/pest", "--no-interaction", "--stop-on-failure", "--bail"],
+                ["vendor/bin/pest", "--no-interaction", "--stop-on-failure"],  
+                ["php", "artisan", "test", "--no-interaction", "--stop-on-failure"],
+                ["composer", "test", "--no-interaction"]
             ],
+            # 🔥 FIXED: PHPStan with error-format and no-progress
             "phpstan": [
-                ["./vendor/bin/phpstan", "analyse", "app/", "--no-progress"],
-                ["vendor/bin/phpstan", "analyse", "app/", "--no-progress"],
-                ["./vendor/bin/phpstan", "analyse", "src/", "--no-progress"],  # Fallback for non-Laravel
-                ["./vendor/bin/phpstan", "analyse", "--no-progress"],  # Last resort
-                ["composer", "phpstan"]
+                ["./vendor/bin/phpstan", "analyse", "app/", "--no-progress", "--error-format=raw", "--memory-limit=256M"],
+                ["vendor/bin/phpstan", "analyse", "app/", "--no-progress", "--error-format=raw"],
+                ["./vendor/bin/phpstan", "analyse", "src/", "--no-progress", "--error-format=raw"],  # Fallback for non-Laravel
+                ["./vendor/bin/phpstan", "analyse", "--no-progress", "--error-format=raw"],  # Last resort
+                ["composer", "phpstan", "--no-interaction"]
             ],
+            # 🔥 FIXED: Pint with --test flag and quiet mode
             "pint": [
-                ["./vendor/bin/pint", "--test"],
-                ["vendor/bin/pint", "--test"],
-                ["composer", "pint"]
+                ["./vendor/bin/pint", "--test", "-q"],
+                ["vendor/bin/pint", "--test", "--quiet"],
+                ["composer", "pint", "--no-interaction"]
             ],
             
             # JavaScript/Node tests with fallbacks
@@ -832,7 +870,14 @@ Last error:\
             command_str = ' '.join(command)
             error_lower = error_output.lower()
             
-            # 🔥 NEW: Anti-loop protection
+            # 🔥 NEW: Check global project repair limit first
+            project_repairs = self.project_repair_counts.get(project_path, 0)
+            if project_repairs >= self.max_total_repairs_per_project:
+                logger.warning(f"🛑 GLOBAL REPAIR LIMIT REACHED for project {project_path} ({project_repairs}/{self.max_total_repairs_per_project})")
+                logger.warning("⚠️ This project has had too many repair attempts. Stopping to prevent infinite loop.")
+                return False
+            
+            # 🔥 NEW: Anti-loop protection per command
             repair_key = f"{project_path}:{command_str}:{hash(error_output)}"
             current_attempts = self.repair_attempts.get(repair_key, 0)
             
@@ -841,10 +886,18 @@ Last error:\
                 return False
             
             self.repair_attempts[repair_key] = current_attempts + 1
-            logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}): {command_str}")
+            self.project_repair_counts[project_path] = project_repairs + 1
+            logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}): {command_str}")
             
             # ===== COMPOSER/PHP REPAIRS =====
-            if "composer" in command_str:
+            if "composer" in command_str or "could not detect the root package" in error_lower:
+                # 🔥 NEW: Root package detection failed
+                if "could not detect the root package" in error_lower or "not a valid root package" in error_lower:
+                    logger.error("❌ FATAL: Composer root package not detected - Laravel project structure is broken")
+                    logger.error("⚠️ This indicates the project was not properly initialized with 'composer create-project'")
+                    logger.error("🛑 Automatic repair not possible - project needs manual Laravel setup")
+                    return False  # Don't attempt repair - this is a fundamental structural issue
+                
                 # Vendor directory missing
                 if "vendor" in error_lower or "autoload" in error_lower:
                     logger.info("🔧 Detected missing vendor directory, running composer install...")
@@ -852,10 +905,20 @@ Last error:\
                         result = await self._run_command_with_timeout(
                             ["composer", "install", "--no-interaction", "--no-progress"], 
                             cwd=project_path,
-                            timeout=180  # 3 minutes for composer install
+                            timeout=300  # 🔥 INCREASED: 5 minutes for composer install
                         )
-                        return result.returncode == 0
-                    except:
+                        if result.returncode == 0:
+                            # 🔥 NEW: Verify the repair actually worked
+                            if await self._verify_repair_success(project_path, "vendor"):
+                                logger.info("✅ Vendor directory repair verified")
+                                return True
+                            else:
+                                logger.warning("⚠️ Repair completed but vendor still invalid")
+                                return False
+                        return False
+                    except Exception as e:
+                        logger.error(f"❌ Composer install failed: {e}")
+                        
                         return False
                 
                 # Script not found in composer.json
@@ -865,6 +928,22 @@ Last error:\
             
             # ===== PHPSTAN REPAIRS =====
             if "phpstan" in command_str:
+                # Binary not found - install it first
+                if "command not found" in error_lower or "not found" in error_lower:
+                    logger.info("🔧 PHPStan binary missing, installing via composer...")
+                    try:
+                        result = await self._run_command_with_timeout(
+                            ["composer", "require", "--dev", "phpstan/phpstan", "--no-interaction"], 
+                            cwd=project_path,
+                            timeout=120
+                        )
+                        if result.returncode == 0:
+                            logger.info("✅ PHPStan installed successfully")
+                            return True
+                        return False
+                    except:
+                        return False
+                
                 # Path issue - "At least one path must be specified"
                 if "at least one path" in error_lower or "path must be specified" in error_lower:
                     logger.info("🔧 Detected PHPStan path issue, will suggest path-specific command...")
@@ -877,18 +956,30 @@ Last error:\
                     logger.info("🔧 Pest binary missing, installing via composer...")
                     try:
                         result = await self._run_command_with_timeout(
-                            ["composer", "require", "--dev", "pestphp/pest"], 
+                            ["composer", "require", "--dev", "pestphp/pest", "--no-interaction"], 
                             cwd=project_path,
                             timeout=120
                         )
-                        return result.returncode == 0
-                    except:
+                        if result.returncode == 0:
+                            # 🔥 NEW: Verify pest binary exists after install
+                            if await self._verify_repair_success(project_path, "pest"):
+                                logger.info("✅ Pest installed and verified")
+                                return True
+                            else:
+                                logger.warning("⚠️ Pest install completed but binary not found")
+                                return False
+                        return False
+                    except Exception as e:
+                        logger.error(f"❌ Pest installation failed: {e}")
                         return False
                 
                 # Configuration issue  
                 if "no tests" in error_lower or "configuration" in error_lower:
                     logger.info("🔧 Creating basic Pest configuration...")
-                    return await self._create_basic_pest_config(project_path)
+                    result = await self._create_basic_pest_config(project_path)
+                    if result:
+                        logger.info("✅ Pest configuration created")
+                    return result
             
             # ===== PINT REPAIRS =====
             if "pint" in command_str:
@@ -897,12 +988,21 @@ Last error:\
                     logger.info("🔧 Pint binary missing, installing via composer...")
                     try:
                         result = await self._run_command_with_timeout(
-                            ["composer", "require", "--dev", "laravel/pint"], 
+                            ["composer", "require", "--dev", "laravel/pint", "--no-interaction"], 
                             cwd=project_path,
                             timeout=120
                         )
-                        return result.returncode == 0
-                    except:
+                        if result.returncode == 0:
+                            # 🔥 NEW: Verify pint binary exists after install
+                            if await self._verify_repair_success(project_path, "pint"):
+                                logger.info("✅ Pint installed and verified")
+                                return True
+                            else:
+                                logger.warning("⚠️ Pint install completed but binary not found")
+                                return False
+                        return False
+                    except Exception as e:
+                        logger.error(f"❌ Pint installation failed: {e}")
                         return False
             
             # ===== LLM-POWERED REPAIR as LAST RESORT =====
@@ -998,6 +1098,66 @@ test('basic test example', function () {
         except Exception as e:
             logger.error(f"Error adding composer script: {e}")
             return False
+    
+    async def _verify_repair_success(self, project_path: str, repair_type: str) -> bool:
+        """
+        🔥 NEW: Verify that a repair actually succeeded
+        """
+        try:
+            project_root = Path(project_path)
+            
+            if repair_type == "vendor":
+                # Verify vendor directory and autoload exist
+                vendor_dir = project_root / "vendor"
+                autoload_file = vendor_dir / "autoload.php"
+                
+                if not vendor_dir.exists():
+                    logger.warning("❌ Vendor directory still missing after repair")
+                    return False
+                
+                if not autoload_file.exists():
+                    logger.warning("❌ Vendor autoload.php still missing after repair")
+                    return False
+                
+                # Check if vendor has actual packages
+                vendor_count = len([d for d in vendor_dir.iterdir() if d.is_dir() and not d.name.startswith('.')])
+                if vendor_count < 3:  # Should have at least composer, bin, and some packages
+                    logger.warning(f"⚠️ Vendor directory suspiciously empty ({vendor_count} directories)")
+                    return False
+                
+                return True
+            
+            elif repair_type == "pest":
+                # Verify pest binary exists
+                pest_binary = project_root / "vendor" / "bin" / "pest"
+                if not pest_binary.exists():
+                    logger.warning("❌ Pest binary not found after installation")
+                    return False
+                return True
+            
+            elif repair_type == "pint":
+                # Verify pint binary exists
+                pint_binary = project_root / "vendor" / "bin" / "pint"
+                if not pint_binary.exists():
+                    logger.warning("❌ Pint binary not found after installation")
+                    return False
+                return True
+            
+            elif repair_type == "phpstan":
+                # Verify phpstan binary exists
+                phpstan_binary = project_root / "vendor" / "bin" / "phpstan"
+                if not phpstan_binary.exists():
+                    logger.warning("❌ PHPStan binary not found after installation")
+                    return False
+                return True
+            
+            # Unknown repair type - assume success
+            logger.warning(f"⚠️ Unknown repair type for verification: {repair_type}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error verifying repair success: {e}")
+            return False
 
     # Additional methods for comprehensive health checking, git operations, etc.
     # ... (rest of the methods remain similar but with enhanced error handling)
@@ -1092,6 +1252,61 @@ test('basic test example', function () {
             
         except Exception as e:
             logger.error(f"Error validating patch: {e}")
+            return False
+                
+    async def _validate_project_structure_for_patch(self, project_path: str, patch_text: str) -> bool:
+        """
+        🔥 NEW: Validate that all files/directories referenced in patch exist or can be created
+        """
+        try:
+            project_root = Path(project_path)
+            
+            # Extract file paths from patch
+            file_paths = []
+            for line in patch_text.split('
+'):
+                # Look for file headers in diff format
+                if line.startswith('---') or line.startswith('+++'):
+                    # Extract path (skip a/ or b/ prefix)
+                    parts = line.split(maxsplit=1)
+                    if len(parts) > 1:
+                        path = parts[1].strip()
+                        # Remove a/ or b/ prefix
+                        if path.startswith('a/') or path.startswith('b/'):
+                            path = path[2:]
+                        # Ignore /dev/null
+                        if path != '/dev/null' and path:
+                            file_paths.append(path)
+            
+            if not file_paths:
+                logger.warning("⚠️ No file paths found in patch")
+                return True  # If we can't extract paths, don't fail
+            
+            # Check each file path
+            for file_path in set(file_paths):  # Use set to avoid duplicates
+                full_path = project_root / file_path
+                parent_dir = full_path.parent
+                
+                # 🔥 NEW: Create parent directory if it doesn't exist
+                if not parent_dir.exists():
+                    logger.info(f"📁 Creating missing directory for patch: {parent_dir}")
+                    try:
+                        parent_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        logger.error(f"❌ Failed to create directory {parent_dir}: {e}")
+                        return False
+                
+                # If file doesn't exist, that's OK (it might be a new file)
+                # But if parent directory doesn't exist and can't be created, fail
+                if not parent_dir.exists():
+                    logger.error(f"❌ Cannot create parent directory: {parent_dir}")
+                    return False
+            
+            logger.info(f"✅ Project structure validated for {len(set(file_paths))} file(s)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error validating project structure for patch: {e}")
             return False
 
     # Other utility methods...
