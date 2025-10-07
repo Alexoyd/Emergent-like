@@ -10,8 +10,9 @@ from .registry import StackRegistry
 from ..utils import json_utils
 
 class LaravelHandler(StackHandler):
-    name = "laravel"
-    default_test_command: List[str] = ["vendor/bin/pest", "-q"]
+    name = \"laravel\"
+    # 🔥 FIXED: Non-interactive test command to prevent hanging
+    default_test_command: List[str] = [\"vendor/bin/pest\", \"--no-interaction\", \"--stop-on-failure\"]
 
     @staticmethod
     def sanitize_composer_name(name: Optional[str]) -> str:
@@ -129,7 +130,7 @@ class LaravelHandler(StackHandler):
 
         files = {
             "routes/web.php": "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/', function () {\n    return 'Hello World!';\n});\n",
-            "composer.json": f'{{\n    "name": "emergent/{project_name or "project"}",\n    "type": "project",\n    "require": {{\n        "php": "^8.1",\n        "laravel/framework": "^10.0"\n    }},\n    "require-dev": {{\n        "pestphp/pest": "^2.0",\n        "phpstan/phpstan": "^1.0",\n        "laravel/pint": "^1.0"\n    }},\n    "autoload": {{\n        "psr-4": {{\n            "App\\\\": "app/"\n        }}\n    }}\n}}',
+            "composer.json": f'{{\n    "name": "emergent/{project_name or "project"}",\n    "type": "project",\n    "require": {{\n        "php": "^8.1",\n        "laravel/framework": "^10.0"\n    }},\n    "require-dev": {{\n        "pestphp/pest": "^2.0",\n        "phpstan/phpstan": "^1.0",\n        "laravel/pint": "^1.0"\n    }},\n    "autoload": {{\n        "psr-4": {{\n            "App\\\": "app/"\n        }}\n    }}\n}}',
             "phpstan.neon.dist": "parameters:\n    paths:\n        - app\n    level: 5\n",
         }
         
@@ -154,17 +155,24 @@ class LaravelHandler(StackHandler):
             except Exception as e:
                 if self.logger:
                     self.logger.warning(f"Error sanitizing composer.json: {e}")
-        # composer install
-        result = await self.run_command(["composer", "install"], cwd=str(code_path))
+        
+        # 🔥 FIXED: composer install with proper flags to avoid hanging
+        result = await self.run_command(
+            ["composer", "install", "--no-interaction", "--no-progress", "--prefer-dist"], 
+            cwd=str(code_path)
+        )
         if result.returncode != 0 and self.logger:
             self.logger.warning(f"Composer install failed: {result.stderr}")
-        # dev deps (idempotent)
+        
+        # 🔥 FIXED: dev deps with non-interactive flags
         dev = await self.run_command(
-            ["composer", "require", "--dev", "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
+            ["composer", "require", "--dev", "--no-interaction", 
+             "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
             cwd=str(code_path),
         )
         if dev.returncode != 0 and self.logger:
             self.logger.warning(f"Laravel dev deps failed: {dev.stderr}")
+        
         return True
 
 # auto-register
