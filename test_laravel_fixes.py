@@ -74,8 +74,7 @@ async def test_laravel_fixes():
     
     # Test 5: Laravel handler default command
     print("✅ Test 5: LaravelHandler Default Command")
-    handler = LaravelHandler()
-    default_cmd = handler.default_test_command
+    default_cmd = LaravelHandler.default_test_command
     assert "--no-interaction" in default_cmd, "Default command missing --no-interaction"
     print(f"   - Default test command: {default_cmd} ✅")
     print()
