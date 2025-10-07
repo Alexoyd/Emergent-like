@@ -1006,8 +1006,24 @@ Last error:\
                         return False
             
             # ===== LLM-POWERED REPAIR as LAST RESORT =====
+            # 🔥 NEW: Disabled LLM repair for known solvable issues to prevent loops
+            known_simple_issues = [
+                "pint", "pest", "phpstan",  # These have specific repair handlers above
+                "composer install", "vendor", "autoload"  # These are handled by composer install
+            ]
+            
+            # Check if this is a simple issue that shouldn't use LLM repair
+            is_simple_issue = any(issue in command_str.lower() or issue in error_lower 
+                                for issue in known_simple_issues)
+            
+            if is_simple_issue:
+                logger.warning("🛑 LLM repair DISABLED for simple fixable issue to prevent loop")
+                logger.warning(f"⚠️ Command '{command_str}' failed after all standard repair attempts")
+                return False
+            
+            # Only use LLM repair for complex/unknown issues on last attempt
             if self.repair_agent and current_attempts == self.max_repair_attempts - 1:
-                logger.info("🤖 Using LLM-powered repair as last resort...")
+                logger.info("🤖 Using LLM-powered repair as last resort for complex issue...")
                 stack = self._detect_project_stack(project_path)
                 repair_result = await self.repair_agent.analyze_and_repair(
                     project_path, stack, error_output, command_str
