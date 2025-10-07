@@ -10,9 +10,9 @@ from .registry import StackRegistry
 from ..utils import json_utils
 
 class LaravelHandler(StackHandler):
-    name = \"laravel\"
+    name = "laravel"
     # 🔥 FIXED: Non-interactive test command to prevent hanging
-    default_test_command: List[str] = [\"vendor/bin/pest\", \"--no-interaction\", \"--stop-on-failure\"]
+    default_test_command: List[str] = ["vendor/bin/pest", "--no-interaction", "--stop-on-failure"]
 
     @staticmethod
     def sanitize_composer_name(name: Optional[str]) -> str:
@@ -130,7 +130,7 @@ class LaravelHandler(StackHandler):
 
         files = {
             "routes/web.php": "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/', function () {\n    return 'Hello World!';\n});\n",
-            "composer.json": f'{{\n    "name": "emergent/{project_name or "project"}",\n    "type": "project",\n    "require": {{\n        "php": "^8.1",\n        "laravel/framework": "^10.0"\n    }},\n    "require-dev": {{\n        "pestphp/pest": "^2.0",\n        "phpstan/phpstan": "^1.0",\n        "laravel/pint": "^1.0"\n    }},\n    "autoload": {{\n        "psr-4": {{\n            "App\\\": "app/"\n        }}\n    }}\n}}',
+            "composer.json": f'{{\n    "name": "emergent/{project_name or "project"}",\n    "type": "project",\n    "require": {{\n        "php": "^8.1",\n        "laravel/framework": "^10.0"\n    }},\n    "require-dev": {{\n        "pestphp/pest": "^2.0",\n        "phpstan/phpstan": "^1.0",\n        "laravel/pint": "^1.0"\n    }},\n    "autoload": {{\n        "psr-4": {{\n            "App\\": "app/"\n        }}\n    }}\n}}',
             "phpstan.neon.dist": "parameters:\n    paths:\n        - app\n    level: 5\n",
         }
         
