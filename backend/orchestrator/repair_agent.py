@@ -639,10 +639,11 @@ Prioritize dependency installation and configuration over structural changes."""
             )
     
     async def _run_command_with_timeout(self, command: List[str], cwd: str, timeout: int = None):
-        """Run command with timeout"""
+        """🔥 FIXED: Run command with timeout and proper error handling"""
         if timeout is None:
             timeout = self.command_timeout
-            
+
+        process = None  # 🔥 NEW: Initialize process variable
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -651,7 +652,16 @@ Prioritize dependency installation and configuration over structural changes."""
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await asyncio.wait_for(
+            # 🔥 NEW: Verify process was created successfully
+            if process is None:
+                logger.error(f"❌ Failed to create subprocess for command: {' '.join(command)}")
+                return type('CommandResult', (), {
+                    'returncode': -1,
+                    'stdout': '',
+                    'stderr': 'Failed to create subprocess'
+                })()
+            
+            sstdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=timeout
             )
@@ -663,8 +673,42 @@ Prioritize dependency installation and configuration over structural changes."""
             })()
             
         except asyncio.TimeoutError:
-            logger.error(f"Command timeout: {' '.join(command)}")
-            if process:
-                process.kill()
-                await process.wait()
-            raise
+            logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
+            # 🔥 FIXED: Check if process exists before killing
+            if process is not None:
+                try:
+                    process.kill()
+                    await process.wait()
+                    logger.info("✅ Timed out process killed")
+                except Exception as kill_error:
+                    logger.warning(f"⚠️ Error killing timed out process: {kill_error}")
+            
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': f'Command timed out after {timeout} seconds'
+            })()
+            
+        except FileNotFoundError:
+            logger.error(f"❌ Command not found: {command[0]}")
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': f'Command not found: {command[0]}'
+            })()
+            
+        except Exception as e:
+            logger.error(f"❌ Error running command {' '.join(command)}: {e}")
+            # 🔥 FIXED: Check if process exists before cleanup
+            if process is not None:
+                try:
+                    process.kill()
+                    await process.wait()
+                except:
+                    pass
+            
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': str(e)
+            })()
