@@ -28,10 +28,14 @@ class RepairAgent:
     
     def __init__(self, llm_router=None):
         self.llm_router = llm_router
-        # 🔥 NEW: Anti-loop tracking system
+        # 🔥 ENHANCED: Anti-loop tracking system
         self.repair_history = {}  # track repairs by error signature
         self.max_repairs_per_error = 2  # maximum repairs per unique error
         self.command_timeout = 120  # 2 minutes timeout for repair commands
+        # 🔥 NEW: Session-based loop prevention
+        self.repair_sessions = {}  # track repair sessions per project
+        self.max_session_duration = 1800  # 30 minutes max per session
+        self.max_llm_calls_per_session = 5  # max LLM calls per repair session
         
     async def analyze_and_repair(
         self, 
@@ -45,8 +49,49 @@ class RepairAgent:
         🔥 ENHANCED: Main repair method with loop protection and intelligent caching
         """
         try:
-            # 🔥 NEW: Create error signature for anti-loop protection
+            import time
+            current_time = time.time()
+            
+            # 🔥 NEW: Session-based loop prevention
+            if project_path not in self.repair_sessions:
+                self.repair_sessions[project_path] = {
+                    'start_time': current_time,
+                    'llm_calls': 0,
+                    'errors_attempted': set()
+                }
+            
+            session = self.repair_sessions[project_path]
+            session_duration = current_time - session['start_time']
+            
+            # Check session duration
+            if session_duration > self.max_session_duration:
+                logger.warning(f"🛑 REPAIR SESSION TIMEOUT for {project_path} ({session_duration:.0f}s)")
+                return RepairResult(
+                    success=False,
+                    description="Repair session timeout - too long running",
+                    error_message="session_timeout"
+                )
+            
+            # Check LLM call limit
+            if session['llm_calls'] >= self.max_llm_calls_per_session:
+                logger.warning(f"🛑 LLM CALL LIMIT REACHED for {project_path} ({session['llm_calls']}/{self.max_llm_calls_per_session})")
+                return RepairResult(
+                    success=False,
+                    description="LLM call limit reached for this session",
+                    error_message="llm_call_limit_reached"
+                )
+            
+            # 🔥 ENHANCED: Create error signature for anti-loop protection
             error_signature = self._create_error_signature(project_path, failed_command, error_output)
+            
+            # 🔥 NEW: Check for Laravel-specific errors that should trigger project recreation
+            if self._is_laravel_installation_error(error_output):
+                logger.warning("🚨 Laravel installation error detected - project needs complete recreation")
+                return RepairResult(
+                    success=False,
+                    description="Laravel installation is broken and needs complete recreation",
+                    error_message="laravel_installation_broken"
+                )
             
             # Check if we've already attempted repair for this exact error
             if error_signature in self.repair_history:
@@ -67,6 +112,9 @@ class RepairAgent:
                 self.repair_history[error_signature] = 1
                 logger.info(f"🤖 First LLM-powered error analysis for: {failed_command}")
             
+            # Track this error in session
+            session['errors_attempted'].add(error_signature)
+            
             # 1. Gather project context
             project_context = await self._gather_project_context(project_path, stack)
             
@@ -74,6 +122,7 @@ class RepairAgent:
             project_context["repair_history"] = self._get_relevant_repair_history(error_signature)
             
             # 2. Generate repair with LLM
+            session['llm_calls'] += 1  # Track LLM call
             repair_plan = await self._generate_repair_with_llm(
                 project_path, stack, error_output, failed_command, project_context
             )
@@ -137,6 +186,38 @@ class RepairAgent:
         # Create signature from command + key error patterns
         signature_content = f"{normalized_command}|{'|'.join(error_patterns[:3])}"  # Top 3 error patterns
         return hashlib.md5(signature_content.encode()).hexdigest()
+    
+    def _is_laravel_installation_error(self, error_output: str) -> bool:
+        """
+        🔥 NEW: Detect Laravel installation errors that require complete project recreation
+        """
+        error_lower = error_output.lower()
+        
+        # Laravel-specific error patterns that indicate broken installation
+        laravel_installation_errors = [
+            "composer root package not detected",
+            "laravel project structure is broken",
+            "project needs manual laravel setup",
+            "no application encryption key has been specified",
+            "could not find the driver",
+            "class 'illuminate\\foundation\\application' not found",
+            "class 'illuminate\\support\\facades\\app' not found",
+            "artisan command not found",
+            "vendor/autoload.php not found",
+            "bootstrap/app.php not found",
+            "laravel framework not found",
+            "composer could not detect the root package",
+            "no files found to analyse",
+            "php artisan test fails",
+            "laravel/framework package not installed"
+        ]
+        
+        for error_pattern in laravel_installation_errors:
+            if error_pattern in error_lower:
+                logger.warning(f"🚨 Laravel installation error detected: {error_pattern}")
+                return True
+        
+        return False
     
     def _get_relevant_repair_history(self, error_signature: str) -> List[str]:
         """Get history of previous repair attempts for context"""
@@ -639,18 +720,28 @@ Prioritize dependency installation and configuration over structural changes."""
             )
     
     async def _run_command_with_timeout(self, command: List[str], cwd: str, timeout: int = None):
-        """🔥 FIXED: Run command with timeout and proper error handling"""
+        """🔥 ENHANCED: Run command with intelligent timeout and cleanup"""
         if timeout is None:
             timeout = self.command_timeout
 
-        process = None  # 🔥 NEW: Initialize process variable
+        process = None
+        process_group_id = None
+        
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None
             )
+            
+            # Store process group ID for cleanup
+            if hasattr(os, 'getpgid') and process.pid:
+                try:
+                    process_group_id = os.getpgid(process.pid)
+                except:
+                    process_group_id = None
             
             # 🔥 NEW: Verify process was created successfully
             if process is None:
@@ -661,7 +752,7 @@ Prioritize dependency installation and configuration over structural changes."""
                     'stderr': 'Failed to create subprocess'
                 })()
             
-            sstdout, stderr = await asyncio.wait_for(
+            stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
                 timeout=timeout
             )
@@ -674,14 +765,11 @@ Prioritize dependency installation and configuration over structural changes."""
             
         except asyncio.TimeoutError:
             logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
-            # 🔥 FIXED: Check if process exists before killing
-            if process is not None:
-                try:
-                    process.kill()
-                    await process.wait()
-                    logger.info("✅ Timed out process killed")
-                except Exception as kill_error:
-                    logger.warning(f"⚠️ Error killing timed out process: {kill_error}")
+            
+            # Enhanced cleanup
+            cleanup_success = await self._cleanup_timed_out_process(process, process_group_id)
+            if not cleanup_success:
+                logger.error("❌ Failed to cleanup timed out process")
             
             return type('CommandResult', (), {
                 'returncode': -1,
@@ -699,16 +787,50 @@ Prioritize dependency installation and configuration over structural changes."""
             
         except Exception as e:
             logger.error(f"❌ Error running command {' '.join(command)}: {e}")
-            # 🔥 FIXED: Check if process exists before cleanup
-            if process is not None:
-                try:
-                    process.kill()
-                    await process.wait()
-                except:
-                    pass
+            # Ensure cleanup on any error
+            if process:
+                await self._cleanup_timed_out_process(process, process_group_id)
             
             return type('CommandResult', (), {
                 'returncode': -1,
                 'stdout': '',
                 'stderr': str(e)
             })()
+    
+    async def _cleanup_timed_out_process(self, process, process_group_id=None) -> bool:
+        """🔥 NEW: Enhanced process cleanup for repair agent"""
+        cleanup_success = False
+        
+        try:
+            # Strategy 1: Graceful termination
+            if process and process.returncode is None:
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                    cleanup_success = True
+                except:
+                    pass
+            
+            # Strategy 2: Force kill
+            if not cleanup_success and process and process.returncode is None:
+                try:
+                    process.kill()
+                    await asyncio.wait_for(process.wait(), timeout=3)
+                    cleanup_success = True
+                except:
+                    pass
+            
+            # Strategy 3: Kill process group
+            if not cleanup_success and process_group_id and hasattr(os, 'killpg'):
+                try:
+                    os.killpg(process_group_id, 9)
+                    await asyncio.sleep(0.5)
+                    cleanup_success = True
+                except:
+                    pass
+            
+            return cleanup_success
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error in process cleanup: {e}")
+            return False

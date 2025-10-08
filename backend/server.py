@@ -102,7 +102,7 @@ class StepStatus(str, Enum):
 class RunCreate(BaseModel):
     goal: str = Field(..., min_length=10, max_length=2000, description="Detailed description of what the AI should accomplish")
     project_path: Optional[str] = Field(None, description="Optional path to existing project")
-    stack: str = Field("laravel", pattern="^(laravel|react|vue|python|node)$", description="Technology stack to use")
+    stack: str = Field("unknown", pattern="^(laravel|react|vue|python|node|unknown)$", description="Technology stack to use - 'unknown' for auto-detection")
     max_steps: int = Field(20, ge=1, le=50, description="Maximum number of steps to execute")
     max_retries_per_step: int = Field(2, ge=0, le=5, description="Maximum retries per step")
     daily_budget_eur: float = Field(5.0, ge=0.1, le=100.0, description="Daily budget limit in EUR")
@@ -111,7 +111,7 @@ class Run(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     goal: str
     project_path: Optional[str] = None
-    stack: str = "laravel"
+    stack: str = "unknown"
     status: RunStatus = RunStatus.PENDING
     current_step: int = 0
     max_steps: int = 20

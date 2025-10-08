@@ -28,8 +28,7 @@ def is_valid_patch(patch_text: str) -> bool:
     if not patch_text or not isinstance(patch_text, str):
         return False
     
-    lines = patch_text.strip().split('\
-')
+    lines = patch_text.strip().split('\n')
     if len(lines) < 4:  # Minimum viable patch
         return False
     
@@ -66,12 +65,17 @@ class ToolManager:
         self.repair_agent = RepairAgent(llm_router=llm_router)
         # ✅ Initialize advanced patch validator and repairer (Phase 3)
         self.patch_validator = PatchValidator()
-        # 🔥 NEW: Anti-loop tracking for repairs
+        # 🔥 ENHANCED: Anti-loop tracking for repairs
         self.repair_attempts = {}  # track repair attempts per project+error
         self.max_repair_attempts = 2  # Max attempts per unique error
-        # 🔥 NEW: Global repair counter per project to prevent infinite loops
+        # 🔥 ENHANCED: Global repair counter per project to prevent infinite loops
         self.project_repair_counts = {}  # track total repairs per project
         self.max_total_repairs_per_project = 5  # Absolute limit
+        # 🔥 NEW: Repair session tracking to prevent cross-session loops
+        self.repair_session_start = {}  # track when repair sessions started
+        self.max_repair_session_duration = 1800  # 30 minutes max per session
+        # 🔥 NEW: Command-specific repair tracking
+        self.command_repair_history = {}  # track repairs per command type
 
     def extract_patch(self, text: str) -> Optional[str]:
         """Extract patch from text"""
@@ -80,17 +84,11 @@ class ToolManager:
         
         # Look for patch markers
         patch_start_patterns = [
-            r'```diff\
-(.*?)```',
-            r'```patch\
-(.*?)```', 
-            r'```\
-(diff --git.*?)```',
-            r'(diff --git.*?)(?=\
-\
-|\
-```|\Z)',
-        ]
+    r'```diff\n(.*?)```',
+    r'```patch\n(.*?)```',
+    r'```\n(diff --git.*?)```',
+    r'(diff --git.*?)(?=\n\n|\n```|\Z)',
+]
         
         for pattern in patch_start_patterns:
             matches = re.findall(pattern, text, re.DOTALL | re.MULTILINE)
@@ -108,8 +106,7 @@ class ToolManager:
     def _normalize_patch(self, patch_text: str, project_path: str) -> str:
         """Normalize patch paths relative to project root with enhanced validation"""
         try:
-            lines = patch_text.split('\
-')
+            lines = patch_text.split('\n')
             normalized_lines = []
             project_path_obj = Path(project_path).resolve()
             
@@ -142,8 +139,7 @@ class ToolManager:
                 else:
                     normalized_lines.append(line)
             
-            return '\
-'.join(normalized_lines)
+            return '\n'.join(normalized_lines)
         except Exception as e:
             logger.warning(f"Error normalizing patch: {e}")
             return patch_text
@@ -210,7 +206,7 @@ class ToolManager:
     
     async def _validate_project_structure_for_patch(self, project_path: str, patch_text: str) -> bool:
         """
-        🔥 NEW: Validate that all directories referenced in patch exist or can be created
+        🔥 ENHANCED: Validate that all files/directories referenced in patch exist or can be created
         """
         try:
             project_root = Path(project_path)
@@ -218,39 +214,108 @@ class ToolManager:
                 logger.error(f"Project root does not exist: {project_path}")
                 return False
             
-            # Extract file paths from patch
-            lines = patch_text.split('\
-')
-            file_paths = set()
+            # Extract file paths from patch with enhanced parsing
+            file_paths = self._extract_file_paths_from_patch(patch_text)
             
-            for line in lines:
-                if line.startswith('--- ') or line.startswith('+++ '):
-                    file_path = line[4:].strip()
-                    if file_path.startswith(('a/', 'b/')):
-                        file_path = file_path[2:]
-                    if file_path != '/dev/null':
-                        file_paths.add(file_path)
+            if not file_paths:
+                logger.warning("⚠️ No file paths found in patch")
+                return True  # Empty patch is valid
+            
+            logger.info(f"🔍 Validating {len(file_paths)} file paths from patch...")
             
             # Validate each file path
+            validation_results = []
             for file_path in file_paths:
-                target_path = project_root / file_path
-                target_dir = target_path.parent
+                result = await self._validate_single_file_path(project_root, file_path)
+                validation_results.append(result)
                 
-                # Check if directory exists or can be created
-                if not target_dir.exists():
-                    try:
-                        # Test directory creation (but don't actually create it yet)
-                        target_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info(f"✅ Created missing directory for patch: {target_dir}")
-                    except Exception as e:
-                        logger.error(f"❌ Cannot create directory {target_dir}: {e}")
-                        return False
+                if not result['valid']:
+                    logger.error(f"❌ File path validation failed: {file_path} - {result['reason']}")
+                    return False
+                else:
+                    logger.debug(f"✅ File path validated: {file_path}")
             
+            logger.info(f"✅ All {len(file_paths)} file paths validated successfully")
             return True
             
         except Exception as e:
             logger.error(f"Error validating project structure for patch: {e}")
             return False
+    
+    def _extract_file_paths_from_patch(self, patch_text: str) -> List[str]:
+        """
+        🔥 NEW: Enhanced file path extraction from patch
+        """
+        file_paths = set()
+        lines = patch_text.split('\n')
+        
+        for line in lines:
+            # Look for file headers in diff format
+            if line.startswith('---') or line.startswith('+++'):
+                # Extract path (skip a/ or b/ prefix)
+                parts = line.split(maxsplit=1)
+                if len(parts) > 1:
+                    path = parts[1].strip()
+                    # Remove a/ or b/ prefix
+                    if path.startswith('a/') or path.startswith('b/'):
+                        path = path[2:]
+                    # Ignore /dev/null
+                    if path != '/dev/null' and path:
+                        file_paths.add(path)
+        
+        return list(file_paths)
+    
+    async def _validate_single_file_path(self, project_root: Path, file_path: str) -> Dict[str, Any]:
+        """
+        🔥 NEW: Validate a single file path for patch application
+        """
+        try:
+            target_path = project_root / file_path
+            target_dir = target_path.parent
+            
+            # Check if parent directory exists
+            if not target_dir.exists():
+                # Try to create the directory
+                try:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"📁 Created missing directory: {target_dir}")
+                    return {'valid': True, 'action': 'directory_created', 'path': str(target_dir)}
+                except Exception as e:
+                    return {
+                        'valid': False, 
+                        'reason': f'Cannot create directory {target_dir}: {e}',
+                        'path': str(target_dir)
+                    }
+            
+            # Check if it's a file or directory
+            if target_path.exists():
+                if target_path.is_file():
+                    # Check if file is writable
+                    if not os.access(target_path, os.W_OK):
+                        return {
+                            'valid': False,
+                            'reason': f'File is not writable: {target_path}',
+                            'path': str(target_path)
+                        }
+                    return {'valid': True, 'action': 'file_exists', 'path': str(target_path)}
+                elif target_path.is_dir():
+                    return {'valid': True, 'action': 'directory_exists', 'path': str(target_path)}
+            else:
+                # File doesn't exist - check if parent directory is writable
+                if not os.access(target_dir, os.W_OK):
+                    return {
+                        'valid': False,
+                        'reason': f'Parent directory is not writable: {target_dir}',
+                        'path': str(target_dir)
+                    }
+                return {'valid': True, 'action': 'new_file', 'path': str(target_path)}
+            
+        except Exception as e:
+            return {
+                'valid': False,
+                'reason': f'Validation error: {e}',
+                'path': file_path
+            }
 
     async def run_command(self, command: List[str], cwd: Optional[str] = None):
         """
@@ -289,7 +354,7 @@ class ToolManager:
                 )
             
             # ✅ PHASE 1: Enhanced stack detection and validation
-            stack = self._detect_project_stack(project_path)
+            stack = await self._detect_project_stack(project_path)
             logger.info(f"Detected stack: {stack} for test type: {test_type}")
             
             # 🔥 NEW: Strict Laravel validation before proceeding
@@ -351,7 +416,7 @@ class ToolManager:
     
     async def _validate_laravel_environment(self, project_path: str) -> bool:
         """
-        🔥 ENHANCED: Strict Laravel environment validation with deeper checks
+        🔥 ENHANCED: Comprehensive Laravel environment validation with functional testing
         """
         try:
             project_root = Path(project_path)
@@ -386,7 +451,6 @@ class ToolManager:
                     logger.warning(f"❌ Invalid composer project type: {project_type}")
                     return False
                     
-       
                 # 🔥 NEW: Check for autoload configuration
                 if "autoload" not in composer_data and "autoload-dev" not in composer_data:
                     logger.warning("❌ composer.json missing autoload configuration")
@@ -441,7 +505,58 @@ class ToolManager:
                 logger.warning(f"⚠️ Missing Laravel structure elements: {missing_structure}")
                 # Don't fail on this, but it's suspicious
             
-            logger.info("✅ Laravel environment validation passed")
+            # 🔥 NEW: Functional testing - test if artisan actually works
+            try:
+                result = await self._run_command_with_timeout(
+                    ["php", "artisan", "--version"],
+                    cwd=project_path,
+                    timeout=15
+                )
+                if result.returncode != 0:
+                    logger.warning(f"❌ Artisan functional test failed: {result.stderr}")
+                    return False
+                
+                logger.info(f"✅ Artisan functional test passed: {result.stdout.strip()}")
+                
+            except Exception as e:
+                logger.warning(f"❌ Artisan functional test error: {e}")
+                return False
+            
+            # 🔥 NEW: Test composer autoloader
+            try:
+                result = await self._run_command_with_timeout(
+                    ["php", "-r", "require 'vendor/autoload.php'; echo 'Autoloader OK';"],
+                    cwd=project_path,
+                    timeout=10
+                )
+                if result.returncode != 0 or "Autoloader OK" not in result.stdout:
+                    logger.warning("❌ Composer autoloader test failed")
+                    return False
+                
+                logger.info("✅ Composer autoloader test passed")
+                
+            except Exception as e:
+                logger.warning(f"❌ Composer autoloader test error: {e}")
+                return False
+            
+            # 🔥 NEW: Test Laravel application bootstrap
+            try:
+                result = await self._run_command_with_timeout(
+                    ["php", "-r", "require 'vendor/autoload.php'; require 'bootstrap/app.php'; echo 'Bootstrap OK';"],
+                    cwd=project_path,
+                    timeout=10
+                )
+                if result.returncode != 0 or "Bootstrap OK" not in result.stdout:
+                    logger.warning("❌ Laravel bootstrap test failed")
+                    return False
+                
+                logger.info("✅ Laravel bootstrap test passed")
+                
+            except Exception as e:
+                logger.warning(f"❌ Laravel bootstrap test error: {e}")
+                return False
+            
+            logger.info("✅ Laravel environment validation passed with functional tests")
             return True
             
         except Exception as e:
@@ -501,56 +616,239 @@ class ToolManager:
         logger.info(f"Available commands: {[' '.join(cmd) for cmd in available_commands]}")
         return available_commands
 
-    def _detect_project_stack(self, project_path: str) -> str:
+    async def _detect_project_stack(self, project_path: str) -> str:
         """
-        Auto-detect project technology stack based on files and structure.
+        🔥 ENHANCED: Auto-detect project technology stack with comprehensive validation
         Returns: 'laravel', 'vue', 'react', 'python', 'node', 'unknown'
         """
         try:
             project_root = Path(project_path)
             
-            # Laravel detection (enhanced)
-            if (project_root / "artisan").exists() and (project_root / "composer.json").exists():
-                # Double-check it's actually Laravel by looking at composer.json
+            # 🔥 CRITICAL: Strict Laravel detection - must be a REAL Laravel project
+            if await self._is_complete_laravel_project(project_root):
+                logger.info("✅ Complete Laravel project detected")
+                return "laravel"
+            
+            # Check for composer.json with Laravel dependencies but incomplete structure
+            if (project_root / "composer.json").exists():
                 try:
                     with open(project_root / "composer.json", 'r') as f:
                         composer_data = json.load(f)
+                    
                     require = composer_data.get("require", {})
-                    if "laravel/framework" in require or "illuminate/support" in require:
-                        return "laravel"
-                except:
-                    pass
+                    require_dev = composer_data.get("require-dev", {})
+                    all_deps = {**require, **require_dev}
+                    
+                    # Check for Laravel framework indicators
+                    laravel_indicators = [
+                        "laravel/framework",
+                        "illuminate/support", 
+                        "illuminate/console",
+                        "illuminate/database",
+                        "illuminate/routing"
+                    ]
+                    
+                    if any(indicator in all_deps for indicator in laravel_indicators):
+                        # Laravel dependencies found but project is incomplete
+                        logger.warning("⚠️ Laravel dependencies found but project structure is incomplete - will trigger Laravel creation")
+                        return "laravel"  # Return laravel to trigger creation
+                except Exception as e:
+                    logger.debug(f"Error reading composer.json for Laravel detection: {e}")
             
-            # Vue.js detection
+            # 🔥 ENHANCED: Node.js project detection with framework identification
             if (project_root / "package.json").exists():
                 try:
-                    import json
                     with open(project_root / "package.json", 'r') as f:
                         package_data = json.load(f)
+                    
                     dependencies = {**package_data.get("dependencies", {}), **package_data.get("devDependencies", {})}
                     
-                    if any("vue" in dep for dep in dependencies.keys()):
+                    # Vue.js detection (more specific)
+                    vue_indicators = ["vue", "@vue/cli", "@vue/compiler-sfc", "vue-router", "vuex"]
+                    if any(indicator in dependencies for indicator in vue_indicators):
+                        logger.info("✅ Vue.js project detected")
                         return "vue"
-                    elif any("react" in dep for dep in dependencies.keys()):
+                    
+                    # React detection (more specific)
+                    react_indicators = ["react", "react-dom", "@types/react", "react-router", "redux"]
+                    if any(indicator in dependencies for indicator in react_indicators):
+                        logger.info("✅ React project detected")
                         return "react"
-                    else:
+                    
+                    # Angular detection
+                    angular_indicators = ["@angular/core", "@angular/cli", "@angular/common"]
+                    if any(indicator in dependencies for indicator in angular_indicators):
+                        logger.info("✅ Angular project detected")
+                        return "angular"
+                    
+                    # Generic Node.js project
+                    if any(key in dependencies for key in ["express", "koa", "fastify", "nodemon"]):
+                        logger.info("✅ Node.js project detected")
                         return "node"
-                except:
+                        
+                except Exception as e:
+                    logger.debug(f"Error reading package.json: {e}")
                     return "node"
             
-            # Python detection
+            # 🔥 ENHANCED: Python detection with framework identification
             if (project_root / "requirements.txt").exists() or (project_root / "pyproject.toml").exists():
-                return "python"
+                try:
+                    # Check for specific Python frameworks
+                    if (project_root / "manage.py").exists():
+                        logger.info("✅ Django project detected")
+                        return "django"
+                    elif (project_root / "app.py").exists() or (project_root / "main.py").exists():
+                        # Check for Flask or FastAPI
+                        if (project_root / "requirements.txt").exists():
+                            with open(project_root / "requirements.txt", 'r') as f:
+                                requirements = f.read().lower()
+                                if "flask" in requirements:
+                                    logger.info("✅ Flask project detected")
+                                    return "flask"
+                                elif "fastapi" in requirements:
+                                    logger.info("✅ FastAPI project detected")
+                                    return "fastapi"
+                    
+                    logger.info("✅ Python project detected")
+                    return "python"
+                except Exception as e:
+                    logger.debug(f"Error detecting Python framework: {e}")
+                    return "python"
             
-            # PHP detection (non-Laravel)
+            # 🔥 ENHANCED: PHP detection (non-Laravel)
             if (project_root / "composer.json").exists():
-                return "php"
+                try:
+                    with open(project_root / "composer.json", 'r') as f:
+                        composer_data = json.load(f)
+                    
+                    # Check for other PHP frameworks
+                    require = composer_data.get("require", {})
+                    if "symfony/symfony" in require:
+                        logger.info("✅ Symfony project detected")
+                        return "symfony"
+                    elif "slim/slim" in require:
+                        logger.info("✅ Slim framework project detected")
+                        return "slim"
+                    
+                    logger.info("✅ PHP project detected")
+                    return "php"
+                except Exception as e:
+                    logger.debug(f"Error reading composer.json for PHP detection: {e}")
+                    return "php"
             
+            logger.info("❓ Unknown project type detected")
             return "unknown"
             
         except Exception as e:
             logger.debug(f"Error detecting project stack: {e}")
             return "unknown"
+    
+    def _validate_laravel_structure(self, project_root: Path) -> bool:
+        """
+        🔥 NEW: Validate Laravel project structure
+        """
+        try:
+            # Essential Laravel directories
+            required_dirs = ["app", "bootstrap", "config", "database", "public", "resources", "routes", "storage"]
+            missing_dirs = [d for d in required_dirs if not (project_root / d).exists()]
+            
+            if missing_dirs:
+                logger.warning(f"⚠️ Missing Laravel directories: {missing_dirs}")
+                return False
+            
+            # Essential Laravel files
+            required_files = ["artisan", "composer.json", "bootstrap/app.php"]
+            missing_files = [f for f in required_files if not (project_root / f).exists()]
+            
+            if missing_files:
+                logger.warning(f"⚠️ Missing Laravel files: {missing_files}")
+                return False
+            
+            # Check for Laravel-specific structure
+            app_structure = ["Http", "Models", "Providers"]
+            app_missing = [d for d in app_structure if not (project_root / "app" / d).exists()]
+            
+            if len(app_missing) > 1:  # Allow some flexibility
+                logger.warning(f"⚠️ Missing Laravel app structure: {app_missing}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Error validating Laravel structure: {e}")
+            return False
+    
+    async def _is_complete_laravel_project(self, project_root: Path) -> bool:
+        """
+        🔥 NEW: Check if this is a complete, functional Laravel project
+        """
+        try:
+            # Essential Laravel files that must exist
+            essential_files = [
+                "artisan",
+                "composer.json", 
+                "bootstrap/app.php",
+                "config/app.php",
+                "routes/web.php",
+                "vendor/autoload.php",
+                "vendor/laravel/framework"  # Laravel framework must be installed
+            ]
+            
+            # Check if all essential files exist
+            for file_path in essential_files:
+                if not (project_root / file_path).exists():
+                    logger.debug(f"❌ Missing essential Laravel file: {file_path}")
+                    return False
+            
+            # Check if composer.json is actually a Laravel project
+            try:
+                composer_json = project_root / "composer.json"
+                with open(composer_json, 'r') as f:
+                    composer_data = json.load(f)
+                
+                require = composer_data.get("require", {})
+                if not any(pkg.startswith("laravel/") or pkg.startswith("illuminate/") 
+                          for pkg in require.keys()):
+                    logger.debug("❌ composer.json doesn't reference Laravel packages")
+                    return False
+                
+                # Check if it has a proper name (not just a skeleton)
+                name = composer_data.get("name", "")
+                if not name or name.startswith("emergent/"):
+                    logger.debug("❌ composer.json has invalid or skeleton name")
+                    return False
+                    
+            except Exception as e:
+                logger.debug(f"❌ Invalid composer.json: {e}")
+                return False
+            
+            # Check if artisan is executable and works
+            artisan_path = project_root / "artisan"
+            if not os.access(artisan_path, os.X_OK):
+                logger.debug("❌ Artisan file is not executable")
+                return False
+            
+            # Test if artisan works (basic test)
+            try:
+                result = await self._run_command_with_timeout(
+                    ["php", "artisan", "--version"],
+                    cwd=str(project_root),
+                    timeout=15
+                )
+                if result.returncode != 0:
+                    logger.debug(f"❌ Artisan test failed: {result.stderr}")
+                    return False
+                
+                logger.debug(f"✅ Laravel project verified: {result.stdout.strip()}")
+                return True
+                
+            except Exception as e:
+                logger.debug(f"❌ Artisan test error: {e}")
+                return False
+                
+        except Exception as e:
+            logger.debug(f"❌ Laravel project check error: {e}")
+            return False
     
     def _is_frontend_project(self, project_path: str) -> bool:
         """
@@ -670,12 +968,14 @@ class ToolManager:
     
     async def _run_command_with_timeout(self, command: List[str], cwd: Optional[str] = None, timeout: int = None):
         """
-        🔥 ENHANCED: Robust command execution with proper timeout and cleanup
+        🔥 ENHANCED: Robust command execution with intelligent timeout and cleanup
         """
         if timeout is None:
             timeout = self.timeout
         
         process = None
+        process_group_id = None
+        
         try:
             # Create subprocess with proper process group for cleanup
             process = await asyncio.create_subprocess_exec(
@@ -685,6 +985,13 @@ class ToolManager:
                 stderr=asyncio.subprocess.PIPE,
                 preexec_fn=os.setsid if hasattr(os, 'setsid') else None  # Create process group on Unix
             )
+            
+            # Store process group ID for cleanup
+            if hasattr(os, 'getpgid') and process.pid:
+                try:
+                    process_group_id = os.getpgid(process.pid)
+                except:
+                    process_group_id = None
             
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -701,37 +1008,164 @@ class ToolManager:
             except asyncio.TimeoutError:
                 logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
                 
-                # Graceful termination first
-                if process:
-                    try:
-                        process.terminate()
-                        await asyncio.wait_for(process.wait(), timeout=self.kill_timeout)
-                        logger.info("✅ Process terminated gracefully")
-                    except asyncio.TimeoutError:
-                        # Force kill if graceful termination fails
-                        logger.warning("🔥 Force killing process...")
-                        try:
-                            if hasattr(os, 'killpg') and hasattr(os, 'getpgid'):
-                                os.killpg(os.getpgid(process.pid), 9)  # Kill process group
-                            else:
-                                process.kill()
-                            await process.wait()
-                            logger.info("✅ Process force killed")
-                        except Exception as kill_error:
-                            logger.error(f"❌ Error force killing process: {kill_error}")
+                # Enhanced cleanup sequence
+                cleanup_success = await self._cleanup_timed_out_process(process, process_group_id)
+                
+                if not cleanup_success:
+                    logger.error("❌ Failed to cleanup timed out process - may still be running")
                 
                 raise Exception(f"Command timed out after {timeout} seconds")
             
         except FileNotFoundError:
             raise Exception(f"Command not found: {command[0]}")
         except Exception as e:
+            # Ensure cleanup on any error
             if process:
+                await self._cleanup_timed_out_process(process, process_group_id)
+            raise e
+    
+    async def _safe_subprocess_exec(self, command: List[str], cwd: str = None, timeout: int = None) -> 'CommandResult':
+        """
+        🔥 NEW: Safe subprocess execution with comprehensive error handling
+        """
+        if timeout is None:
+            timeout = self.timeout
+        
+        process = None
+        process_group_id = None
+        
+        try:
+            # Create subprocess with proper error handling
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+            )
+            
+            # Verify process creation
+            if process is None:
+                logger.error(f"❌ Failed to create subprocess for: {' '.join(command)}")
+                return type('CommandResult', (), {
+                    'returncode': -1,
+                    'stdout': '',
+                    'stderr': 'Failed to create subprocess'
+                })()
+            
+            # Store process group ID
+            if hasattr(os, 'getpgid') and process.pid:
+                try:
+                    process_group_id = os.getpgid(process.pid)
+                except:
+                    process_group_id = None
+            
+            # Execute with timeout
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout
+            )
+            
+            return type('CommandResult', (), {
+                'returncode': process.returncode,
+                'stdout': stdout.decode('utf-8', errors='ignore'),
+                'stderr': stderr.decode('utf-8', errors='ignore')
+            })()
+            
+        except asyncio.TimeoutError:
+            logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
+            cleanup_success = await self._cleanup_timed_out_process(process, process_group_id)
+            if not cleanup_success:
+                logger.error("❌ Failed to cleanup timed out process")
+            
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': f'Command timed out after {timeout} seconds'
+            })()
+            
+        except FileNotFoundError:
+            logger.error(f"❌ Command not found: {command[0]}")
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': f'Command not found: {command[0]}'
+            })()
+            
+        except Exception as e:
+            logger.error(f"❌ Error running command {' '.join(command)}: {e}")
+            if process:
+                await self._cleanup_timed_out_process(process, process_group_id)
+            
+            return type('CommandResult', (), {
+                'returncode': -1,
+                'stdout': '',
+                'stderr': str(e)
+            })()
+    
+    async def _cleanup_timed_out_process(self, process, process_group_id=None) -> bool:
+        """
+        🔥 NEW: Enhanced process cleanup with multiple fallback strategies
+        """
+        cleanup_success = False
+        
+        try:
+            # Strategy 1: Graceful termination
+            if process and process.returncode is None:
+                logger.info("🔄 Attempting graceful process termination...")
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=self.kill_timeout)
+                    logger.info("✅ Process terminated gracefully")
+                    cleanup_success = True
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Graceful termination timeout, trying force kill...")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error in graceful termination: {e}")
+            
+            # Strategy 2: Force kill process
+            if not cleanup_success and process and process.returncode is None:
+                logger.warning("🔥 Force killing process...")
                 try:
                     process.kill()
-                    await process.wait()
-                except:
-                    pass
-            raise e
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                    logger.info("✅ Process force killed")
+                    cleanup_success = True
+                except asyncio.TimeoutError:
+                    logger.error("❌ Force kill timeout")
+                except Exception as e:
+                    logger.error(f"❌ Error force killing process: {e}")
+            
+            # Strategy 3: Kill process group (Unix only)
+            if not cleanup_success and process_group_id and hasattr(os, 'killpg'):
+                logger.warning("🔥 Killing process group...")
+                try:
+                    os.killpg(process_group_id, 9)  # SIGKILL
+                    await asyncio.sleep(1)  # Give it a moment
+                    if process.returncode is None:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    logger.info("✅ Process group killed")
+                    cleanup_success = True
+                except Exception as e:
+                    logger.error(f"❌ Error killing process group: {e}")
+            
+            # Strategy 4: Last resort - system kill (if available)
+            if not cleanup_success and process and process.pid:
+                logger.warning("🔥 Last resort: system kill...")
+                try:
+                    import signal
+                    os.kill(process.pid, signal.SIGKILL)
+                    await asyncio.sleep(1)
+                    logger.info("✅ System kill attempted")
+                    cleanup_success = True
+                except Exception as e:
+                    logger.error(f"❌ System kill failed: {e}")
+            
+            return cleanup_success
+            
+        except Exception as e:
+            logger.error(f"❌ Critical error in process cleanup: {e}")
+            return False
 
     async def auto_setup_environment(self, project_path: Optional[str], stack: str) -> bool:
         """
@@ -793,9 +1227,7 @@ Output:\
                     )
                 else:
                     # Command failed - try to auto-repair
-                    last_error = f"Command '{' '.join(command)}' failed (exit {result.returncode})\
-STDERR:\
-{result.stderr}"
+                    last_error = f"Command '{' '.join(command)}' failed (exit {result.returncode})\nSTDERR:\n{result.stderr}"
                     logger.warning(f"Command failed, attempting auto-repair: {last_error[:200]}...")
                     
                     # ✅ Phase 2: Self-Healing - Analyze error and attempt repair
@@ -864,11 +1296,23 @@ Last error:\
     
     async def _attempt_command_repair(self, project_path: str, command: List[str], error_output: str, test_type: str) -> bool:
         """
-        🔥 ENHANCED: Command repair with anti-loop protection
+        🔥 ENHANCED: Command repair with comprehensive anti-loop protection
         """
         try:
+            import time
             command_str = ' '.join(command)
             error_lower = error_output.lower()
+            
+            # 🔥 NEW: Check repair session duration
+            current_time = time.time()
+            if project_path not in self.repair_session_start:
+                self.repair_session_start[project_path] = current_time
+            
+            session_duration = current_time - self.repair_session_start[project_path]
+            if session_duration > self.max_repair_session_duration:
+                logger.warning(f"🛑 REPAIR SESSION TIMEOUT for project {project_path} ({session_duration:.0f}s > {self.max_repair_session_duration}s)")
+                logger.warning("⚠️ Repair session has been running too long. Stopping to prevent infinite loop.")
+                return False
             
             # 🔥 NEW: Check global project repair limit first
             project_repairs = self.project_repair_counts.get(project_path, 0)
@@ -877,7 +1321,7 @@ Last error:\
                 logger.warning("⚠️ This project has had too many repair attempts. Stopping to prevent infinite loop.")
                 return False
             
-            # 🔥 NEW: Anti-loop protection per command
+            # 🔥 NEW: Enhanced anti-loop protection per command
             repair_key = f"{project_path}:{command_str}:{hash(error_output)}"
             current_attempts = self.repair_attempts.get(repair_key, 0)
             
@@ -885,9 +1329,18 @@ Last error:\
                 logger.warning(f"🔄 Repair attempt limit reached for {command_str} - skipping to prevent loop")
                 return False
             
+            # 🔥 NEW: Check command-specific repair history
+            command_type = command[0] if command else "unknown"
+            command_repairs = self.command_repair_history.get(f"{project_path}:{command_type}", 0)
+            if command_repairs >= 3:  # Max 3 repairs per command type per project
+                logger.warning(f"🔄 Command type repair limit reached for {command_type} in {project_path}")
+                return False
+            
             self.repair_attempts[repair_key] = current_attempts + 1
             self.project_repair_counts[project_path] = project_repairs + 1
-            logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}): {command_str}")
+            self.command_repair_history[f"{project_path}:{command_type}"] = command_repairs + 1
+            
+            logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
             
             # ===== COMPOSER/PHP REPAIRS =====
             if "composer" in command_str or "could not detect the root package" in error_lower:
@@ -1024,7 +1477,7 @@ Last error:\
             # Only use LLM repair for complex/unknown issues on last attempt
             if self.repair_agent and current_attempts == self.max_repair_attempts - 1:
                 logger.info("🤖 Using LLM-powered repair as last resort for complex issue...")
-                stack = self._detect_project_stack(project_path)
+                stack = await self._detect_project_stack(project_path)
                 repair_result = await self.repair_agent.analyze_and_repair(
                     project_path, stack, error_output, command_str
                 )
@@ -1279,7 +1732,7 @@ test('basic test example', function () {
             
             # Extract file paths from patch
             file_paths = []
-            for line in patch_text.split(''):
+            for line in patch_text.split('\n'):
                 # Look for file headers in diff format
                 if line.startswith('---') or line.startswith('+++'):
                     # Extract path (skip a/ or b/ prefix)

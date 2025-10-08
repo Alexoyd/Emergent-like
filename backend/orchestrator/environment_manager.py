@@ -261,9 +261,26 @@ class EnvironmentManager:
     # ========== 🔥 ENHANCED STACK-SPECIFIC DETECTORS ==========
     
     async def _detect_laravel_issues(self, project_path: str) -> List[Tuple[EnvironmentIssue, EnvironmentFix]]:
-        """🔥 ENHANCED Laravel/PHP issue detection with deep validation"""
+        """🔥 ENHANCED Laravel/PHP issue detection with complete project validation"""
         issues = []
         project_root = Path(project_path)
+        
+        # 🔥 NEW: Check if this is a complete Laravel installation
+        is_complete_laravel = await self._is_complete_laravel_installation(project_root)
+        
+        if not is_complete_laravel:
+            # This is not a complete Laravel installation - need to create one
+            issues.append((
+                EnvironmentIssue.INCOMPLETE_PROJECT_STRUCTURE,
+                EnvironmentFix(
+                    issue_type=EnvironmentIssue.INCOMPLETE_PROJECT_STRUCTURE,
+                    description="Create complete Laravel project installation",
+                    commands=[],  # Will be handled by LaravelHandler
+                    files_to_create={},  # Will be handled by LaravelHandler
+                    success_indicators=["artisan", "vendor/autoload.php", "bootstrap/app.php", "config/app.php"]
+                )
+            ))
+            return issues  # Return early - need complete reinstallation
         
         # 1. Check vendor directory and autoloader
         if not (project_root / "vendor").exists():
@@ -274,7 +291,7 @@ class EnvironmentManager:
                     EnvironmentFix(
                         issue_type=EnvironmentIssue.MISSING_VENDOR,
                         description="Install Composer dependencies",
-                        commands=[["composer", "install", "--no-interaction", "--no-progress", "--no-dev"]],
+                        commands=[["composer", "install", "--no-interaction", "--no-progress"]],
                         success_indicators=["vendor/autoload.php", "vendor/composer"]
                     )
                 ))
@@ -392,6 +409,74 @@ class EnvironmentManager:
         
         return issues
     
+    async def _is_complete_laravel_installation(self, project_root: Path) -> bool:
+        """🔥 NEW: Check if this is a complete Laravel installation"""
+        try:
+            # Essential Laravel files that must exist
+            essential_files = [
+                "artisan",
+                "composer.json", 
+                "bootstrap/app.php",
+                "config/app.php",
+                "routes/web.php"
+            ]
+            
+            # Check if all essential files exist
+            for file_path in essential_files:
+                if not (project_root / file_path).exists():
+                    logger.warning(f"❌ Missing essential Laravel file: {file_path}")
+                    return False
+            
+            # Check if composer.json is actually a Laravel project
+            try:
+                composer_json = project_root / "composer.json"
+                with open(composer_json, 'r') as f:
+                    composer_data = json.load(f)
+                
+                require = composer_data.get("require", {})
+                if not any(pkg.startswith("laravel/") or pkg.startswith("illuminate/") 
+                          for pkg in require.keys()):
+                    logger.warning("❌ composer.json doesn't reference Laravel packages")
+                    return False
+                
+                # Check if it has a proper name (not just a skeleton)
+                name = composer_data.get("name", "")
+                if not name or name.startswith("emergent/"):
+                    logger.warning("❌ composer.json has invalid or skeleton name")
+                    return False
+                    
+            except Exception as e:
+                logger.warning(f"❌ Invalid composer.json: {e}")
+                return False
+            
+            # Check if artisan is executable and works
+            artisan_path = project_root / "artisan"
+            if not os.access(artisan_path, os.X_OK):
+                logger.warning("❌ Artisan file is not executable")
+                return False
+            
+            # Test if artisan works (basic test)
+            try:
+                result = await self._run_command_with_timeout(
+                    ["php", "artisan", "--version"],
+                    cwd=str(project_root),
+                    timeout=15
+                )
+                if result.returncode != 0:
+                    logger.warning(f"❌ Artisan test failed: {result.stderr}")
+                    return False
+                
+                logger.info(f"✅ Laravel installation verified: {result.stdout.strip()}")
+                return True
+                
+            except Exception as e:
+                logger.warning(f"❌ Artisan test error: {e}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"❌ Laravel installation check error: {e}")
+            return False
+    
     async def _check_laravel_dev_dependencies(self, project_root: Path, issues: List):
         """Check for required Laravel dev dependencies"""
         try:
@@ -493,6 +578,11 @@ class EnvironmentManager:
         try:
             logger.info(f"Applying fix: {fix.description}")
             
+            # 🔥 NEW: Special handling for complete Laravel installation
+            if (fix.issue_type == EnvironmentIssue.INCOMPLETE_PROJECT_STRUCTURE and 
+                "complete Laravel project installation" in fix.description):
+                return await self._create_complete_laravel_installation(project_path)
+            
             # 1. Create files if needed
             if fix.files_to_create:
                 for file_path, content in fix.files_to_create.items():
@@ -541,6 +631,35 @@ class EnvironmentManager:
             
         except Exception as e:
             logger.error(f"Error applying fix: {e}")
+            return False
+    
+    async def _create_complete_laravel_installation(self, project_path: str) -> bool:
+        """🔥 NEW: Create a complete Laravel installation using LaravelHandler"""
+        try:
+            logger.info("🚀 Creating complete Laravel installation...")
+            
+            # Import LaravelHandler
+            from ..stacks.laravel_handler import LaravelHandler
+            
+            # Create LaravelHandler instance
+            laravel_handler = LaravelHandler()
+            laravel_handler.logger = logger
+            
+            # Create complete Laravel project
+            await laravel_handler.create_project_skeleton(Path(project_path))
+            
+            # Install dependencies
+            success = await laravel_handler.install_dependencies(Path(project_path))
+            
+            if success:
+                logger.info("✅ Complete Laravel installation created successfully")
+                return True
+            else:
+                logger.error("❌ Laravel installation failed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error creating Laravel installation: {e}")
             return False
     
     async def _run_command_with_timeout(self, command: List[str], cwd: str, timeout: int = None):
