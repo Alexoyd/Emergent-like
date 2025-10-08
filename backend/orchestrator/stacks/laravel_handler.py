@@ -19,7 +19,7 @@ class LaravelHandler(StackHandler):
         """Validate/correct a Composer package name to vendor/project."""
         if not name or not isinstance(name, str):
             return "default/project"
-        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
+        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"1-\2", name)
         sanitized = split_camel.replace(" ", "-").lower()
         sanitized = re.sub(r"[^a-z0-9._/-]+", "-", sanitized)
         sanitized = re.sub(r"-+", "-", sanitized)
@@ -42,7 +42,10 @@ class LaravelHandler(StackHandler):
         return "default/project"
 
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
-        """🔥 COMPLETELY REWRITTEN: Create a real Laravel project directly in target directory"""
+        """
+        🔥 PHASE 4 FIX: Create COMPLETE Laravel project with full validation
+        Never fallback to incomplete skeleton - ensure functional Laravel installation
+        """
         import subprocess
         import asyncio
         import shutil
@@ -671,14 +674,14 @@ exit($status);
     }},
     "autoload": {{
         "psr-4": {{
-            "App\\\\": "app/",
-            "Database\\\\Factories\\\\": "database/factories/",
-            "Database\\\\Seeders\\\\": "database/seeders/"
+            "App\\\": "app/",
+            "Database\\\\Factories\\\": "database/factories/",
+            "Database\\\\Seeders\\\": "database/seeders/"
         }}
     }},
     "autoload-dev": {{
         "psr-4": {{
-            "Tests\\\\": "tests/"
+            "Tests\\\": "tests/"
         }}
     }},
     "scripts": {{
@@ -690,7 +693,7 @@ exit($status);
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [
-            "@php -r \\"file_exists('.env') || copy('.env.example', '.env');\\""
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
         ],
         "post-create-project-cmd": [
             "@php artisan key:generate --ansi"

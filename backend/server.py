@@ -193,6 +193,20 @@ async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
         # Create run record
         run = Run(**run_data.dict())
         
+        # 🔥 PHASE 1 FIX: Auto-detect stack if unknown or if project_path exists
+        if run.stack == "unknown" or run.project_path:
+            if run.project_path and os.path.exists(run.project_path):
+                # Detect from existing project
+                detected_stack = tool_manager._detect_project_stack(run.project_path)
+                if detected_stack != "unknown":
+                    run.stack = detected_stack
+                    logging.info(f"🔍 Auto-detected stack '{detected_stack}' from existing project: {run.project_path}")
+                else:
+                    logging.warning(f"⚠️ Unable to detect stack from existing project: {run.project_path}")
+                    # Keep as unknown - will be handled during project creation
+            else:
+                logging.info(f"🔍 Stack is 'unknown' - will be determined during project creation based on goal analysis")
+        
         # Create isolated project workspace
         project_workspace = await project_manager.create_project_workspace(
             project_id=run.id,
@@ -1813,8 +1827,8 @@ async def get_previous_steps_summary(run_id: str, current_step: int) -> str:
 
 async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> List[TestResult]:
     """
-    Run comprehensive tests based on stack with improved error handling.
-    Returns unified TestResult objects for all test types.
+    🔥 PHASE 3 FIX: Run comprehensive tests with proper stack detection
+    Prevents Laravel fallback on non-Laravel projects
     """
     try:
         results = []
@@ -1827,18 +1841,45 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                 output=f"Project path does not exist: {project_path}"
             )]
         
-        logging.info(f"Running comprehensive tests for stack '{stack}' in {project_path}")
+        # ✅ PHASE 3 FIX: Auto-detect stack if unknown or validate declared stack
+        actual_stack = stack
+        if stack == "unknown":
+            detected_stack = tool_manager._detect_project_stack(project_path)
+            if detected_stack != "unknown":
+                actual_stack = detected_stack
+                logging.info(f"🔍 Auto-detected stack: '{detected_stack}' in {project_path}")
+            else:
+                logging.warning(f"⚠️ Unable to detect stack, using generic tests")
+        else:
+            # ✅ Validate declared stack matches project reality
+            detected_stack = tool_manager._detect_project_stack(project_path)
+            if detected_stack != "unknown" and detected_stack != stack:
+                logging.warning(f"⚠️ Stack mismatch: declared='{stack}' vs detected='{detected_stack}' - using detected stack")
+                actual_stack = detected_stack
+            else:
+                logging.info(f"✅ Stack validation passed: declared='{stack}' matches project")
         
-        if stack == "laravel":
-            # Laravel tests - improved commands and artisan detection
+        logging.info(f"Running comprehensive tests for stack '{actual_stack}' in {project_path}")
+        
+        if actual_stack == "laravel":
+            # ✅ Laravel tests - STRICT validation before executing
+            artisan_exists = project_path and os.path.exists(os.path.join(project_path, "artisan"))
+            composer_json_exists = project_path and os.path.exists(os.path.join(project_path, "composer.json"))
+            
+            if not (artisan_exists and composer_json_exists):
+                logging.error(f"❌ Laravel project incomplete: artisan={artisan_exists}, composer.json={composer_json_exists}")
+                return [TestResult(
+                    test_type="laravel_validation", 
+                    status="failed", 
+                    output=f"Incomplete Laravel project - Missing essential files: artisan={artisan_exists}, composer.json={composer_json_exists}",
+                    details={"artisan_exists": artisan_exists, "composer_json_exists": composer_json_exists}
+                )]
+            
             laravel_tests = [
                 ("pest", "pest -q"),
                 ("phpstan", "phpstan analyse --no-progress"),
                 ("pint", "pint --test")
             ]
-            
-            # Check if artisan exists for better command routing
-            artisan_exists = project_path and os.path.exists(os.path.join(project_path, "artisan"))
             
             for test_name, description in laravel_tests:
                 try:
@@ -1854,7 +1895,7 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                         details={"artisan_available": artisan_exists}
                     ))
                     
-        elif stack == "vue":
+        elif actual_stack == "vue":
             # Vue.js tests with vitest and eslint
             test_types = [("vue", "vitest/jest"), ("eslint", "eslint")]
             for test_type, description in test_types:
@@ -1872,7 +1913,7 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                         details={"skipped_reason": "missing_setup"}
                     ))
                     
-        elif stack in ["react", "node"]:
+        elif actual_stack in ["react", "node"]:
             # JavaScript tests for React/Node
             test_types = [("jest", "unit tests"), ("eslint", "linting")]
             for test_type, description in test_types:
@@ -1890,7 +1931,7 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                         details={"skipped_reason": "missing_setup"}
                     ))
                     
-        elif stack == "python":
+        elif actual_stack == "python":
             # Python tests with pytest
             try:
                 result = await tool_manager.run_test(project_path, "python")
@@ -1906,13 +1947,13 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                     details={"skipped_reason": "no_tests_found"}
                 ))
         else:
-            # Unknown stack - create a generic "passed" result
-            logging.info(f"Unknown stack '{stack}' - skipping tests")
+            # ✅ Unknown stack - create a generic "passed" result (NO Laravel fallback)
+            logging.info(f"Unknown stack '{actual_stack}' - skipping tests (no Laravel fallback)")
             results.append(TestResult(
                 test_type="generic",
                 status="passed", 
-                output=f"No specific tests defined for stack '{stack}'",
-                details={"stack": stack}
+                output=f"No specific tests defined for stack '{actual_stack}' - project may need custom test setup",
+                details={"stack": actual_stack, "original_stack": stack}
             ))
         
         # Ensure we always return at least one result
@@ -1924,9 +1965,9 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                 details={"reason": "empty_results"}
             ))
         
-        # Log summary
+        # ✅ Log summary with actual stack used
         passed_count = sum(1 for r in results if r.status == "passed")
-        logging.info(f"Test summary: {passed_count}/{len(results)} passed for stack '{stack}'")
+        logging.info(f"✅ Test summary: {passed_count}/{len(results)} passed for stack '{actual_stack}' (declared: '{stack}')")
         
         return results
         

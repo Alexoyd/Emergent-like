@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 def is_valid_patch(patch_text: str) -> bool:
     """
-    Enhanced patch validation with structural checks
+    🔥 PHASE 2 FIX: Enhanced patch validation with Git diff format checks
+    Prevents "inconsistent new filename" and malformed diff errors
     """
     if not patch_text or not isinstance(patch_text, str):
         return False
@@ -32,20 +33,70 @@ def is_valid_patch(patch_text: str) -> bool:
     if len(lines) < 4:  # Minimum viable patch
         return False
     
-    # Check for diff header
-    if not any(line.startswith('diff --git') for line in lines[:5]):
+    # ✅ Check for proper diff header format
+    diff_headers = [line for line in lines[:10] if line.startswith('diff --git')]
+    if not diff_headers:
         return False
     
-    # Must have file headers
-    has_old_file = any(line.startswith('---') for line in lines)
-    has_new_file = any(line.startswith('+++') for line in lines)
+    # ✅ Validate diff --git format: "diff --git a/path b/path"
+    for header in diff_headers:
+        parts = header.split()
+        if len(parts) < 4 or parts[0] != 'diff' or parts[1] != '--git':
+            logger.warning(f"❌ Invalid diff header format: {header}")
+            return False
+        
+        # ✅ Check that a/ and b/ paths are consistent
+        a_path = parts[2]
+        b_path = parts[3]
+        if not (a_path.startswith('a/') and b_path.startswith('b/')):
+            logger.warning(f"❌ Invalid path format in diff header: {header}")
+            return False
+        
+        # ✅ Ensure paths match (same filename)
+        if a_path[2:] != b_path[2:]:
+            logger.warning(f"❌ Inconsistent file paths: {a_path} vs {b_path}")
+            return False
     
-    if not (has_old_file and has_new_file):
+    # ✅ Must have properly paired file headers
+    old_file_lines = [line for line in lines if line.startswith('---')]
+    new_file_lines = [line for line in lines if line.startswith('+++')]
+    
+    if len(old_file_lines) != len(new_file_lines):
+        logger.warning(f"❌ Mismatched file headers: {len(old_file_lines)} '---' vs {len(new_file_lines)} '+++'")
         return False
     
-    # Must have at least one hunk
-    has_hunk = any(line.startswith('@@') for line in lines)
-    return has_hunk
+    # ✅ Validate file header format: "--- a/path" and "+++ b/path"
+    for old_line, new_line in zip(old_file_lines, new_file_lines):
+        if not (old_line.startswith('--- ') and new_line.startswith('+++ ')):
+            logger.warning(f"❌ Invalid file header format: '{old_line}' or '{new_line}'")
+            return False
+        
+        # Extract paths and validate consistency
+        old_path = old_line[4:].strip()  # Remove "--- "
+        new_path = new_line[4:].strip()  # Remove "+++ "
+        
+        # Handle /dev/null for new/deleted files
+        if old_path != "/dev/null" and new_path != "/dev/null":
+            if old_path.startswith('a/') and new_path.startswith('b/'):
+                if old_path[2:] != new_path[2:]:
+                    logger.warning(f"❌ Inconsistent file paths in headers: {old_path} vs {new_path}")
+                    return False
+    
+    # ✅ Must have at least one properly formatted hunk
+    hunk_headers = [line for line in lines if line.startswith('@@')]
+    if not hunk_headers:
+        logger.warning("❌ No hunk headers found (@@)")
+        return False
+    
+    # ✅ Validate hunk header format: "@@ -start,count +start,count @@"
+    hunk_pattern = re.compile(r'^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@')
+    for hunk in hunk_headers:
+        if not hunk_pattern.match(hunk):
+            logger.warning(f"❌ Invalid hunk header format: {hunk}")
+            return False
+    
+    logger.debug("✅ Patch validation passed - format is valid")
+    return True
 
 @dataclass
 class TestResult:
@@ -104,7 +155,10 @@ class ToolManager:
         return None
     
     def _normalize_patch(self, patch_text: str, project_path: str) -> str:
-        """Normalize patch paths relative to project root with enhanced validation"""
+        """
+        🔥 PHASE 2 FIX: Enhanced patch normalization with proper path handling
+        Prevents Git diff "inconsistent filename" errors
+        """
         try:
             lines = patch_text.split('\n')
             normalized_lines = []
@@ -115,33 +169,55 @@ class ToolManager:
                     # Extract file path
                     file_path = line[4:].strip()
                     
-                    # Remove a/ b/ prefixes if present
-                    if file_path.startswith(('a/', 'b/')):
-                        file_path = file_path[2:]
-                    
-                    # Skip /dev/null
+                    # ✅ Enhanced path normalization for Git compatibility
                     if file_path == '/dev/null':
+                        # Keep /dev/null as-is for new/deleted files
                         normalized_lines.append(line)
                         continue
                     
-                    # Resolve absolute path and validate it's within project
+                    # ✅ Properly handle a/ and b/ prefixes
+                    prefix = ""
+                    if line.startswith('--- ') and file_path.startswith('a/'):
+                        prefix = "a/"
+                        file_path = file_path[2:]
+                    elif line.startswith('+++ ') and file_path.startswith('b/'):
+                        prefix = "b/"
+                        file_path = file_path[2:]
+                    
+                    # ✅ Validate and normalize path
                     try:
                         abs_path = (project_path_obj / file_path).resolve()
                         # Security check: ensure file is within project directory
                         abs_path.relative_to(project_path_obj)
                         
-                        # Use relative path in patch
-                        normalized_lines.append(line[:4] + file_path)
+                        # ✅ Reconstruct with proper prefix for Git compatibility
+                        normalized_path = prefix + file_path
+                        normalized_lines.append(line[:4] + normalized_path)
+                        
                     except (ValueError, OSError):
-                        # Invalid path - keep original
-                        logger.warning(f"Invalid path in patch: {file_path}")
+                        # Invalid path - keep original but log warning
+                        logger.warning(f"❌ Invalid path in patch, keeping original: {file_path}")
+                        normalized_lines.append(line)
+                        
+                elif line.startswith('diff --git'):
+                    # ✅ Ensure diff headers are properly formatted
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        # Normalize diff header: "diff --git a/path b/path"
+                        base_path = parts[2][2:] if parts[2].startswith('a/') else parts[2]
+                        normalized_header = f"diff --git a/{base_path} b/{base_path}"
+                        normalized_lines.append(normalized_header)
+                    else:
                         normalized_lines.append(line)
                 else:
                     normalized_lines.append(line)
             
-            return '\n'.join(normalized_lines)
+            normalized_patch = ''.join(normalized_lines)
+            logger.debug(f"✅ Patch normalization completed successfully")
+            return normalized_patch
+            
         except Exception as e:
-            logger.warning(f"Error normalizing patch: {e}")
+            logger.error(f"❌ Error normalizing patch: {e}")
             return patch_text
     
     async def apply_patch(self, patch_text: str, project_path: str) -> bool:
@@ -616,131 +692,95 @@ class ToolManager:
         logger.info(f"Available commands: {[' '.join(cmd) for cmd in available_commands]}")
         return available_commands
 
-    async def _detect_project_stack(self, project_path: str) -> str:
+    def _detect_project_stack(self, project_path: str) -> str:
         """
-        🔥 ENHANCED: Auto-detect project technology stack with comprehensive validation
+        🔥 ENHANCED: Rigorous auto-detection of project technology stack
         Returns: 'laravel', 'vue', 'react', 'python', 'node', 'unknown'
         """
         try:
             project_root = Path(project_path)
             
-            # 🔥 CRITICAL: Strict Laravel detection - must be a REAL Laravel project
-            if await self._is_complete_laravel_project(project_root):
-                logger.info("✅ Complete Laravel project detected")
-                return "laravel"
-            
-            # Check for composer.json with Laravel dependencies but incomplete structure
-            if (project_root / "composer.json").exists():
+            # ✅ Phase 1: Laravel detection (STRICT validation)
+            if (project_root / "artisan").exists() and (project_root / "composer.json").exists():
                 try:
                     with open(project_root / "composer.json", 'r') as f:
                         composer_data = json.load(f)
-                    
                     require = composer_data.get("require", {})
-                    require_dev = composer_data.get("require-dev", {})
-                    all_deps = {**require, **require_dev}
                     
-                    # Check for Laravel framework indicators
-                    laravel_indicators = [
-                        "laravel/framework",
-                        "illuminate/support", 
-                        "illuminate/console",
-                        "illuminate/database",
-                        "illuminate/routing"
-                    ]
-                    
-                    if any(indicator in all_deps for indicator in laravel_indicators):
-                        # Laravel dependencies found but project is incomplete
-                        logger.warning("⚠️ Laravel dependencies found but project structure is incomplete - will trigger Laravel creation")
-                        return "laravel"  # Return laravel to trigger creation
+                    # ✅ STRICT: Must have Laravel framework dependency
+                    if "laravel/framework" in require or "illuminate/support" in require:
+                        # ✅ Additional Laravel structure validation
+                        required_laravel_dirs = ["app", "bootstrap", "config", "routes"]
+                        if all((project_root / dir_name).exists() for dir_name in required_laravel_dirs):
+                            logger.info(f"✅ Confirmed Laravel project: artisan + composer.json + framework + structure")
+                            return "laravel"
+                        else:
+                            logger.warning(f"⚠️ Laravel files detected but incomplete structure in {project_path}")
                 except Exception as e:
-                    logger.debug(f"Error reading composer.json for Laravel detection: {e}")
+                    logger.debug(f"Error parsing composer.json: {e}")
             
-            # 🔥 ENHANCED: Node.js project detection with framework identification
+            # ✅ Phase 2: JavaScript frameworks (Vue/React/Node) - STRICT validation
             if (project_root / "package.json").exists():
                 try:
                     with open(project_root / "package.json", 'r') as f:
                         package_data = json.load(f)
                     
                     dependencies = {**package_data.get("dependencies", {}), **package_data.get("devDependencies", {})}
+                    dep_names = list(dependencies.keys())
                     
-                    # Vue.js detection (more specific)
-                    vue_indicators = ["vue", "@vue/cli", "@vue/compiler-sfc", "vue-router", "vuex"]
-                    if any(indicator in dependencies for indicator in vue_indicators):
-                        logger.info("✅ Vue.js project detected")
-                        return "vue"
+                    # ✅ Vue.js detection - must have vue core
+                    vue_indicators = ["vue", "@vue/cli-service", "vite", "nuxt"]
+                    if any(indicator in dep for dep in dep_names for indicator in vue_indicators):
+                        # Additional Vue structure check
+                        if (project_root / "src").exists() or (project_root / "pages").exists():
+                            logger.info(f"✅ Confirmed Vue.js project: package.json + vue dependencies + structure")
+                            return "vue"
                     
-                    # React detection (more specific)
-                    react_indicators = ["react", "react-dom", "@types/react", "react-router", "redux"]
-                    if any(indicator in dependencies for indicator in react_indicators):
-                        logger.info("✅ React project detected")
-                        return "react"
+                    # ✅ React detection - must have react core  
+                    react_indicators = ["react", "react-dom", "@react", "next"]
+                    if any(indicator in dep for dep in dep_names for indicator in react_indicators):
+                        # Additional React structure check
+                        if (project_root / "src").exists() or (project_root / "pages").exists() or (project_root / "public").exists():
+                            logger.info(f"✅ Confirmed React project: package.json + react dependencies + structure")
+                            return "react"
                     
-                    # Angular detection
-                    angular_indicators = ["@angular/core", "@angular/cli", "@angular/common"]
-                    if any(indicator in dependencies for indicator in angular_indicators):
-                        logger.info("✅ Angular project detected")
-                        return "angular"
-                    
-                    # Generic Node.js project
-                    if any(key in dependencies for key in ["express", "koa", "fastify", "nodemon"]):
-                        logger.info("✅ Node.js project detected")
-                        return "node"
-                        
-                except Exception as e:
-                    logger.debug(f"Error reading package.json: {e}")
+                    # ✅ Generic Node.js (if package.json exists but no framework)
+                    logger.info(f"✅ Detected generic Node.js project: package.json without specific framework")
                     return "node"
-            
-            # 🔥 ENHANCED: Python detection with framework identification
-            if (project_root / "requirements.txt").exists() or (project_root / "pyproject.toml").exists():
-                try:
-                    # Check for specific Python frameworks
-                    if (project_root / "manage.py").exists():
-                        logger.info("✅ Django project detected")
-                        return "django"
-                    elif (project_root / "app.py").exists() or (project_root / "main.py").exists():
-                        # Check for Flask or FastAPI
-                        if (project_root / "requirements.txt").exists():
-                            with open(project_root / "requirements.txt", 'r') as f:
-                                requirements = f.read().lower()
-                                if "flask" in requirements:
-                                    logger.info("✅ Flask project detected")
-                                    return "flask"
-                                elif "fastapi" in requirements:
-                                    logger.info("✅ FastAPI project detected")
-                                    return "fastapi"
                     
-                    logger.info("✅ Python project detected")
-                    return "python"
                 except Exception as e:
-                    logger.debug(f"Error detecting Python framework: {e}")
+                    logger.debug(f"Error parsing package.json: {e}")
+                    return "node"  # Fallback to node if package.json exists
+            
+            # ✅ Phase 3: Python detection - STRICT validation
+            python_files = ["requirements.txt", "pyproject.toml", "setup.py", "Pipfile"]
+            if any((project_root / py_file).exists() for py_file in python_files):
+                # Additional Python structure check
+                if (project_root / "src").exists() or any(f.suffix == ".py" for f in project_root.iterdir() if f.is_file()):
+                    logger.info(f"✅ Confirmed Python project: requirements/pyproject + python files")
                     return "python"
             
-            # 🔥 ENHANCED: PHP detection (non-Laravel)
+            # ✅ Phase 4: Generic PHP (non-Laravel) 
             if (project_root / "composer.json").exists():
+                # Only if no Laravel indicators found
                 try:
                     with open(project_root / "composer.json", 'r') as f:
                         composer_data = json.load(f)
-                    
-                    # Check for other PHP frameworks
                     require = composer_data.get("require", {})
-                    if "symfony/symfony" in require:
-                        logger.info("✅ Symfony project detected")
-                        return "symfony"
-                    elif "slim/slim" in require:
-                        logger.info("✅ Slim framework project detected")
-                        return "slim"
                     
-                    logger.info("✅ PHP project detected")
-                    return "php"
+                    # Ensure it's not Laravel before marking as PHP
+                    if "laravel/framework" not in require and "illuminate/support" not in require:
+                        logger.info(f"✅ Detected generic PHP project: composer.json without Laravel")
+                        return "php"
                 except Exception as e:
-                    logger.debug(f"Error reading composer.json for PHP detection: {e}")
-                    return "php"
+                    logger.debug(f"Error parsing composer.json for PHP: {e}")
             
-            logger.info("❓ Unknown project type detected")
+            # ✅ If no clear indicators found
+            logger.warning(f"⚠️ Unable to detect project stack in {project_path} - no clear indicators")
             return "unknown"
             
         except Exception as e:
-            logger.debug(f"Error detecting project stack: {e}")
+            logger.error(f"❌ Error detecting project stack: {e}")
             return "unknown"
     
     def _validate_laravel_structure(self, project_root: Path) -> bool:
