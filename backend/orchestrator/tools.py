@@ -283,12 +283,39 @@ class ToolManager:
     async def _validate_project_structure_for_patch(self, project_path: str, patch_text: str) -> bool:
         """
         🔥 ENHANCED: Validate that all files/directories referenced in patch exist or can be created
+        Also validates that Laravel projects are complete before allowing patches
         """
         try:
             project_root = Path(project_path)
             if not project_root.exists():
                 logger.error(f"Project root does not exist: {project_path}")
                 return False
+            
+            # 🔥 NEW: Special validation for Laravel projects
+            if (project_root / "composer.json").exists():
+                try:
+                    with open(project_root / "composer.json", 'r') as f:
+                        composer_data = json.load(f)
+                    require = composer_data.get("require", {})
+                    
+                    if "laravel/framework" in require or "illuminate/support" in require:
+                        # This is a Laravel project - validate it's complete
+                        laravel_essentials = [
+                            "artisan",
+                            "bootstrap/app.php",
+                            "vendor/autoload.php",
+                            "vendor/laravel/framework"
+                        ]
+                        
+                        missing = [f for f in laravel_essentials if not (project_root / f).exists()]
+                        if missing:
+                            logger.error(f"❌ Laravel project incomplete before patch - missing: {missing}")
+                            logger.error(f"   Cannot apply patches to incomplete Laravel projects")
+                            return False
+                        
+                        logger.info("✅ Laravel project structure validated - complete installation confirmed")
+                except Exception as e:
+                    logger.debug(f"Error checking Laravel structure: {e}")
             
             # Extract file paths from patch with enhanced parsing
             file_paths = self._extract_file_paths_from_patch(patch_text)
@@ -700,22 +727,36 @@ class ToolManager:
         try:
             project_root = Path(project_path)
             
-            # ✅ Phase 1: Laravel detection (STRICT validation)
+            # ✅ Phase 1: Laravel detection (COMPREHENSIVE validation)
             if (project_root / "artisan").exists() and (project_root / "composer.json").exists():
                 try:
                     with open(project_root / "composer.json", 'r') as f:
                         composer_data = json.load(f)
                     require = composer_data.get("require", {})
                     
-                    # ✅ STRICT: Must have Laravel framework dependency
+                    # ✅ STRICT: Must have Laravel framework dependency in composer.json
                     if "laravel/framework" in require or "illuminate/support" in require:
+                        # ✅ CRITICAL: Verify Laravel is PHYSICALLY installed (not just declared)
+                        vendor_laravel_exists = (project_root / "vendor" / "laravel" / "framework").exists()
+                        vendor_autoload_exists = (project_root / "vendor" / "autoload.php").exists()
+                        bootstrap_app_exists = (project_root / "bootstrap" / "app.php").exists()
+                        
+                        if not vendor_laravel_exists:
+                            logger.warning(f"⚠️ Laravel declared in composer.json but NOT installed in vendor/ - project incomplete")
+                            return "unknown"  # Don't detect as Laravel if not actually installed
+                        
+                        if not vendor_autoload_exists or not bootstrap_app_exists:
+                            logger.warning(f"⚠️ Laravel installed but missing critical files (autoload={vendor_autoload_exists}, bootstrap={bootstrap_app_exists})")
+                            return "unknown"
+                        
                         # ✅ Additional Laravel structure validation
                         required_laravel_dirs = ["app", "bootstrap", "config", "routes"]
                         if all((project_root / dir_name).exists() for dir_name in required_laravel_dirs):
-                            logger.info(f"✅ Confirmed Laravel project: artisan + composer.json + framework + structure")
+                            logger.info(f"✅ Confirmed COMPLETE Laravel project: framework installed + full structure")
                             return "laravel"
                         else:
-                            logger.warning(f"⚠️ Laravel files detected but incomplete structure in {project_path}")
+                            logger.warning(f"⚠️ Laravel framework installed but incomplete directory structure in {project_path}")
+                            return "unknown"
                 except Exception as e:
                     logger.debug(f"Error parsing composer.json: {e}")
             
@@ -1763,60 +1804,6 @@ test('basic test example', function () {
             logger.error(f"Error validating patch: {e}")
             return False
                 
-    async def _validate_project_structure_for_patch(self, project_path: str, patch_text: str) -> bool:
-        """
-        🔥 NEW: Validate that all files/directories referenced in patch exist or can be created
-        """
-        try:
-            project_root = Path(project_path)
-            
-            # Extract file paths from patch
-            file_paths = []
-            for line in patch_text.split('\n'):
-                # Look for file headers in diff format
-                if line.startswith('---') or line.startswith('+++'):
-                    # Extract path (skip a/ or b/ prefix)
-                    parts = line.split(maxsplit=1)
-                    if len(parts) > 1:
-                        path = parts[1].strip()
-                        # Remove a/ or b/ prefix
-                        if path.startswith('a/') or path.startswith('b/'):
-                            path = path[2:]
-                        # Ignore /dev/null
-                        if path != '/dev/null' and path:
-                            file_paths.append(path)
-            
-            if not file_paths:
-                logger.warning("⚠️ No file paths found in patch")
-                return True  # If we can't extract paths, don't fail
-            
-            # Check each file path
-            for file_path in set(file_paths):  # Use set to avoid duplicates
-                full_path = project_root / file_path
-                parent_dir = full_path.parent
-                
-                # 🔥 NEW: Create parent directory if it doesn't exist
-                if not parent_dir.exists():
-                    logger.info(f"📁 Creating missing directory for patch: {parent_dir}")
-                    try:
-                        parent_dir.mkdir(parents=True, exist_ok=True)
-                    except Exception as e:
-                        logger.error(f"❌ Failed to create directory {parent_dir}: {e}")
-                        return False
-                
-                # If file doesn't exist, that's OK (it might be a new file)
-                # But if parent directory doesn't exist and can't be created, fail
-                if not parent_dir.exists():
-                    logger.error(f"❌ Cannot create parent directory: {parent_dir}")
-                    return False
-            
-            logger.info(f"✅ Project structure validated for {len(set(file_paths))} file(s)")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error validating project structure for patch: {e}")
-            return False
-
     # Other utility methods...
     async def check_file_exists(self, file_path: str) -> bool:
         """Check if file exists"""

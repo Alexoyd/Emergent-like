@@ -74,21 +74,21 @@ class LaravelHandler(StackHandler):
                 self.logger.info(f"📦 Running: composer create-project laravel/laravel {code_path} --prefer-dist --no-interaction")
             
             # 🔥 FIXED: Create Laravel project DIRECTLY in target directory
-                create_cmd = [
-                    "composer", "create-project", 
+            create_cmd = [
+                "composer", "create-project", 
                 "laravel/laravel", str(code_path),
                 "--prefer-dist", "--no-interaction", "--no-progress"
-                ]
-                
-                process = await asyncio.create_subprocess_exec(
-                    *create_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+            ]
+            
+            process = await asyncio.create_subprocess_exec(
+                *create_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=str(code_path.parent)  # Run from parent directory
-                )
-                
+            )
+            
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)  # 10 minutes timeout
-                
+            
             if process.returncode == 0:
                 if self.logger:
                     self.logger.info("✅ Laravel project created successfully with composer")
@@ -140,14 +140,19 @@ class LaravelHandler(StackHandler):
         except asyncio.TimeoutError:
             if self.logger:
                 self.logger.error("❌ Laravel project creation timed out (10 minutes)")
+            raise Exception("Laravel project creation timed out - composer create-project took too long")
         except Exception as e:
             if self.logger:
                 self.logger.error(f"❌ Failed to create Laravel project: {e}")
+            raise Exception(f"Laravel project creation failed: {e}")
         
-        # Fallback to enhanced skeleton if composer create-project fails
+        # 🔥 CRITICAL: Never use fallback skeleton - it creates incomplete projects
+        # If we reach here, it means composer create-project succeeded but verification failed
         if self.logger:
-            self.logger.warning("⚠️ Composer create-project failed, falling back to enhanced Laravel skeleton...")
-        await self._create_enhanced_skeleton(code_path, project_name)
+            self.logger.error("❌ FATAL: Laravel project creation completed but is incomplete")
+            self.logger.error("❌ This should never happen - composer create-project should create a complete project")
+        
+        raise Exception("Laravel project creation failed verification - project is incomplete")
     
     async def _is_valid_laravel_project(self, code_path: Path) -> bool:
         """🔥 NEW: Check if we already have a valid Laravel project"""

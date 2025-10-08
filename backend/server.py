@@ -1862,17 +1862,31 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
         logging.info(f"Running comprehensive tests for stack '{actual_stack}' in {project_path}")
         
         if actual_stack == "laravel":
-            # ✅ Laravel tests - STRICT validation before executing
+            # ✅ Laravel tests - COMPREHENSIVE validation before executing
             artisan_exists = project_path and os.path.exists(os.path.join(project_path, "artisan"))
             composer_json_exists = project_path and os.path.exists(os.path.join(project_path, "composer.json"))
+            vendor_autoload_exists = project_path and os.path.exists(os.path.join(project_path, "vendor", "autoload.php"))
+            bootstrap_app_exists = project_path and os.path.exists(os.path.join(project_path, "bootstrap", "app.php"))
+            vendor_laravel_exists = project_path and os.path.exists(os.path.join(project_path, "vendor", "laravel", "framework"))
             
-            if not (artisan_exists and composer_json_exists):
-                logging.error(f"❌ Laravel project incomplete: artisan={artisan_exists}, composer.json={composer_json_exists}")
+            validation_details = {
+                "artisan_exists": artisan_exists,
+                "composer_json_exists": composer_json_exists,
+                "vendor_autoload_exists": vendor_autoload_exists,
+                "bootstrap_app_exists": bootstrap_app_exists,
+                "vendor_laravel_exists": vendor_laravel_exists
+            }
+            
+            # Check all essential files
+            if not all([artisan_exists, composer_json_exists, vendor_autoload_exists, bootstrap_app_exists, vendor_laravel_exists]):
+                missing_files = [k for k, v in validation_details.items() if not v]
+                logging.error(f"❌ Laravel project incomplete. Missing files: {missing_files}")
+                logging.error(f"   Validation details: {validation_details}")
                 return [TestResult(
                     test_type="laravel_validation", 
                     status="failed", 
-                    output=f"Incomplete Laravel project - Missing essential files: artisan={artisan_exists}, composer.json={composer_json_exists}",
-                    details={"artisan_exists": artisan_exists, "composer_json_exists": composer_json_exists}
+                    output=f"Incomplete Laravel project - Missing essential files: {', '.join(missing_files)}",
+                    details=validation_details
                 )]
             
             laravel_tests = [
