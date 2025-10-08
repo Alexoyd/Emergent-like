@@ -43,116 +43,90 @@ class LaravelHandler(StackHandler):
 
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
         """
-        🔥 PHASE 4 FIX: Create COMPLETE Laravel project with full validation
-        Never fallback to incomplete skeleton - ensure functional Laravel installation
+        🚀 Create a REAL Laravel 12 project using the official composer installation process.
+        Based on: https://laravel.com/docs/12.x/installation
         """
         import subprocess
         import asyncio
         import shutil
         import os
-        
+
         try:
             if self.logger:
-                self.logger.info("🚀 Creating REAL Laravel project with composer create-project...")
-            
-            # 🔥 NEW: Check if we already have a valid Laravel project
-            if await self._is_valid_laravel_project(code_path):
-                if self.logger:
-                    self.logger.info("✅ Valid Laravel project already exists, skipping creation")
-                return
-            
-            # 🔥 CRITICAL: Clean target directory if it exists and is not a valid Laravel project
+                self.logger.info(f"🚀 Starting official Laravel installation at: {code_path}")
+
+            # Clean target directory if it already exists
             if code_path.exists():
                 if self.logger:
-                    self.logger.info("🧹 Cleaning existing incomplete project directory...")
+                    self.logger.info("🧹 Removing existing directory before installation...")
                 shutil.rmtree(code_path)
-            
-            # Ensure parent directory exists
+
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            if self.logger:
-                self.logger.info(f"📦 Running: composer create-project laravel/laravel {code_path} --prefer-dist --no-interaction")
-            
-            # 🔥 FIXED: Create Laravel project DIRECTLY in target directory
+
+            # 1️⃣ Install Laravel via Composer (official method)
             create_cmd = [
-                "composer", "create-project", 
+                "composer", "create-project",
                 "laravel/laravel", str(code_path),
                 "--prefer-dist", "--no-interaction", "--no-progress"
             ]
-            
+
+            if self.logger:
+                self.logger.info("📦 Running: " + " ".join(create_cmd))
+
             process = await asyncio.create_subprocess_exec(
                 *create_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=str(code_path.parent)  # Run from parent directory
+                cwd=str(code_path.parent)
             )
-            
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=600)  # 10 minutes timeout
-            
-            if process.returncode == 0:
+
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=900)
+
+            if process.returncode != 0:
+                raise Exception(f"Composer installation failed:\n{stderr.decode()}")
+
+            if self.logger:
+                self.logger.info("✅ Laravel installed successfully via Composer")
+                self.logger.info(stdout.decode())
+
+            # 2️⃣ Generate application key
+            if self.logger:
+                self.logger.info("🔑 Generating application key...")
+            keygen = await self.run_command(
+                ["php", "artisan", "key:generate", "--no-interaction"],
+                cwd=str(code_path)
+            )
+            if keygen.returncode != 0:
+                raise Exception(f"Failed to generate app key: {keygen.stderr}")
+
+            # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint)
+            if self.logger:
+                self.logger.info("📦 Installing Laravel dev dependencies...")
+            dev = await self.run_command(
+                ["composer", "require", "--dev", "--no-interaction", "--no-progress",
+                "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
+                cwd=str(code_path)
+            )
+            if dev.returncode == 0:
                 if self.logger:
-                    self.logger.info("✅ Laravel project created successfully with composer")
-                    self.logger.info(f"📁 Project created at: {code_path}")
-                
-                # 🔥 NEW: Verify the installation is complete
-                if await self._verify_laravel_installation(code_path):
-                    if self.logger:
-                        self.logger.info("✅ Laravel installation verification passed")
-                    
-                    # 🔥 NEW: Initialize Laravel project
-                    await self._initialize_laravel_project(code_path)
-                        
-                    # Create phpstan.neon.dist for static analysis
-                    phpstan_config = code_path / "phpstan.neon.dist"
-                    phpstan_config.write_text("""parameters:
-    paths:
-        - app
-    level: 5
-    ignoreErrors:
-        - '#Call to an undefined method Illuminate\\\\Database\\\\Eloquent\\\\Builder#'
-        - '#Call to an undefined method Illuminate\\\\Database\\\\Eloquent\\\\Collection#'
-    excludePaths:
-        - 'vendor/*'
-        - 'bootstrap/cache/*'
-        - 'storage/*'
-""")
-                    
-                    if self.logger:
-                        self.logger.info("🎉 Laravel project creation and initialization completed successfully!")
-                    return
-                else:
-                    if self.logger:
-                        self.logger.error("❌ Laravel installation verification failed after creation")
-                    # 🔥 NEW: Try to fix the installation
-                    if await self._retry_laravel_installation(code_path):
-                        if self.logger:
-                            self.logger.info("✅ Laravel installation fixed on retry")
-                        return
-                    else:
-                        if self.logger:
-                            self.logger.error("❌ Laravel installation retry also failed")
+                    self.logger.info("✅ Dev dependencies installed successfully")
             else:
                 if self.logger:
-                    self.logger.error(f"❌ Composer create-project failed with return code {process.returncode}")
-                    self.logger.error(f"STDOUT: {stdout.decode()}")
-                    self.logger.error(f"STDERR: {stderr.decode()}")
-                        
-        except asyncio.TimeoutError:
+                    self.logger.warning(f"⚠️ Dev dependency installation failed: {dev.stderr}")
+
+            # 4️⃣ Verify the installation
+            if not await self._verify_laravel_installation(code_path):
+                raise Exception("❌ Laravel installation verification failed")
+
             if self.logger:
-                self.logger.error("❌ Laravel project creation timed out (10 minutes)")
-            raise Exception("Laravel project creation timed out - composer create-project took too long")
+                self.logger.info("🎉 Laravel 12 project is ready and verified!")
+
+        except asyncio.TimeoutError:
+            raise Exception("Laravel installation timed out after 15 minutes.")
         except Exception as e:
             if self.logger:
-                self.logger.error(f"❌ Failed to create Laravel project: {e}")
-            raise Exception(f"Laravel project creation failed: {e}")
-        
-        # 🔥 CRITICAL: Never use fallback skeleton - it creates incomplete projects
-        # If we reach here, it means composer create-project succeeded but verification failed
-        if self.logger:
-            self.logger.error("❌ FATAL: Laravel project creation completed but is incomplete")
-            self.logger.error("❌ This should never happen - composer create-project should create a complete project")
-        
-        raise Exception("Laravel project creation failed verification - project is incomplete")
+                self.logger.error(f"❌ Laravel installation failed: {e}")
+            raise
     
     async def _is_valid_laravel_project(self, code_path: Path) -> bool:
         """🔥 NEW: Check if we already have a valid Laravel project"""
@@ -468,44 +442,7 @@ VITE_PUSHER_APP_CLUSTER="${PUSHER_APP_CLUSTER}"
             else:
                 if self.logger:
                     self.logger.info("✅ .env file already exists")
-            
-            # 2. Generate application key
-            try:
-                if self.logger:
-                    self.logger.info("🔑 Generating application key...")
-                result = await self.run_command(
-                    ["php", "artisan", "key:generate", "--no-interaction"],
-                    cwd=str(code_path)
-                )
-                if result.returncode == 0:
-                    if self.logger:
-                        self.logger.info("✅ Generated application key")
-                else:
-                    if self.logger:
-                        self.logger.warning(f"⚠️ Key generation failed: {result.stderr}")
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"⚠️ Key generation error: {e}")
-            
-            # 3. Install dev dependencies
-            try:
-                if self.logger:
-                    self.logger.info("📦 Installing dev dependencies (pest, phpstan, pint)...")
-                result = await self.run_command(
-                    ["composer", "require", "--dev", "--no-interaction", "--no-progress",
-                     "pestphp/pest", "phpstan/phpstan", "laravel/pint"],
-                    cwd=str(code_path)
-                )
-                if result.returncode == 0:
-                    if self.logger:
-                        self.logger.info("✅ Installed dev dependencies (pest, phpstan, pint)")
-                else:
-                    if self.logger:
-                        self.logger.warning(f"⚠️ Dev dependencies installation failed: {result.stderr}")
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"⚠️ Dev dependencies error: {e}")
-            
+                        
             # 4. Create storage directories and set permissions
             try:
                 if self.logger:
