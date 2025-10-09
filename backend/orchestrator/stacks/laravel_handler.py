@@ -43,6 +43,209 @@ class LaravelHandler(StackHandler):
             return normalized
         return "default/project"
 
+    async def _detect_php_version(self, code_path: Path) -> Optional[str]:
+        """🔍 Detect PHP version dynamically"""
+        try:
+            result = await self.run_command(["php", "-v"], cwd=str(code_path))
+            if result.returncode == 0 and result.stdout:
+                # Extract PHP version from output like "PHP 8.3.26 (cli) ..."
+                import re
+                match = re.search(r'PHP (\d+\.\d+)', result.stdout)
+                if match:
+                    version = match.group(1)
+                    if self.logger:
+                        self.logger.info(f"🔍 Detected PHP version: {version}")
+                    return version
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Failed to detect PHP version: {e}")
+        return None
+
+    async def _detect_laravel_version(self, code_path: Path) -> Optional[str]:
+        """🔍 Detect Laravel framework version dynamically"""
+        try:
+            result = await self.run_command(
+                ["composer", "show", "laravel/framework", "--format=json"],
+                cwd=str(code_path)
+            )
+            if result.returncode == 0 and result.stdout:
+                import json
+                data = json.loads(result.stdout)
+                version = data.get('versions', [None])[0]
+                if version:
+                    if self.logger:
+                        self.logger.info(f"🔍 Detected Laravel version: {version}")
+                    return version
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Failed to detect Laravel version: {e}")
+        return None
+
+    def _get_compatible_dev_dependencies(self, php_version: Optional[str] = None, laravel_version: Optional[str] = None) -> dict:
+        """🧠 Get compatible dev dependency versions based on PHP/Laravel versions"""
+        
+        # Default versions (stable and compatible with Laravel 12 + PHP 8.3)
+        defaults = {
+            "pestphp/pest": "^3.8",
+            "phpstan/phpstan": "^2.0", 
+            "laravel/pint": "^1.14"
+        }
+        
+        if self.logger:
+            self.logger.info(f"🧠 Determining compatible versions for PHP {php_version or 'unknown'}, Laravel {laravel_version or 'unknown'}")
+        
+        # Matrix de compatibilité basée sur les versions détectées
+        compatibility_matrix = {
+            # PHP 8.3 + Laravel 12.x
+            ("8.3", "12"): {
+                "pestphp/pest": "^3.8",  # Compatible avec PHPUnit 11.x
+                "phpstan/phpstan": "^2.0",  # Dernière version stable
+                "laravel/pint": "^1.17"     # Version optimisée pour Laravel 12
+            },
+            # PHP 8.2 + Laravel 12.x
+            ("8.2", "12"): {
+                "pestphp/pest": "^3.6",
+                "phpstan/phpstan": "^1.12",
+                "laravel/pint": "^1.14"
+            },
+            # PHP 8.1 + Laravel 11.x
+            ("8.1", "11"): {
+                "pestphp/pest": "^3.0",
+                "phpstan/phpstan": "^1.10",
+                "laravel/pint": "^1.10"
+            },
+            # PHP 8.3 + Laravel 11.x (rétrocompatibilité)
+            ("8.3", "11"): {
+                "pestphp/pest": "^3.5",
+                "phpstan/phpstan": "^1.12",
+                "laravel/pint": "^1.13"
+            }
+        }
+        
+        # Essayer de trouver une correspondance exacte
+        if php_version and laravel_version:
+            php_major_minor = php_version  # e.g., "8.3"
+            laravel_major = laravel_version.split('.')[0] if laravel_version else None  # e.g., "12"
+            
+            key = (php_major_minor, laravel_major)
+            if key in compatibility_matrix:
+                selected = compatibility_matrix[key]
+                if self.logger:
+                    self.logger.info(f"🎯 Found exact match for PHP {php_major_minor} + Laravel {laravel_major}: {selected}")
+                return selected
+        
+        # Fallback basé sur PHP uniquement
+        if php_version:
+            if php_version.startswith("8.3"):
+                fallback = {
+                    "pestphp/pest": "^3.8",
+                    "phpstan/phpstan": "^2.0",
+                    "laravel/pint": "^1.17"
+                }
+            elif php_version.startswith("8.2"):
+                fallback = {
+                    "pestphp/pest": "^3.6",
+                    "phpstan/phpstan": "^1.12", 
+                    "laravel/pint": "^1.14"
+                }
+            elif php_version.startswith("8.1"):
+                fallback = {
+                    "pestphp/pest": "^3.0",
+                    "phpstan/phpstan": "^1.10",
+                    "laravel/pint": "^1.10"
+                }
+            else:
+                fallback = defaults
+            
+            if self.logger:
+                self.logger.info(f"🔄 Using PHP-based fallback for {php_version}: {fallback}")
+            return fallback
+        
+        # Dernier recours: versions par défaut
+        if self.logger:
+            self.logger.info(f"🔄 Using default versions: {defaults}")
+        return defaults
+
+    async def _install_dev_dependencies_intelligent(self, code_path: Path) -> None:
+        """🚀 Install development dependencies with intelligent version detection"""
+        try:
+            if self.logger:
+                self.logger.info("🧠 Starting intelligent dev dependencies installation...")
+            
+            # Étape 1: Détecter les versions
+            php_version = await self._detect_php_version(code_path)
+            laravel_version = await self._detect_laravel_version(code_path)
+            
+            if self.logger:
+                self.logger.info(f"📊 Environment detected: PHP {php_version or 'unknown'}, Laravel {laravel_version or 'unknown'}")
+            
+            # Étape 2: Obtenir les versions compatibles
+            dependencies = self._get_compatible_dev_dependencies(php_version, laravel_version)
+            
+            # Étape 3: Construire la commande composer
+            composer_packages = [f"{pkg}:{version}" for pkg, version in dependencies.items()]
+            composer_cmd = [
+                "composer", "require", "--dev", 
+                "--no-interaction", "--no-progress", "--with-all-dependencies"
+            ] + composer_packages
+            
+            if self.logger:
+                self.logger.info(f"📦 Installing dev dependencies: {' '.join(composer_packages)}")
+                self.logger.info(f"🔧 Command: {' '.join(composer_cmd)}")
+            
+            # Étape 4: Exécuter l'installation
+            result = await self.run_command(composer_cmd, cwd=str(code_path))
+            
+            if result.returncode == 0:
+                if self.logger:
+                    self.logger.info("✅ Dev dependencies installed successfully")
+                    self.logger.info(f"📋 Installed packages: {list(dependencies.keys())}")
+                
+                # Étape 5: Vérifier les versions exactes installées
+                await self._log_installed_versions(code_path, dependencies.keys())
+                
+            else:
+                if self.logger:
+                    self.logger.warning(f"⚠️ Dev dependency installation failed: {result.stderr}")
+                    self.logger.warning(f"💡 Attempted command: {' '.join(composer_cmd)}")
+                    self.logger.warning("🔄 Continuing with Laravel project creation...")
+        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Dev dependencies installation error: {e}")
+                self.logger.warning("🔄 Continuing with Laravel project creation...")
+
+    async def _log_installed_versions(self, code_path: Path, package_names: list) -> None:
+        """📋 Log the exact versions of installed dev dependencies"""
+        try:
+            if self.logger:
+                self.logger.info("📋 Checking installed dev dependency versions...")
+            
+            for package in package_names:
+                try:
+                    result = await self.run_command(
+                        ["composer", "show", package, "--format=json"],
+                        cwd=str(code_path)
+                    )
+                    
+                    if result.returncode == 0 and result.stdout:
+                        import json
+                        data = json.loads(result.stdout)
+                        version = data.get('versions', [None])[0]
+                        if version and self.logger:
+                            self.logger.info(f"✅ {package}: {version}")
+                    else:
+                        if self.logger:
+                            self.logger.warning(f"⚠️ Could not verify version for {package}")
+                
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"⚠️ Error checking {package} version: {e}")
+        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Error logging installed versions: {e}")
+
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
         """
         🚀 Create a REAL Laravel 12 project using the official composer installation process.
@@ -99,20 +302,8 @@ class LaravelHandler(StackHandler):
             if keygen.returncode != 0:
                 raise Exception(f"Failed to generate app key: {keygen.stderr}")
 
-            # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint)
-            if self.logger:
-                self.logger.info("📦 Installing Laravel dev dependencies...")
-            dev = await self.run_command(
-                ["composer", "require", "--dev", "--no-interaction", "--no-progress",
-                "phpstan/phpstan", "laravel/pint", "pestphp/pest"],
-                cwd=str(code_path)
-            )
-            if dev.returncode == 0:
-                if self.logger:
-                    self.logger.info("✅ Dev dependencies installed successfully")
-            else:
-                if self.logger:
-                    self.logger.warning(f"⚠️ Dev dependency installation failed: {dev.stderr}")
+            # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
+            await self._install_dev_dependencies_intelligent(code_path)
 
             # 4️⃣ Verify the installation
             if not await self._verify_laravel_installation(code_path):
