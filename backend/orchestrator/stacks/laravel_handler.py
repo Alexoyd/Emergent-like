@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Optional, List
 import json
 import re
+import os
+import asyncio
 
 from .base_handler import StackHandler
 from .registry import StackRegistry
@@ -47,9 +49,7 @@ class LaravelHandler(StackHandler):
         Based on: https://laravel.com/docs/12.x/installation
         """
         import subprocess
-        import asyncio
         import shutil
-        import os
 
         try:
             if self.logger:
@@ -149,7 +149,7 @@ class LaravelHandler(StackHandler):
                     cwd=str(code_path)
                 )
                 return result.returncode == 0
-            except:
+            except Exception:
                 return False
                 
         except Exception:

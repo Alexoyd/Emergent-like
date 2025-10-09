@@ -83,10 +83,24 @@ class ProjectManager:
             
             # Auto-create project structure if enabled
             if self.auto_create_structures:
-                await self._create_project_structure(directories["code"], stack, project_name)
-            
-                # ✅ Install dependencies automatically after scaffolding (optional)
-                logger.info(f"Auto-installing dependencies for {stack} project {project_id}")
+                # 🚀 Laravel projects use official Composer installation flow
+                if stack == "laravel":
+                    logger.info(f"🚀 Creating full Laravel project via Composer for {project_id}")
+                    try:
+                        handler = self._new_handler(stack)
+                        await handler.create_project_skeleton(directories["code"], project_name)
+                        metadata["dependencies_installed"] = True
+                        logger.info("✅ Laravel 12 project created successfully")
+                    except Exception as e:
+                        metadata["dependencies_installed"] = False
+                        logger.error(f"❌ Laravel project creation failed: {e}")
+                        raise
+                else:
+                    # Other stacks continue with normal flow
+                    await self._create_project_structure(directories["code"], stack, project_name)
+                
+                    # ✅ Install dependencies automatically after scaffolding (for non-Laravel stacks only)
+                    logger.info(f"Auto-installing dependencies for {stack} project {project_id}")
                 try:
                     install_success = await self.install_dependencies(str(project_path), stack)
                     if install_success:
@@ -119,8 +133,12 @@ class ProjectManager:
         handler = self._new_handler(stack)
         await handler.create_project_skeleton(code_path, project_name)
         
-        # Call install_dependencies after scaffolding
-        await self.install_dependencies(str(code_path), stack)
+        # Skip redundant dependency installation for Laravel (already done in create_project_skeleton)
+        if stack != "laravel":
+            logger.info(f"Installing dependencies for {stack} project {project_id}")
+            await self.install_dependencies(str(code_path), stack)
+        else:
+            logger.info("🚀 Laravel dependencies already installed via Composer create-project")
         
         # Create test skeletons for better test coverage
         await self.create_test_skeletons(str(code_path), stack)
