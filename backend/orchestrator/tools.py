@@ -21,6 +21,14 @@ from .patch_validator import PatchValidator
 
 logger = logging.getLogger(__name__)
 
+# Define CommandResult class for type hints
+@dataclass
+class CommandResult:
+    """Result of a command execution"""
+    returncode: int
+    stdout: str
+    stderr: str
+
 def is_valid_patch(patch_text: str) -> bool:
     """
     🔥 PHASE 2 FIX: Enhanced patch validation with Git diff format checks
@@ -1080,11 +1088,11 @@ class ToolManager:
                     timeout=timeout
                 )
                 
-                return type('CommandResult', (), {
-                    'returncode': process.returncode,
-                    'stdout': stdout.decode('utf-8', errors='ignore'),
-                    'stderr': stderr.decode('utf-8', errors='ignore')
-                })()
+                return CommandResult(
+                    returncode=process.returncode,
+                    stdout=stdout.decode('utf-8', errors='ignore'),
+                    stderr=stderr.decode('utf-8', errors='ignore')
+                )
                 
             except asyncio.TimeoutError:
                 logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
@@ -1105,7 +1113,7 @@ class ToolManager:
                 await self._cleanup_timed_out_process(process, process_group_id)
             raise e
     
-    async def _safe_subprocess_exec(self, command: List[str], cwd: str = None, timeout: int = None) -> 'CommandResult':
+    async def _safe_subprocess_exec(self, command: List[str], cwd: str = None, timeout: int = None) -> CommandResult:
         """
         🔥 NEW: Safe subprocess execution with comprehensive error handling
         """
@@ -1128,11 +1136,11 @@ class ToolManager:
             # Verify process creation
             if process is None:
                 logger.error(f"❌ Failed to create subprocess for: {' '.join(command)}")
-                return type('CommandResult', (), {
-                    'returncode': -1,
-                    'stdout': '',
-                    'stderr': 'Failed to create subprocess'
-                })()
+                return CommandResult(
+                    returncode=-1,
+                    stdout='',
+                    stderr='Failed to create subprocess'
+                )
             
             # Store process group ID
             if hasattr(os, 'getpgid') and process.pid:
@@ -1147,11 +1155,11 @@ class ToolManager:
                 timeout=timeout
             )
             
-            return type('CommandResult', (), {
-                'returncode': process.returncode,
-                'stdout': stdout.decode('utf-8', errors='ignore'),
-                'stderr': stderr.decode('utf-8', errors='ignore')
-            })()
+            return CommandResult(
+                returncode=process.returncode,
+                stdout=stdout.decode('utf-8', errors='ignore'),
+                stderr=stderr.decode('utf-8', errors='ignore')
+            )
             
         except asyncio.TimeoutError:
             logger.error(f"⏰ Command timeout ({timeout}s): {' '.join(command)}")
@@ -1159,30 +1167,30 @@ class ToolManager:
             if not cleanup_success:
                 logger.error("❌ Failed to cleanup timed out process")
             
-            return type('CommandResult', (), {
-                'returncode': -1,
-                'stdout': '',
-                'stderr': f'Command timed out after {timeout} seconds'
-            })()
+            return CommandResult(
+                returncode=-1,
+                stdout='',
+                stderr=f'Command timed out after {timeout} seconds'
+            )
             
         except FileNotFoundError:
             logger.error(f"❌ Command not found: {command[0]}")
-            return type('CommandResult', (), {
-                'returncode': -1,
-                'stdout': '',
-                'stderr': f'Command not found: {command[0]}'
-            })()
+            return CommandResult(
+                returncode=-1,
+                stdout='',
+                stderr=f'Command not found: {command[0]}'
+            )
             
         except Exception as e:
             logger.error(f"❌ Error running command {' '.join(command)}: {e}")
             if process:
                 await self._cleanup_timed_out_process(process, process_group_id)
             
-            return type('CommandResult', (), {
-                'returncode': -1,
-                'stdout': '',
-                'stderr': str(e)
-            })()
+            return CommandResult(
+                returncode=-1,
+                stdout='',
+                stderr=str(e)
+            )
     
     async def _cleanup_timed_out_process(self, process, process_group_id=None) -> bool:
         """

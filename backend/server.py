@@ -872,32 +872,7 @@ async def get_agent_conversations(run_id: str):
         logging.error(f"Error getting agent conversations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.post("/runs/{run_id}/validate-plan")
-async def validate_plan(run_id: str, validation: dict):
-    """User validation endpoint for plans"""
-    try:
-        approved = validation.get("approved", False)
-        feedback = validation.get("feedback", "")
-        
-        if approved:
-            await state_manager.add_log(run_id, {
-                "type": "info",
-                "content": f"Plan approved by user: {feedback}"
-            })
-            # Continue execution
-            # TODO: Resume execution after user approval
-        else:
-            await state_manager.add_log(run_id, {
-                "type": "warning", 
-                "content": f"Plan rejected by user: {feedback}"
-            })
-            # TODO: Request plan revision
-        
-        return {"message": "Validation received", "approved": approved}
-        
-    except Exception as e:
-        logging.error(f"Error processing plan validation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Removed duplicate validate_plan function - see line 945 for implementation
 
 @api_router.post("/runs/{run_id}/validate-step")
 async def validate_step(run_id: str, step_number: int, validation: dict):
