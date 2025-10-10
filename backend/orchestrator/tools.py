@@ -212,7 +212,7 @@ class ToolManager:
                 else:
                     normalized_lines.append(line)
             
-            normalized_patch = ''.join(normalized_lines)
+            normalized_patch = '\n'.join(normalized_lines)
             logger.debug(f"✅ Patch normalization completed successfully")
             return normalized_patch
             
