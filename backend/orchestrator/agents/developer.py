@@ -288,19 +288,132 @@ class DeveloperAgent:
         )
 
     def _extract_patch(self, text: str) -> str | None:
-        """Return the diff between BEGIN_PATCH and END_PATCH or None.
-
+        """
+        Return the diff between BEGIN_PATCH and END_PATCH or None.
+        🔥 PHASE 3 FIX: Enhanced extraction with validation and auto-repair
+        
         If the model returns a plain diff without markers but containing
         unified diff hunks (e.g., lines with "@@"), we return it as-is.
         """
         if not text:
             return None
+            
+        # Try to extract between markers
         start = text.find("BEGIN_PATCH")
         end = text.find("END_PATCH")
         if start != -1 and end != -1 and start < end:
             body = text[start + len("BEGIN_PATCH"):end].strip()
-            return body if body else None
+            if body:
+                # 🔥 PHASE 3 FIX: Validate extracted patch
+                if self._is_valid_patch_format(body):
+                    return body
+                else:
+                    # Try to repair the patch
+                    repaired = self._try_repair_patch(body)
+                    if repaired and self._is_valid_patch_format(repaired):
+                        self.log.info("✅ Patch auto-repaired successfully")
+                        return repaired
+                    self.log.warning("⚠️ Extracted patch has invalid format, trying fallback")
+        
         # Fallback: accept raw unified diff
         if "@@" in text or text.strip().startswith("diff --git"):
-            return text.strip()
+            candidate = text.strip()
+            if self._is_valid_patch_format(candidate):
+                return candidate
+            # Try to repair fallback patch
+            repaired = self._try_repair_patch(candidate)
+            if repaired and self._is_valid_patch_format(repaired):
+                self.log.info("✅ Fallback patch auto-repaired successfully")
+                return repaired
+                
+        return None
+    
+    def _is_valid_patch_format(self, patch_text: str) -> bool:
+        """
+        🔥 PHASE 3 FIX: Quick validation of patch format
+        Checks for essential git diff components
+        """
+        if not patch_text or not isinstance(patch_text, str):
+            return False
+        
+        lines = patch_text.strip().split('')
+        if len(lines) < 4:
+            return False
+        
+        # Must have diff --git header
+        has_diff_header = any(line.startswith('diff --git') for line in lines[:10])
+        if not has_diff_header:
+            return False
+        
+        # Must have file headers (--- and +++)
+        has_old_file = any(line.startswith('---') for line in lines)
+        has_new_file = any(line.startswith('+++') for line in lines)
+        if not (has_old_file and has_new_file):
+            return False
+        
+        # Must have at least one hunk header
+        has_hunk = any(line.startswith('@@') for line in lines)
+        if not has_hunk:
+            return False
+        
+        return True
+    
+    def _try_repair_patch(self, patch_text: str) -> str | None:
+        """
+        🔥 PHASE 3 FIX: Attempt to repair common patch format issues
+        """
+        if not patch_text:
+            return None
+        
+        lines = patch_text.split('')
+        repaired_lines = []
+        
+        for i, line in enumerate(lines):
+            # Repair missing 'diff --git' header
+            if i == 0 and not line.startswith('diff --git'):
+                # Try to extract filename from subsequent lines
+                filename = None
+                for next_line in lines[1:5]:
+                    if next_line.startswith('+++'):
+                        # Extract from "+++ b/filename"
+                        parts = next_line.split()
+                        if len(parts) >= 2:
+                            filename = parts[1]
+                            if filename.startswith('b/'):
+                                filename = filename[2:]
+                            break
+                
+                if filename:
+                    repaired_lines.append(f"diff --git a/{filename} b/{filename}")
+                    if not line.startswith('new file') and not line.startswith('---'):
+                        repaired_lines.append("new file mode 100644")
+                        repaired_lines.append("index 0000000..1111111")
+            
+            # Ensure --- and +++ are properly formatted
+            if line.startswith('---') and not line.startswith('--- '):
+                repaired_lines.append('--- ' + line[3:])
+            elif line.startswith('+++') and not line.startswith('+++ '):
+                repaired_lines.append('+++ ' + line[3:])
+            # Fix file paths in headers
+            elif line.startswith('--- '):
+                path = line[4:].strip()
+                if not path.startswith('a/') and path != '/dev/null':
+                    repaired_lines.append(f"--- a/{path}")
+                else:
+                    repaired_lines.append(line)
+            elif line.startswith('+++ '):
+                path = line[4:].strip()
+                if not path.startswith('b/') and path != '/dev/null':
+                    repaired_lines.append(f"+++ b/{path}")
+                else:
+                    repaired_lines.append(line)
+            else:
+                repaired_lines.append(line)
+        
+        repaired = ''.join(repaired_lines)
+        
+        # Only return if we actually made changes
+        if repaired != patch_text:
+            return repaired
+        
         return None

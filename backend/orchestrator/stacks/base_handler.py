@@ -40,10 +40,24 @@ class StackHandler(ABC):
         return list(self.default_test_command)
 
     async def run_tests(self, code_path: Path):
-        """Execute the stack's test command in code_path."""
+        """
+        Execute the stack's test command in code_path.
+        🔥 PHASE 2 FIX: Added validation to prevent 'await on string' errors
+        """
         cmd = self.get_test_command()
         if not cmd:
             if self.logger:
                 self.logger.warning(f"No test command configured for stack '{self.name}'")
             return type("CommandResult", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        
+        # 🔥 PHASE 2 FIX: Ensure cmd is a list, not a string
+        if isinstance(cmd, str):
+            if self.logger:
+                self.logger.warning(f"Test command is a string, converting to list: {cmd}")
+            cmd = cmd.split()
+        elif not isinstance(cmd, list):
+            if self.logger:
+                self.logger.error(f"Invalid test command type: {type(cmd)}, expected list")
+            return type("CommandResult", (), {"returncode": 1, "stdout": "", "stderr": "Invalid command type"})()
+            
         return await self.run_command(cmd, cwd=str(code_path))

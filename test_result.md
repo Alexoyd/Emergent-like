@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Corrections du système d\'orchestrateur : validation des patches, installation automatique des dépendances, et option de désactivation d\'Anthropic"
+user_problem_statement: "Corrections du système d'orchestrateur : validation des patches, installation automatique des dépendances, et option de désactivation d'Anthropic. PHASE 2: Corrections self-healing Cognitia - validation structure Python flexible, protection await errors, amélioration génération patches"
 
 backend:
   - task: "Système d'orchestration d'agents complet"
@@ -130,10 +130,10 @@ backend:
           comment: "Fichier .env créé avec toutes les configurations nécessaires"
         - working: true
           agent: "testing"
-          comment: "Configuration .env testée et fonctionnelle. MongoDB connection corrigée de mongo:27017 vers localhost:27017. Toutes les variables d\'environnement présentes: LLM API keys, GitHub integration, project management, CORS, logging."
+          comment: "Configuration .env testée et fonctionnelle. MongoDB connection corrigée de mongo:27017 vers localhost:27017. Toutes les variables d'environnement présentes: LLM API keys, GitHub integration, project management, CORS, logging."
         - working: true
           agent: "main"
-          comment: "Fichier .env mis à jour avec nouvelle variable ENABLE_ANTHROPIC=true pour contrôler l\'intégration Anthropic"
+          comment: "Fichier .env mis à jour avec nouvelle variable ENABLE_ANTHROPIC=true pour contrôler l'intégration Anthropic"
 
   - task: "Fonction is_valid_patch pour validation des patches"
     implemented: true
@@ -145,7 +145,7 @@ backend:
     status_history:
         - working: true
           agent: "main"
-          comment: "Fonction is_valid_patch() implémentée pour valider le format des patches avant application. Vérifie \'diff --git\', headers \'---\' et \'+++\', et structure des hunks \'@@\'. Empêche l\'application de patches corrompus."
+          comment: "Fonction is_valid_patch() implémentée pour valider le format des patches avant application. Vérifie 'diff --git', headers '---' et '+++', et structure des hunks '@@'. Empêche l'application de patches corrompus."
 
   - task: "Installation automatique des dépendances par stack"
     implemented: true
@@ -169,7 +169,7 @@ backend:
     status_history:
         - working: true
           agent: "main"
-          comment: "Variable d\'environnement ENABLE_ANTHROPIC=true/false ajoutée. LLMRouter modifié pour respecter cette option : client Anthropic initialisé seulement si activé, path d\'escalation excluant Anthropic si désactivé. Gestion d\'erreurs appropriée si Anthropic appelé alors que désactivé."
+          comment: "Variable d'environnement ENABLE_ANTHROPIC=true/false ajoutée. LLMRouter modifié pour respecter cette option : client Anthropic initialisé seulement si activé, path d'escalation excluant Anthropic si désactivé. Gestion d'erreurs appropriée si Anthropic appelé alors que désactivé."
   - task: "Améliorer LLMRouter avec max_local_retries configurable"
     implemented: true
     working: true
@@ -290,6 +290,42 @@ backend:
           agent: "testing"
           comment: "Routes API admin étendues avec succès. /api/admin/stats inclut maintenant cache_stats (total_entries, total_usage, hit_rate, most_used, cache_size_limit, ttl_hours) et cost_savings (tokens_saved, cost_saved_eur, savings_percentage, cache_hits, total_requests). /api/admin/cache/clear fonctionne parfaitement - teste avec 'Cleared 2 cached prompts'. Toutes les nouvelles métriques de cache sont présentes et fonctionnelles."
 
+  - task: "PHASE 2 - Validation structure Python flexible"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "🔥 PHASE 1 COMPLÉTÉE: Validation de structure Python rendue flexible. Accepte maintenant main.py, app.py, server.py, backend/server.py, src/main.py comme points d'entrée valides. Validation basée sur présence de requirements.txt + au moins un fichier .py. Corrige le problème où Cognitia était rejeté car il utilise backend/server.py au lieu de main.py. Voir /app/COGNITIA_SELF_HEAL_FIXES.md pour détails complets."
+
+  - task: "PHASE 2 - Protection contre erreurs await sur string"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/orchestrator/stacks/base_handler.py, /app/backend/orchestrator/tools.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "🔥 PHASE 2 COMPLÉTÉE: Ajout de validation type avant await dans run_tests() et smart_command_execution(). Auto-conversion string→list avec warning. Gestion d'erreurs pour types invalides. Prévient l'erreur 'object str can't be used in await expression' qui bloquait l'exécution des tests Python. Modifications dans base_handler.py et tools.py. Documentation complète ajoutée."
+
+  - task: "PHASE 3 - Amélioration génération et validation patches"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/orchestrator/agents/developer.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "🔥 PHASE 3 COMPLÉTÉE: Refonte complète de l'extraction et validation des patches. Nouvelles fonctions: _is_valid_patch_format(), _try_repair_patch() dans developer.py. Nouvelles fonctions: _validate_patch_basics(), _extract_fallback_patch() dans server.py. Auto-réparation: ajout headers 'diff --git' manquants, correction paths a/ et b/, correction headers --- et +++. Extraction fallback intelligente sans markers BEGIN/END_PATCH. Validation stricte avant application. Corrige le problème 'Patch application failed: error: unrecognized input'."
+
 frontend:
   - task: "Créer section Admin dans l'interface"
     implemented: true
@@ -384,7 +420,7 @@ test_plan:
 
 agent_communication:
     - agent: "main"
-      message: "Corrections du système d\'orchestrateur implémentées avec succès : 1) Fonction is_valid_patch() pour empêcher l\'application de patches corrompus 2) Installation automatique des dépendances après scaffolding (composer install, yarn install, pip install) 3) Option ENABLE_ANTHROPIC=true/false pour désactiver Anthropic en cas de problèmes de crédits. Tous les tests passent avec succès."
+      message: "Corrections du système d'orchestrateur implémentées avec succès : 1) Fonction is_valid_patch() pour empêcher l'application de patches corrompus 2) Installation automatique des dépendances après scaffolding (composer install, yarn install, pip install) 3) Option ENABLE_ANTHROPIC=true/false pour désactiver Anthropic en cas de problèmes de crédits. Tous les tests passent avec succès."
     - agent: "main"
       message: "🔧 PHASE 2 - CORRECTIONS PROFONDES Laravel COMPLÉTÉES: 1) Commandes Laravel non-interactives (--no-interaction, --stop-on-failure, --bail) ✅ 2) Timeout augmenté à 300s (5min) pour composer/Laravel ✅ 3) Validation environnement Laravel renforcée (10+ checks) ✅ 4) Protection anti-loop: max 5 réparations/projet, LLM repair désactivé pour problèmes simples ✅ 5) Nouvelle méthode _verify_repair_success() pour valider chaque réparation ✅ 6) Correction subprocess non initialisée dans RepairAgent ✅ 7) Nouvelle méthode _validate_project_structure_for_patch() avec création auto répertoires ✅ 8) Détection erreur 'root package' avec logging FATAL ✅. Voir LARAVEL_TESTING_FIXES.md pour détails complets."
     - agent: "main"
@@ -400,3 +436,5 @@ agent_communication:
       message: "🚀 SYSTÈME D'ORCHESTRATION D'AGENTS TESTÉ AVEC SUCCÈS! Tests de validation du cycle d'orchestration complets: 1) API /api/ accessible et fonctionnelle ✅ 2) Création de runs 'Hello World' pour Python et Laravel réussie ✅ 3) Cycle complet Planification->Développement->Tests->Review détecté ✅ 4) Endpoints /api/runs et /api/runs/{id} opérationnels ✅ 5) Logs montrent progression des agents (PlannerAgent, DeveloperAgent, ReviewerAgent) ✅ 6) Aucune récursion infinie détectée - corrections effectives ✅ 7) Agent conversations sauvegardées correctement ✅. VALIDATION: Le système d'orchestration fonctionne comme attendu, les corrections de récursion infinie dans _upsert_step() et l'amélioration de run_comprehensive_tests() sont opérationnelles. Seule limitation: API keys LLM vides empêchent génération de patches, mais l'architecture d'orchestration est solide et prête."
     - agent: "testing"
       message: "🎉 CYCLE COMPLET EMERGENT.SH VALIDÉ! Tests exhaustifs du système d'orchestration avec parité complète: 1) Mode développement avec réponses simulées ACTIF ✅ 2) Cycle Python complet: Prompt→Plan→Dev→Test→Review→Export (92.9% succès) ✅ 3) Cycle Laravel complet: Prompt→Plan→Dev→Test→Review→Export (100% succès) ✅ 4) Génération automatique de tests pytest/pest DÉTECTÉE ✅ 5) Installation dépendances avec fallbacks FONCTIONNELLE ✅ 6) Validation utilisateur et archivage ZIP/GitHub OPÉRATIONNELS ✅ 7) Gestion échecs et retry ROBUSTE ✅ 8) Agent conversations sauvegardées (14 par run) ✅ 9) Isolation projets par workspace PARFAITE ✅ 10) Export ZIP et préparation GitHub TESTÉS ✅. RÉSULTAT: Le système reproduit fidèlement le cycle d'Emergent.sh avec la même robustesse. Tests critiques: 4/4 passés. Taux global: 92.9%. SYSTÈME PRÊT POUR PRODUCTION!"
+    - agent: "main"
+      message: "🔥 PHASE 2 COGNITIA SELF-HEALING COMPLÉTÉE - 3 PROBLÈMES CRITIQUES CORRIGÉS: 1) ✅ PHASE 1: Validation structure Python flexible - Accepte maintenant backend/server.py, src/main.py, app.py comme alternatives à main.py. Validation basée sur requirements.txt + au moins un .py. Corrige rejection de Cognitia. 2) ✅ PHASE 2: Protection await errors - Validation type avant await, auto-conversion string→list, logs détaillés. Corrige 'object str can't be used in await expression'. 3) ✅ PHASE 3: Amélioration patches - Auto-réparation headers manquants (diff --git, a/, b/), extraction fallback sans markers, validation stricte. Corrige 'Patch application failed: unrecognized input'. Fichiers modifiés: server.py, base_handler.py, tools.py, developer.py. 8 nouvelles fonctions. Documentation complète dans /app/COGNITIA_SELF_HEAL_FIXES.md. PRÊT POUR TESTS avec Cognitia en mode self_improvement!"

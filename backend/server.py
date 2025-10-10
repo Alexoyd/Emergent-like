@@ -1297,13 +1297,47 @@ async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
             "laravel": ["composer.json", "app/", "routes/", "database/"],
             "react": ["package.json", "src/", "public/"],
             "vue": ["package.json", "src/", "public/"],
-            "python": ["main.py", "requirements.txt"],
+            "python": ["requirements.txt"], # ✅ FIXED: More flexible - only requires requirements.txt
             "node": ["package.json", "index.js"],
             "nodejs": ["package.json", "index.js"]
         }
         
         stack_lower = stack.lower() if stack else "unknown"
-        required_files = expected_files.get(stack_lower, ["main.py"])  # Fallback to Python
+        required_files = expected_files.get(stack_lower, ["requirements.txt"])  # Fallback to flexible Python
+        
+        # 🔥 PHASE 1 FIX: For Python projects, accept alternative entry points
+        if stack_lower == "python":
+            # Check for common Python entry points
+            python_entry_points = [
+                "main.py",
+                "app.py", 
+                "server.py",
+                "backend/server.py",
+                "src/main.py",
+                "src/app.py"
+            ]
+            has_entry_point = any((code_path / entry).exists() for entry in python_entry_points)
+            has_requirements = (code_path / "requirements.txt").exists()
+            
+            # For Python, we need at least one .py file and requirements.txt
+            if has_requirements:
+                logging.info(f"✅ Python project: requirements.txt found")
+                if has_entry_point:
+                    found_entries = [e for e in python_entry_points if (code_path / e).exists()]
+                    logging.info(f"✅ Python project: entry point(s) found: {found_entries}")
+                    return True
+                else:
+                    # Check if there's at least one .py file anywhere
+                    py_files = list(code_path.rglob("*.py"))
+                    if py_files:
+                        logging.info(f"✅ Python project: {len(py_files)} .py file(s) found (no standard entry point)")
+                        return True
+                    else:
+                        logging.warning(f"⚠️ Python project: requirements.txt exists but no .py files found")
+                        return False
+            else:
+                logging.warning(f"⚠️ Python project: requirements.txt not found")
+                return False
         
         # Compter les fichiers/dossiers présents
         existing_count = 0
@@ -1793,7 +1827,10 @@ async def retry_step_with_escalation(run_id: str, step_number: int, retry_count:
         logging.error(f"Error retrying step: {e}")
 
 def extract_patch(content: str) -> Optional[str]:
-    """Extract patch from LLM response"""
+    """
+    Extract patch from LLM response
+    🔥 PHASE 3 FIX: Enhanced extraction with validation
+    """
     try:
         start_marker = "BEGIN_PATCH"
         end_marker = "END_PATCH"
@@ -1803,12 +1840,70 @@ def extract_patch(content: str) -> Optional[str]:
         
         if start_idx != -1 and end_idx != -1:
             patch = content[start_idx + len(start_marker):end_idx].strip()
-            return patch
+            
+            # 🔥 PHASE 3 FIX: Validate patch has essential components
+            if patch and _validate_patch_basics(patch):
+                return patch
+            else:
+                logging.warning("⚠️ Extracted patch missing essential git diff components")
+                # Try to find a valid patch elsewhere in the content
+                return _extract_fallback_patch(content)
         
-        return None
+        # Try fallback extraction
+        return _extract_fallback_patch(content)
+        
     except Exception as e:
         logging.error(f"Error extracting patch: {e}")
         return None
+
+
+def _validate_patch_basics(patch: str) -> bool:
+    """
+    🔥 PHASE 3 FIX: Quick validation that patch has essential components
+    """
+    if not patch:
+        return False
+    
+    lines = patch.split('')
+    has_diff_header = any(line.startswith('diff --git') for line in lines[:10])
+    has_hunk = any(line.startswith('@@') for line in lines)
+    
+    return has_diff_header and has_hunk
+
+
+def _extract_fallback_patch(content: str) -> Optional[str]:
+    """
+    🔥 PHASE 3 FIX: Try to extract a valid patch from content without markers
+    """
+    if not content:
+        return None
+    
+    # Look for diff --git patterns
+    lines = content.split('')
+    patch_start = -1
+    
+    for i, line in enumerate(lines):
+        if line.startswith('diff --git'):
+            patch_start = i
+            break
+    
+    if patch_start >= 0:
+        # Extract from diff --git to end or until non-patch content
+        patch_lines = []
+        for i in range(patch_start, len(lines)):
+            line = lines[i]
+            # Stop at common end markers
+            if any(marker in line for marker in ['```', 'CHECKLIST', 'Note:', 'Summary:']):
+                break
+            patch_lines.append(line)
+        
+        if patch_lines:
+            patch = ''.join(patch_lines).strip()
+            if _validate_patch_basics(patch):
+                logging.info("✅ Extracted valid patch from fallback method")
+                return patch
+    
+    return None
 
 async def get_previous_steps_summary(run_id: str, current_step: int) -> str:
     """Get summary of previous steps"""

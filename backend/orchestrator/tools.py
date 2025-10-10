@@ -1279,11 +1279,30 @@ class ToolManager:
     async def smart_command_execution(self, commands: List[List[str]], project_path: str, test_type: str) -> 'TestResult':
         """
         🔥 ENHANCED: Self-Healing Command Execution with anti-loop protection
+        🔥 PHASE 2 FIX: Added validation to ensure commands are lists, not strings
         """
         last_error = None
         commands_tried = []
         
+        # 🔥 PHASE 2 FIX: Validate that commands is a list of lists
+        if not isinstance(commands, list):
+            logger.error(f"Invalid commands type: {type(commands)}, expected list")
+            return TestResult(
+                test_type=test_type,
+                status="failed",
+                output=f"Internal error: commands is not a list (got {type(commands).__name__})",
+                details={"error": "invalid_commands_type"}
+            )
+        
         for attempt, command in enumerate(commands, 1):
+            # 🔥 PHASE 2 FIX: Ensure each command is a list
+            if isinstance(command, str):
+                logger.warning(f"Command is a string, converting to list: {command}")
+                command = command.split()
+            elif not isinstance(command, list):
+                logger.error(f"Invalid command type: {type(command)}, skipping")
+                continue
+                
             try:
                 logger.info(f"Attempting {test_type} command (attempt {attempt}/{len(commands)}): {' '.join(command)}")
                 result = await self._run_command_with_timeout(command, cwd=project_path)
