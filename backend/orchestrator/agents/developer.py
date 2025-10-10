@@ -336,7 +336,7 @@ class DeveloperAgent:
         if not patch_text or not isinstance(patch_text, str):
             return False
         
-        lines = patch_text.strip().split('')
+        lines = patch_text.strip().splitlines()
         if len(lines) < 4:
             return False
         
@@ -365,7 +365,7 @@ class DeveloperAgent:
         if not patch_text:
             return None
         
-        lines = patch_text.split('')
+        lines = patch_text.splitlines()
         repaired_lines = []
         
         for i, line in enumerate(lines):
@@ -410,7 +410,7 @@ class DeveloperAgent:
             else:
                 repaired_lines.append(line)
         
-        repaired = ''.join(repaired_lines)
+        repaired = '\n'.join(repaired_lines)
         
         # Only return if we actually made changes
         if repaired != patch_text:
