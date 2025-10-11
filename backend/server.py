@@ -1455,11 +1455,20 @@ async def _execute_step_with_agents(
             if patch_result.patch_text:
                 project_code_path = project_manager.get_code_path(run_id)
                 try:
-                    await tool_manager.apply_patch(patch_result.patch_text, str(project_code_path))
-                    await state_manager.add_log(run_id, {
-                        "type": "info",
-                        "content": "Patch applied successfully"
-                    })
+                    patch_success = await tool_manager.apply_patch(patch_result.patch_text, str(project_code_path))
+                    # 🔥 FIX: Vérifier le succès réel de l'application du patch
+                    if patch_success:
+                        await state_manager.add_log(run_id, {
+                            "type": "info",
+                            "content": "Patch applied successfully"
+                        })
+                    else:
+                        await state_manager.add_log(run_id, {
+                            "type": "error",
+                            "content": "Patch application failed - patch may be corrupted or invalid"
+                        })
+                        attempt += 1
+                        continue
                 except Exception as e:
                     await state_manager.add_log(run_id, {
                         "type": "error",
