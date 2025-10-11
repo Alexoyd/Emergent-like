@@ -721,12 +721,14 @@ async def clear_prompt_cache():
 async def get_file_write_mode():
     """
     🔥 PHASE 1: Get current file write mode for debugging
-    Returns: { "file_write_mode": "direct" | "patch" }
+    Returns: { "file_write_mode": "direct" | "patch", "deny_list": [...] }
     """
+    from orchestrator.file_writer import PROTECTED_PATHS
     return {
         "file_write_mode": FILE_WRITE_MODE,
         "developer_agent_type": type(developer_agent).__name__,
-        "description": "direct = JSON operations, patch = Git diffs"
+        "description": "direct = JSON operations, patch = Git diffs",
+        "deny_list": PROTECTED_PATHS
     }
 
 @api_router.get("/admin/global-stats")
