@@ -255,6 +255,9 @@ class ToolManager:
             # 🔥 FIX: Ensure blank lines between multi-file diffs
             normalized_patch = self._ensure_multifile_separation(normalized_patch)
             
+            # 🔥 FIX: Recalculate and fix hunk counters
+            normalized_patch = self._fix_hunk_counters(normalized_patch)
+            
             # 🔥 ACTION 2: Advanced sanity checks BEFORE git apply
             sanity_result = await self._advanced_patch_sanity_checks(normalized_patch, project_path)
             if not sanity_result["valid"]:
