@@ -392,6 +392,16 @@ class ToolManager:
             if not diff_headers:
                 errors.append("Missing 'diff --git' headers")
             
+            # 🔥 NEW CHECK: Multi-file patches must have blank line before each diff --git (except first)
+            for i, line in enumerate(lines):
+                if line.startswith('diff --git') and i > 0:
+                    # Check if previous line is NOT empty (except for first diff)
+                    prev_line = lines[i-1].strip()
+                    if prev_line and not prev_line.startswith('diff --git'):
+                        # Previous line has content and it's not another diff header
+                        # Insert blank line warning (will be auto-fixed during normalization)
+                        warnings.append(f"Missing blank line before 'diff --git' at line {i+1}")
+            
             # Check 2: For each file, verify complete headers (---, +++)
             current_file = None
             has_old_marker = False
