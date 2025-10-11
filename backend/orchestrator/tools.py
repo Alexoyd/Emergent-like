@@ -333,6 +333,27 @@ class ToolManager:
             logger.error(f"Error applying patch: {e}")
             return False
     
+    def _ensure_multifile_separation(self, patch_text: str) -> str:
+        """
+        🔥 FIX: Ensure blank line between multi-file diffs
+        Git requires blank line before each 'diff --git' (except the first one)
+        """
+        lines = patch_text.splitlines()
+        fixed_lines = []
+        
+        for i, line in enumerate(lines):
+            # If this is a 'diff --git' line and NOT the first line
+            if line.startswith('diff --git') and i > 0:
+                # Check if previous line is empty
+                if fixed_lines and fixed_lines[-1].strip() != '':
+                    # Previous line has content, add blank line
+                    fixed_lines.append('')
+                    logger.debug(f"🔧 Auto-fix: Added blank line before 'diff --git' at line {i+1}")
+            
+            fixed_lines.append(line)
+        
+        return '\n'.join(fixed_lines)
+    
     async def _save_patch_artifact(self, patch_text: str, project_path: str, run_id: str) -> Optional[str]:
         """
         🔥 ACTION 1: Save raw patch to artifacts directory with SHA-256 and metadata
