@@ -717,6 +717,18 @@ async def clear_prompt_cache():
         logging.error(f"Error clearing cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/admin/mode")
+async def get_file_write_mode():
+    """
+    🔥 PHASE 1: Get current file write mode for debugging
+    Returns: { "file_write_mode": "direct" | "patch" }
+    """
+    return {
+        "file_write_mode": FILE_WRITE_MODE,
+        "developer_agent_type": type(developer_agent).__name__,
+        "description": "direct = JSON operations, patch = Git diffs"
+    }
+
 @api_router.get("/admin/global-stats")
 async def get_global_admin_stats():
     """Get global admin statistics for main admin panel"""
