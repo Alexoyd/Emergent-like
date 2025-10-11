@@ -1,0 +1,88 @@
+<analysis>
+The previous AI engineer initially focused on debugging Git patch application failures and asynchronous test execution errors within a Laravel project generation system. They iteratively fixed issues like UI/backend desynchronization,  errors in test runners, corrupted patch formats,  path validation, multi-file patch separation, and incorrect hunk counters. Despite these fixes, persistent patch corruption led to a critical architectural decision: transitioning from Git patch-based modifications to direct file writing. A comprehensive plan for this refactoring, including attach mode for existing projects and an Auto-heal feature with distinct Git branching, was proposed and confirmed. The AI engineer is currently implementing the first phase, setting up direct file writing infrastructure.
+</analysis>
+
+<product_requirements>
+The user initially reported critical issues in a Laravel project generation process, including  during PHP tests (Pest, PHPStan, Pint), corrupt Git patches (), and UI/Backend desynchronization where the frontend falsely reported success. Environmental warnings (SQLite driver, HuggingFace tokenizers) were also noted.
+
+After initial fixes addressed the test execution and UI sync issues, persistent patch corruption highlighted limitations of the Git patch methodology. The user then requested a significant architectural overhaul, moving from Git patches to direct file modification. This new system must:
+1.  **Utilize direct file operations**: Create, update, insert, search/replace, rename, and delete files using specific primitives () with a strict JSON contract.
+2.  **Support Attach mode**: Allow modification of existing projects ( with ) without recreation, including RAG re-indexing and atomic Git commits per step ().
+3.  **Implement Auto-heal**: A manual feature that creates a dedicated  branch from an existing project, applies detected fixes via direct writes, and runs a comprehensive, stack-agnostic health pipeline (lint, tests, build, smoke). It must *never* auto-merge to the main branch but rather tag the autofix branch as ready-to-merge or needs-review (with artifacts) based on results.
+4.  **Enforce robust guard-rails**: Protect sensitive paths (, , , , caches, lock files) and validate JSON operations.
+5.  **Enhance Frontend**: Display project selector (create/attach), commit timeline, writing artifacts, branches manager with health statuses, and a non-functional auto-merge on green toggle.
+</product_requirements>
+
+<key_technical_concepts>
+-   **Full-stack Architecture**: React frontend, FastAPI backend, MongoDB database.
+-   **Backend Core**: Python (FastAPI, Pydantic, ) orchestrating project generation.
+-   **Version Control**: Git for patching and branch management.
+-   **Laravel Stack**: PHP framework, Composer, testing tools (Pest, PHPStan, Pint).
+-   **File Operations**: Transition from Git diff/patch to direct file system manipulation for reliability.
+-   **RAG System**: Used for project context indexing.
+</key_technical_concepts>
+
+<code_architecture>
+The application follows a standard full-stack structure:
+
+
+
+**Key Files and Changes:**
+
+*   ****:
+    *   **Summary**: The main FastAPI application, handling API routes and orchestrating developer agent runs. It was the central point for calling patch application and test execution.
+    *   **Changes**: Initially modified to correctly handle boolean results from  and to fix the  error by not directly awaiting command strings. Now being refactored to conditionally initialize  based on  (defaulting to ) and integrate the new direct file writing operations. An  endpoint is being added for debugging.
+*   ****:
+    *   **Summary**: Contains various utility functions, including  and . This file was critical in the initial debugging phase for patch validation and test execution.
+    *   **Changes**: Heavily modified to include detailed logging, sanity checks for patches (header validation, hunk validation,  allowance, multi-file separation, hunk counter correction). The  function was enhanced but will eventually be replaced by direct file writing calls.
+*   ****:
+    *   **Summary**: The original developer agent responsible for generating code changes, initially as Git diffs.
+    *   **Changes**: Implicitly, the LLM prompt was reinforced to generate stricter diffs. Now, its core functionality for generating code will be migrated or replaced by .
+*   ** (NEW)**:
+    *   **Summary**: A new module for direct file system manipulation, encapsulating file creation, updates, insertions, replacements, renames, and deletions. It includes path validation (deny-list) and project-level locking.
+    *   **Changes**: Created from scratch as part of Phase 1 of the new architectural plan.
+*   ** (NEW)**:
+    *   **Summary**: Defines Pydantic models for structured JSON input/output, particularly for file operations and commit formats.
+    *   **Changes**: Created from scratch to enforce a strict contract for direct file operations and Git commits.
+*   ** (NEW)**:
+    *   **Summary**: A new developer agent designed to work with the direct file writing approach, generating JSON-formatted operations instead of Git diffs.
+    *   **Changes**: Created from scratch, including a new prompt and JSON parsing/validation logic.
+*   ****:
+    *   **Summary**: Example environment variables.
+    *   **Changes**: Updated to include  to toggle between patch and direct write modes.
+</code_architecture>
+
+<pending_tasks>
+-   **Phase 1 (Écriture Directe)**:
+    -   Complete  integration (, Git commits, RAG re-indexing).
+    -   Validate integration with specified test scenarios.
+-   **Phase 2 (Mode Attach)**:
+    -   Implement  on .
+    -   Implement  in .
+    -   Frontend: Add project selector.
+-   **Phase 3 (Auto-Heal)**:
+    -   Implement  endpoint.
+    -   Develop stack-agnostic health pipelines (lint, tests, build, smoke) for various languages.
+    -   Implement Git branching logic for  and status tagging.
+-   **Phase 4 (Frontend Avancé)**:
+    -   Develop UI for commits timeline, artifacts panel, branches manager, and auto-merge toggle.
+</pending_tasks>
+
+<current_work>
+The AI engineer is currently in **Phase 1: Infrastructure d'Écriture Directe**, specifically on **Étape 1.4: Server Integration** in .
+So far, the following files have been created/modified for this phase:
+1.  ****: A new module implementing direct file system operations (create, update, insert, search/replace, rename, delete) with path validation and project locking.
+2.  ****: A new module defining Pydantic models for the JSON contract of file operations and Git commit messages.
+3.  ****: A new developer agent that generates structured JSON operations, replacing the previous Git patch generation.
+4.  ****: Updated to include  to control the file writing strategy.
+
+In , the AI engineer has:
+*   Added necessary imports for , , and .
+*   Modified the  initialization to be conditional on , using  when  mode is active.
+*   Started adding a new  endpoint to expose the current  for debugging. The implementation of this endpoint is not yet complete in the provided trajectory.
+The goal is to transition the application from a problematic Git patch-based modification system to a more robust direct file manipulation method, laying the groundwork for more advanced features like Attach mode and Auto-heal.
+</current_work>
+
+<optional_next_step>
+Complete the implementation of the  endpoint in .
+</optional_next_step>
