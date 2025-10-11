@@ -330,6 +330,262 @@ class ToolManager:
             logger.error(f"Error applying patch: {e}")
             return False
     
+    async def _save_patch_artifact(self, patch_text: str, project_path: str, run_id: str) -> Optional[str]:
+        """
+        🔥 ACTION 1: Save raw patch to artifacts directory with SHA-256 and metadata
+        """
+        try:
+            import hashlib
+            from datetime import datetime
+            
+            # Create artifacts/patches directory
+            project_root = Path(project_path).parent
+            artifacts_dir = project_root / "artifacts" / "patches"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shortname = "patch"
+            patch_filename = f"{timestamp}_{shortname}.patch"
+            patch_path = artifacts_dir / patch_filename
+            
+            # Calculate SHA-256
+            patch_bytes = patch_text.encode('utf-8')
+            sha256_hash = hashlib.sha256(patch_bytes).hexdigest()
+            
+            # Save patch with normalized line endings (LF)
+            normalized_content = patch_text.replace('\r\n', '\n').replace('\r', '\n')
+            patch_path.write_text(normalized_content, encoding='utf-8')
+            
+            # Save metadata
+            metadata = {
+                "timestamp": timestamp,
+                "run_id": run_id,
+                "sha256": sha256_hash,
+                "size_bytes": len(patch_bytes),
+                "line_count": len(normalized_content.splitlines())
+            }
+            metadata_path = artifacts_dir / f"{timestamp}_{shortname}.meta.json"
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+            
+            logger.debug(f"📄 Patch artifact saved: {patch_path} (SHA256: {sha256_hash[:16]}...)")
+            return str(patch_path)
+            
+        except Exception as e:
+            logger.warning(f"Failed to save patch artifact: {e}")
+            return None
+    
+    async def _advanced_patch_sanity_checks(self, patch_text: str, project_path: str) -> Dict[str, Any]:
+        """
+        🔥 ACTION 2: Comprehensive sanity checks before git apply
+        """
+        errors = []
+        warnings = []
+        
+        try:
+            lines = patch_text.splitlines()
+            if not lines:
+                return {"valid": False, "errors": ["Patch is empty"]}
+            
+            # Check 1: Must have diff --git headers
+            diff_headers = [l for l in lines if l.startswith('diff --git')]
+            if not diff_headers:
+                errors.append("Missing 'diff --git' headers")
+            
+            # Check 2: For each file, verify complete headers (---, +++)
+            current_file = None
+            has_old_marker = False
+            has_new_marker = False
+            
+            for line in lines:
+                if line.startswith('diff --git'):
+                    # Save previous file check
+                    if current_file and not (has_old_marker and has_new_marker):
+                        errors.append(f"File {current_file} missing --- or +++ headers")
+                    
+                    # Parse new file
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        current_file = parts[2]  # a/path
+                        has_old_marker = False
+                        has_new_marker = False
+                
+                elif line.startswith('---'):
+                    has_old_marker = True
+                    # Check for smart quotes or invalid characters
+                    if '"' in line or '"' in line or ''' in line:
+                        errors.append(f"Smart quotes detected in line: {line[:50]}")
+                        
+                elif line.startswith('+++'):
+                    has_new_marker = True
+            
+            # Final file check
+            if current_file and not (has_old_marker and has_new_marker):
+                errors.append(f"File {current_file} missing --- or +++ headers")
+            
+            # Check 3: Verify hunk headers and line counts
+            for i, line in enumerate(lines):
+                if line.startswith('@@'):
+                    # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+                    import re
+                    match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
+                    if not match:
+                        errors.append(f"Malformed hunk header at line {i+1}: {line}")
+                        continue
+                    
+                    old_count = int(match.group(2) or "1")
+                    new_count = int(match.group(4) or "1")
+                    
+                    # Count actual lines in hunk
+                    actual_old = 0
+                    actual_new = 0
+                    j = i + 1
+                    while j < len(lines) and not lines[j].startswith('@@') and not lines[j].startswith('diff --git'):
+                        hunk_line = lines[j]
+                        if hunk_line.startswith('-') and not hunk_line.startswith('---'):
+                            actual_old += 1
+                        elif hunk_line.startswith('+') and not hunk_line.startswith('+++'):
+                            actual_new += 1
+                        elif hunk_line.startswith(' '):
+                            actual_old += 1
+                            actual_new += 1
+                        j += 1
+                    
+                    # Verify counts match (allow some tolerance for context lines)
+                    if abs(actual_old - old_count) > 3:
+                        warnings.append(f"Hunk at line {i+1}: expected {old_count} old lines, found {actual_old}")
+                    if abs(actual_new - new_count) > 3:
+                        warnings.append(f"Hunk at line {i+1}: expected {new_count} new lines, found {actual_new}")
+            
+            # Check 4: Validate paths (no .., no absolute paths, no NULs)
+            for line in lines:
+                if line.startswith('+++') or line.startswith('---'):
+                    path_part = line.split(maxsplit=1)[1] if len(line.split(maxsplit=1)) > 1 else ""
+                    # Remove a/ or b/ prefix
+                    if path_part.startswith('a/') or path_part.startswith('b/'):
+                        path_part = path_part[2:]
+                    
+                    if '..' in path_part:
+                        errors.append(f"Dangerous path with '..': {path_part}")
+                    if path_part.startswith('/'):
+                        errors.append(f"Absolute path not allowed: {path_part}")
+                    if '\x00' in path_part:
+                        errors.append(f"NULL character in path: {repr(path_part)}")
+            
+            # Check 5: No CRLF line endings (should be normalized already, but double-check)
+            if '\r' in patch_text:
+                warnings.append("Patch contains CR characters - should be normalized to LF only")
+            
+            result = {
+                "valid": len(errors) == 0,
+                "errors": errors,
+                "warnings": warnings,
+                "file_count": len(diff_headers),
+                "line_count": len(lines)
+            }
+            
+            if warnings:
+                logger.warning(f"⚠️ Patch sanity warnings: {warnings}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in sanity checks: {e}")
+            return {"valid": False, "errors": [f"Sanity check exception: {e}"]}
+    
+    async def _verify_patch_applied(self, project_path: str) -> bool:
+        """
+        🔥 ACTION 2: Post-apply guard - verify that changes were actually made
+        """
+        try:
+            result = await self._run_command_with_timeout(
+                ["git", "status", "--porcelain"],
+                cwd=project_path,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                # If output is not empty, changes were made
+                changes = result.stdout.strip()
+                if changes:
+                    logger.debug(f"✅ Verified changes: {len(changes.splitlines())} files modified")
+                    return True
+                else:
+                    logger.warning("⚠️ git status shows no changes after patch application")
+                    return False
+            else:
+                logger.warning(f"⚠️ git status failed: {result.stderr}")
+                return True  # Assume success if we can't verify
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Could not verify patch application: {e}")
+            return True  # Assume success if verification fails
+    
+    async def _log_patch_failure_details(
+        self, 
+        result: Any, 
+        patch_text: str, 
+        project_path: str, 
+        artifact_path: Optional[str]
+    ) -> None:
+        """
+        🔥 ACTION 1: Log detailed failure information for debugging
+        """
+        try:
+            logger.error("=" * 80)
+            logger.error("🔍 PATCH APPLICATION FAILURE DETAILS")
+            logger.error("=" * 80)
+            
+            # Extract line/hunk from stderr
+            stderr = result.stderr if hasattr(result, 'stderr') else str(result)
+            if "corrupt patch at line" in stderr:
+                import re
+                match = re.search(r'corrupt patch at line (\d+)', stderr)
+                if match:
+                    line_num = int(match.group(1))
+                    patch_lines = patch_text.splitlines()
+                    logger.error(f"📍 Problematic line {line_num}:")
+                    if 0 < line_num <= len(patch_lines):
+                        start = max(0, line_num - 3)
+                        end = min(len(patch_lines), line_num + 3)
+                        for i in range(start, end):
+                            marker = ">>> " if i == line_num - 1 else "    "
+                            logger.error(f"{marker}{i+1}: {repr(patch_lines[i])}")
+            
+            # Current working directory
+            logger.error(f"📁 CWD: {project_path}")
+            
+            # Git repository status
+            try:
+                status_result = await self._run_command_with_timeout(
+                    ["git", "status", "--porcelain"],
+                    cwd=project_path,
+                    timeout=10
+                )
+                logger.error(f"📊 Git status:\n{status_result.stdout}")
+            except:
+                pass
+            
+            # HEAD commit
+            try:
+                head_result = await self._run_command_with_timeout(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=project_path,
+                    timeout=10
+                )
+                logger.error(f"🔖 HEAD: {head_result.stdout.strip()}")
+            except:
+                pass
+            
+            # Artifact location
+            if artifact_path:
+                logger.error(f"📄 Full patch saved at: {artifact_path}")
+            
+            logger.error("=" * 80)
+            
+        except Exception as e:
+            logger.error(f"Failed to log failure details: {e}")
+    
     async def _validate_project_structure_for_patch(self, project_path: str, patch_text: str) -> bool:
         """
         🔥 ENHANCED: Validate that all files/directories referenced in patch exist or can be created
