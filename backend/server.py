@@ -1377,6 +1377,73 @@ async def verify_code_files_generated(code_path: Path, stack: str) -> bool:
 
 # Helper functions for the new iterative cycle
 
+async def _commit_step_changes(
+    run_id: str, 
+    step_number: int, 
+    step_title: str,
+    project_path: str,
+    files_changed: Optional[List[str]] = None
+) -> bool:
+    """
+    🔥 PHASE 1: Commit step changes to Git with atomic commit message
+    Format: feat(run:<run_id>): step <n> – <titre>
+    
+    Args:
+        run_id: Run ID
+        step_number: Step number (1-indexed)
+        step_title: Step description/title
+        project_path: Path to project code directory
+        files_changed: Optional list of files that were changed
+        
+    Returns:
+        True if commit succeeded, False otherwise
+    """
+    try:
+        # Initialize Git repo if not already initialized
+        repo_path = Path(project_path)
+        
+        # Check if it's a git repo
+        try:
+            repo = git.Repo(repo_path)
+        except git.InvalidGitRepositoryError:
+            # Initialize new repo
+            repo = git.Repo.init(repo_path)
+            logger.info(f"✅ Initialized Git repository at {repo_path}")
+        
+        # Check if there are changes to commit
+        if not repo.is_dirty(untracked_files=True):
+            logger.info(f"No changes to commit for step {step_number}")
+            return True
+        
+        # Add all changes (or specific files if provided)
+        if files_changed:
+            for file_path in files_changed:
+                try:
+                    repo.index.add([file_path])
+                except Exception as e:
+                    logger.warning(f"Could not add {file_path}: {e}")
+            # Also add any untracked files mentioned in files_changed
+            repo.index.add(repo.untracked_files)
+        else:
+            # Add all changes
+            repo.git.add(A=True)
+        
+        # Create commit with standardized message
+        commit_msg = StepCommit(
+            run_id=run_id,
+            step_number=step_number,
+            step_title=step_title
+        ).format_message()
+        
+        repo.index.commit(commit_msg)
+        logger.info(f"✅ Committed step {step_number}: {commit_msg}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to commit step changes: {e}")
+        return False
+
 async def _save_agent_conversation(run_id: str, agent_type: str, direction: str, data: Dict[str, Any]) -> None:
     """Save agent conversation for traceability and debugging."""
     try:
