@@ -1464,55 +1464,108 @@ async def _execute_step_with_agents(
                 "context": project_context.metadata
             })
             
-            # Generate patch with DeveloperAgent
-            try:
-                patch_result = await developer_agent.generate_patch(step, project_context, run)
-                
-                await _save_agent_conversation(run_id, "developer", "output", {
-                    "patch_generated": True,
-                    "attempts": patch_result.attempts,
-                    "validated": patch_result.validated,
-                    "patch_length": len(patch_result.patch_text)
-                })
-                
-            except Exception as e:
-                await state_manager.add_log(run_id, {
-                    "type": "error",
-                    "content": f"DeveloperAgent failed: {str(e)}"
-                })
-                attempt += 1
-                continue
+            # 🔥 PHASE 1: Dual-mode code generation (patch or direct operations)
+            files_changed = []
+            patch_text_for_review = ""  # For reviewer agent
             
-            # Phase 2: Apply patch
-            if patch_result.patch_text:
-                project_code_path = project_manager.get_code_path(run_id)
-                try:
-                    # 🔥 FIX: Pass run_id for artifact logging
-                    patch_success = await tool_manager.apply_patch(
-                        patch_result.patch_text, 
+            try:
+                if FILE_WRITE_MODE == "direct":
+                    # === MODE DIRECT: Generate and execute JSON operations ===
+                    operations_result = await developer_agent.generate_operations(step, project_context, run)
+                    
+                    await _save_agent_conversation(run_id, "developer", "output", {
+                        "operations_generated": True,
+                        "operations_count": len(operations_result.operations),
+                        "attempts": operations_result.attempts,
+                        "validated": operations_result.validated,
+                    })
+                    
+                    await state_manager.add_log(run_id, {
+                        "type": "info",
+                        "content": f"Generated {len(operations_result.operations)} file operations"
+                    })
+                    
+                    # Execute operations
+                    project_code_path = project_manager.get_code_path(run_id)
+                    exec_results = await execute_operations(
+                        operations_result.operations,
                         str(project_code_path),
-                        run_id=run_id
+                        run_id
                     )
-                    # 🔥 FIX: Vérifier le succès réel de l'application du patch
-                    if patch_success:
-                        await state_manager.add_log(run_id, {
-                            "type": "info",
-                            "content": "Patch applied successfully"
-                        })
-                    else:
+                    
+                    # Check for failures
+                    failed_ops = [r for r in exec_results if r.get("status") == "failed"]
+                    if failed_ops:
+                        errors = "; ".join([f"{r.get('operation_type')}: {r.get('error')}" for r in failed_ops])
                         await state_manager.add_log(run_id, {
                             "type": "error",
-                            "content": "Patch application failed - patch may be corrupted or invalid"
+                            "content": f"File operations failed: {errors}"
                         })
                         attempt += 1
                         continue
-                except Exception as e:
+                    
+                    # Extract changed files for Git commit
+                    files_changed = [r.get("path") for r in exec_results if r.get("path")]
+                    
+                    # Build pseudo-patch for reviewer (summary of operations)
+                    patch_text_for_review = "\n".join([
+                        f"{r.get('status', 'unknown').upper()}: {r.get('path', 'N/A')}"
+                        for r in exec_results
+                    ])
+                    
                     await state_manager.add_log(run_id, {
-                        "type": "error",
-                        "content": f"Failed to apply patch: {str(e)}"
+                        "type": "success",
+                        "content": f"File operations applied successfully: {len(exec_results)} operations"
                     })
-                    attempt += 1
-                    continue
+                    
+                else:
+                    # === MODE PATCH: Traditional Git patch workflow ===
+                    patch_result = await developer_agent.generate_patch(step, project_context, run)
+                    
+                    await _save_agent_conversation(run_id, "developer", "output", {
+                        "patch_generated": True,
+                        "attempts": patch_result.attempts,
+                        "validated": patch_result.validated,
+                        "patch_length": len(patch_result.patch_text)
+                    })
+                    
+                    # Apply patch
+                    if patch_result.patch_text:
+                        project_code_path = project_manager.get_code_path(run_id)
+                        try:
+                            patch_success = await tool_manager.apply_patch(
+                                patch_result.patch_text, 
+                                str(project_code_path),
+                                run_id=run_id
+                            )
+                            if patch_success:
+                                await state_manager.add_log(run_id, {
+                                    "type": "info",
+                                    "content": "Patch applied successfully"
+                                })
+                                patch_text_for_review = patch_result.patch_text
+                            else:
+                                await state_manager.add_log(run_id, {
+                                    "type": "error",
+                                    "content": "Patch application failed - patch may be corrupted or invalid"
+                                })
+                                attempt += 1
+                                continue
+                        except Exception as e:
+                            await state_manager.add_log(run_id, {
+                                "type": "error",
+                                "content": f"Failed to apply patch: {str(e)}"
+                            })
+                            attempt += 1
+                            continue
+                    
+            except Exception as e:
+                await state_manager.add_log(run_id, {
+                    "type": "error",
+                    "content": f"Code generation/application failed: {str(e)}"
+                })
+                attempt += 1
+                continue
             
             # Phase 3: Run tests
             project_code_path = project_manager.get_code_path(run_id)
