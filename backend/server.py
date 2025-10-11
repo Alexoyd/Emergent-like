@@ -1584,7 +1584,7 @@ async def _execute_step_with_agents(
             # Phase 4: ReviewerAgent evaluates results
             await _save_agent_conversation(run_id, "reviewer", "input", {
                 "step": step.__dict__,
-                "patch_text": patch_result.patch_text[:500],
+                "patch_text": patch_text_for_review[:500] if patch_text_for_review else "N/A",
                 "test_results": [{"type": tr.test_type, "status": tr.status} for tr in reviewer_test_results],
                 "attempt": attempt,
                 "previous_feedback": previous_feedback
@@ -1592,7 +1592,7 @@ async def _execute_step_with_agents(
             
             review_result = await reviewer_agent.review_step_result(
                 step=step,
-                patch_text=patch_result.patch_text,
+                patch_text=patch_text_for_review or "Direct file operations applied",
                 test_results=reviewer_test_results,
                 attempt_number=attempt,
                 previous_feedback=previous_feedback,
