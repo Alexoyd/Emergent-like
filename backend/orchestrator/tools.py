@@ -460,10 +460,15 @@ class ToolManager:
                     if abs(actual_new - new_count) > 3:
                         warnings.append(f"Hunk at line {i+1}: expected {new_count} new lines, found {actual_new}")
             
-            # Check 4: Validate paths (no .., no absolute paths, no NULs)
+            # Check 4: Validate paths (no .., no absolute paths except /dev/null, no NULs)
             for line in lines:
                 if line.startswith('+++') or line.startswith('---'):
                     path_part = line.split(maxsplit=1)[1] if len(line.split(maxsplit=1)) > 1 else ""
+                    
+                    # /dev/null is a special case for new/deleted files - ALLOWED
+                    if path_part == '/dev/null':
+                        continue
+                    
                     # Remove a/ or b/ prefix
                     if path_part.startswith('a/') or path_part.startswith('b/'):
                         path_part = path_part[2:]
