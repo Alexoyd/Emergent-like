@@ -228,9 +228,9 @@ class ToolManager:
             logger.error(f"❌ Error normalizing patch: {e}")
             return patch_text
     
-    async def apply_patch(self, patch_text: str, project_path: str) -> bool:
+    async def apply_patch(self, patch_text: str, project_path: str, run_id: Optional[str] = None) -> bool:
         """
-        Enhanced patch application with pre-validation and rollback capability
+        🔥 ENHANCED: Patch application with detailed logging, artifacts storage, and sanity checks
         """
         if not patch_text or not project_path:
             return False
@@ -238,13 +238,27 @@ class ToolManager:
         logger.info(f"Applying patch to project: {project_path}")
         
         try:
+            # 🔥 ACTION 1: Save raw patch to artifacts with SHA-256
+            patch_artifact_path = None
+            if run_id:
+                patch_artifact_path = await self._save_patch_artifact(patch_text, project_path, run_id)
+            
             # 🔥 NEW: Validate project structure before applying patch
             if not await self._validate_project_structure_for_patch(project_path, patch_text):
                 logger.error("❌ Project structure validation failed - patch cannot be applied safely")
                 return False
             
-            # Normalize patch for consistent application
+            # Normalize patch for consistent application (convert CRLF → LF)
             normalized_patch = self._normalize_patch(patch_text, project_path)
+            normalized_patch = normalized_patch.replace('\r\n', '\n').replace('\r', '\n')
+            
+            # 🔥 ACTION 2: Advanced sanity checks BEFORE git apply
+            sanity_result = await self._advanced_patch_sanity_checks(normalized_patch, project_path)
+            if not sanity_result["valid"]:
+                logger.error(f"❌ Patch sanity checks failed: {sanity_result['errors']}")
+                if patch_artifact_path:
+                    logger.error(f"📄 Failed patch saved to: {patch_artifact_path}")
+                return False
             
             # Create temporary patch file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as f:
@@ -252,6 +266,22 @@ class ToolManager:
                 patch_file = f.name
             
             try:
+                # 🔥 ACTION 1: Dry-run with --check first
+                logger.debug("🔍 Running git apply --check...")
+                check_result = await self._run_command_with_timeout(
+                    ["git", "apply", "--check", "--index", "--unsafe-paths", patch_file],
+                    cwd=project_path,
+                    timeout=30
+                )
+                
+                if check_result.returncode != 0:
+                    # 🔥 ACTION 1: Detailed failure logging
+                    await self._log_patch_failure_details(
+                        check_result, normalized_patch, project_path, patch_artifact_path
+                    )
+                    logger.error(f"❌ Patch dry-run failed: {check_result.stderr}")
+                    return False
+                
                 # Apply patch with git apply (safer than patch command)
                 result = await self._run_command_with_timeout(
                     ["git", "apply", "--verbose", patch_file],
@@ -260,8 +290,13 @@ class ToolManager:
                 )
                 
                 if result.returncode == 0:
-                    logger.info("✅ Patch applied successfully")
-                    return True
+                    # 🔥 ACTION 2: Post-apply guard - verify changes were made
+                    if await self._verify_patch_applied(project_path):
+                        logger.info("✅ Patch applied successfully and verified")
+                        return True
+                    else:
+                        logger.warning("⚠️ Patch applied but no changes detected - potential false positive")
+                        return False
                 else:
                     logger.error(f"❌ Patch application failed: {result.stderr}")
                     # Try with --3way merge
@@ -272,10 +307,17 @@ class ToolManager:
                         timeout=30
                     )
                     if result.returncode == 0:
-                        logger.info("✅ Patch applied with 3-way merge")
-                        return True
+                        if await self._verify_patch_applied(project_path):
+                            logger.info("✅ Patch applied with 3-way merge and verified")
+                            return True
+                        else:
+                            logger.warning("⚠️ 3-way merge succeeded but no changes detected")
+                            return False
                     else:
                         logger.error(f"❌ 3-way merge also failed: {result.stderr}")
+                        await self._log_patch_failure_details(
+                            result, normalized_patch, project_path, patch_artifact_path
+                        )
                         return False
             finally:
                 # Clean up temp file
