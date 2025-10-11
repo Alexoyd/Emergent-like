@@ -66,7 +66,15 @@ plan_parser = PlanParser()
 
 # Initialize agents
 planner_agent = PlannerAgent(llm_router, rag_system)
-developer_agent = DeveloperAgent(llm_router, rag_system, tool_manager)
+
+# 🔥 PHASE 1: Conditional DeveloperAgent initialization
+if FILE_WRITE_MODE == "direct":
+    developer_agent = DeveloperAgentDirect(llm_router, rag_system, tool_manager)
+    logger.info("✅ Using DeveloperAgentDirect (JSON operations)")
+else:
+    developer_agent = DeveloperAgent(llm_router, rag_system, tool_manager)
+    logger.info("✅ Using DeveloperAgent (Git patches)")
+
 reviewer_agent = ReviewerAgent(llm_router)
 
 # Create the main app without a prefix
