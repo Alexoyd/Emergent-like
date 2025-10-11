@@ -37,8 +37,18 @@ from orchestrator.plan_parser import Step as PlanStep
 from orchestrator.utils import json_utils
 from orchestrator.utils import bson_utils
 
+# 🔥 PHASE 1: Direct file writing imports
+from orchestrator.agents.developer_direct import DeveloperAgentDirect, OperationsResult
+from orchestrator.file_writer import execute_operations, FileWriterError
+from orchestrator.schemas import DeveloperOutput, StepCommit
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# 🔥 PHASE 1: File write mode configuration
+FILE_WRITE_MODE = os.getenv("FILE_WRITE_MODE", "direct").lower()  # "direct" or "patch"
+logger = logging.getLogger(__name__)
+logger.info(f"🚀 File write mode: {FILE_WRITE_MODE.upper()}")
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
