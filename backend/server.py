@@ -1968,23 +1968,20 @@ async def run_comprehensive_tests(project_path: Optional[str], stack: str) -> Li
                     details=validation_details
                 )]
             
-            laravel_tests = [
-                ("pest", "pest -q"),
-                ("phpstan", "phpstan analyse --no-progress"),
-                ("pint", "pint --test")
-            ]
+            # 🔥 FIX: Removed confusing description strings that could cause 'await on string' errors
+            laravel_tests = ["pest", "phpstan", "pint"]
             
-            for test_name, description in laravel_tests:
+            for test_name in laravel_tests:
                 try:
                     result = await tool_manager.run_test(project_path, test_name)
                     results.append(result)
-                    logging.info(f"Laravel {description}: {result.status}")
+                    logging.info(f"Laravel {test_name}: {result.status}")
                 except Exception as e:
-                    logging.warning(f"Laravel {description} failed to execute: {e}")
+                    logging.warning(f"Laravel {test_name} failed to execute: {e}")
                     results.append(TestResult(
                         test_type=test_name, 
                         status="skipped", 
-                        output=f"Test skipped - {description} not available: {str(e)}",
+                        output=f"Test skipped - {test_name} not available: {str(e)}",
                         details={"artisan_available": artisan_exists}
                     ))
                     
