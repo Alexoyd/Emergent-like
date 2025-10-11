@@ -1681,6 +1681,53 @@ async def _execute_step_with_agents(
                     "type": "success",
                     "content": f"Step {step_index + 1} accepted by reviewer"
                 })
+                
+                # 🔥 PHASE 1: Commit changes to Git (atomic commit per step)
+                project_code_path = project_manager.get_code_path(run_id)
+                commit_success = await _commit_step_changes(
+                    run_id=run_id,
+                    step_number=step_index + 1,
+                    step_title=step.description[:80],  # Limit title length
+                    project_path=str(project_code_path),
+                    files_changed=files_changed if files_changed else None
+                )
+                
+                if commit_success:
+                    await state_manager.add_log(run_id, {
+                        "type": "info",
+                        "content": f"✅ Step {step_index + 1} changes committed to Git"
+                    })
+                else:
+                    await state_manager.add_log(run_id, {
+                        "type": "warning",
+                        "content": f"⚠️ Failed to commit step {step_index + 1} changes to Git"
+                    })
+                
+                # 🔥 PHASE 1: Re-index RAG if files changed
+                if files_changed and FILE_WRITE_MODE == "direct":
+                    try:
+                        await state_manager.add_log(run_id, {
+                            "type": "info",
+                            "content": f"Re-indexing {len(files_changed)} changed files in RAG..."
+                        })
+                        
+                        # Re-index the project with RAG
+                        if hasattr(rag_system, 'index_project'):
+                            await rag_system.index_project(str(project_code_path))
+                        elif hasattr(rag_system, 'reindex'):
+                            await rag_system.reindex(str(project_code_path))
+                        
+                        await state_manager.add_log(run_id, {
+                            "type": "success",
+                            "content": "✅ RAG re-indexing completed"
+                        })
+                    except Exception as e:
+                        logger.warning(f"RAG re-indexing failed: {e}")
+                        await state_manager.add_log(run_id, {
+                            "type": "warning",
+                            "content": f"⚠️ RAG re-indexing failed: {str(e)}"
+                        })
+                
                 return True
                 
             elif review_result.decision == ReviewDecision.ESCALATE_TO_PLANNER:
