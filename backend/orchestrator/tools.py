@@ -354,6 +354,69 @@ class ToolManager:
         
         return '\n'.join(fixed_lines)
     
+    def _fix_hunk_counters(self, patch_text: str) -> str:
+        """
+        🔥 FIX: Recalculate and fix incorrect hunk counters
+        LLM often generates wrong line counts in @@ -old_start,old_count +new_start,new_count @@
+        """
+        lines = patch_text.splitlines()
+        fixed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # If this is a hunk header, recalculate counters
+            if line.startswith('@@'):
+                import re
+                match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)', line)
+                if match:
+                    old_start = int(match.group(1))
+                    old_count_orig = int(match.group(2) or "1")
+                    new_start = int(match.group(3))
+                    new_count_orig = int(match.group(4) or "1")
+                    trailing = match.group(5) or ""
+                    
+                    # Count actual lines in this hunk
+                    actual_old = 0
+                    actual_new = 0
+                    j = i + 1
+                    
+                    while j < len(lines):
+                        hunk_line = lines[j]
+                        # Stop at next hunk header or diff header
+                        if hunk_line.startswith('@@') or hunk_line.startswith('diff --git'):
+                            break
+                        # Stop at file headers (---, +++)
+                        if hunk_line.startswith('---') or hunk_line.startswith('+++'):
+                            break
+                        
+                        if hunk_line.startswith('-') and not hunk_line.startswith('---'):
+                            actual_old += 1
+                        elif hunk_line.startswith('+') and not hunk_line.startswith('+++'):
+                            actual_new += 1
+                        elif hunk_line.startswith(' '):
+                            actual_old += 1
+                            actual_new += 1
+                        
+                        j += 1
+                    
+                    # Rebuild hunk header with correct counts
+                    if actual_old != old_count_orig or actual_new != new_count_orig:
+                        fixed_header = f"@@ -{old_start},{actual_old} +{new_start},{actual_new} @@{trailing}"
+                        logger.debug(f"🔧 Auto-fix: Corrected hunk header from '{line}' to '{fixed_header}'")
+                        fixed_lines.append(fixed_header)
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+            else:
+                fixed_lines.append(line)
+            
+            i += 1
+        
+        return '\n'.join(fixed_lines)
+    
     async def _save_patch_artifact(self, patch_text: str, project_path: str, run_id: str) -> Optional[str]:
         """
         🔥 ACTION 1: Save raw patch to artifacts directory with SHA-256 and metadata
