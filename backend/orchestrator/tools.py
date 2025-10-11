@@ -413,7 +413,10 @@ class ToolManager:
                 elif line.startswith('---'):
                     has_old_marker = True
                     # Check for smart quotes or invalid characters
-                    if '"' in line or '"' in line or ''' in line:
+                    smart_quote_left = '\u201c'  # "
+                    smart_quote_right = '\u201d'  # "
+                    smart_apostrophe = '\u2019'  # '
+                    if smart_quote_left in line or smart_quote_right in line or smart_apostrophe in line:
                         errors.append(f"Smart quotes detected in line: {line[:50]}")
                         
                 elif line.startswith('+++'):
