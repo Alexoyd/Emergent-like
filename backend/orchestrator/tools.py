@@ -871,7 +871,7 @@ class ToolManager:
                 )
             
             # ✅ PHASE 1: Enhanced stack detection and validation
-            stack = await self._detect_project_stack(project_path)
+            stack = self._detect_project_stack(project_path)  # 🔥 FIX: Not async, no await needed
             logger.info(f"Detected stack: {stack} for test type: {test_type}")
             
             # 🔥 NEW: Strict Laravel validation before proceeding
