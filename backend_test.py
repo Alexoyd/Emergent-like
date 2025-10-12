@@ -2327,11 +2327,698 @@ def main_phase2():
         print(f"\n⚠️  Phase 2 Attach Mode tests failed - check implementation")
         return 1
 
+class Phase3AutoHealTester:
+    """
+    🔥 PHASE 3 AUTO-HEAL STACK-AGNOSTIQUE BACKEND TESTING
+    
+    Tests the new auto-heal functionality:
+    - POST /api/projects/{id}/auto-heal
+    - GET /api/projects/{id}/branches
+    - POST /api/projects/{id}/branches/{branch}/test
+    - GET /api/projects/{id}/branches/{branch}/artifacts
+    - POST /api/projects/{id}/branches/{branch}/close
+    
+    Test Cases:
+    - Case A: Laravel Auto-Heal
+    - Case B: Node Auto-Heal
+    - Case C: Generic Stack
+    - Case D: Protected Paths Rejection
+    - Branches Management Tests
+    - Validation Tests
+    """
+    
+    def __init__(self, base_url=None):
+        if base_url is None:
+            base_url = 'http://localhost:8001'
+        self.base_url = base_url
+        self.api_url = f"{base_url}/api"
+        self.tests_run = 0
+        self.tests_passed = 0
+        self.created_projects = []
+
+    def run_test(self, name, method, endpoint, expected_status, data=None, timeout=30, headers=None):
+        """Run a single API test with longer timeout for auto-heal operations"""
+        url = f"{self.api_url}/{endpoint}" if endpoint else f"{self.api_url}/"
+        test_headers = {'Content-Type': 'application/json'}
+        if headers:
+            test_headers.update(headers)
+
+        self.tests_run += 1
+        print(f"\n🔍 Testing {name}...")
+        print(f"   URL: {url}")
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=test_headers, timeout=timeout, params=data)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=test_headers, timeout=timeout)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=test_headers, timeout=timeout)
+
+            print(f"   Status Code: {response.status_code}")
+            
+            success = response.status_code == expected_status
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Expected {expected_status}, got {response.status_code}")
+                
+                try:
+                    response_data = response.json()
+                    print(f"   Response: {json.dumps(response_data, indent=2)[:500]}...")
+                    return True, response_data
+                except:
+                    print(f"   Response: {response.text[:300]}...")
+                    return True, {}
+            else:
+                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                print(f"   Response: {response.text[:500]}...")
+                return False, {}
+
+        except requests.exceptions.Timeout:
+            print(f"❌ Failed - Request timed out after {timeout} seconds")
+            return False, {}
+        except requests.exceptions.ConnectionError:
+            print(f"❌ Failed - Connection error (server may be down)")
+            return False, {}
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False, {}
+
+    def setup_test_project(self, project_id, stack="laravel"):
+        """Setup a test project for auto-heal testing"""
+        import os
+        import subprocess
+        
+        project_path = f"/app/projects/{project_id}/code"
+        
+        try:
+            # Create project directory
+            os.makedirs(project_path, exist_ok=True)
+            
+            # Initialize git repo
+            subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_path, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=project_path, capture_output=True)
+            
+            if stack == "laravel":
+                # Create Laravel project structure
+                composer_json = {
+                    "name": "test-laravel",
+                    "require": {
+                        "laravel/framework": "^10.0"
+                    }
+                }
+                with open(f"{project_path}/composer.json", "w") as f:
+                    json.dump(composer_json, f, indent=2)
+                
+                # Create artisan file
+                with open(f"{project_path}/artisan", "w") as f:
+                    f.write("#!/usr/bin/env php\n<?php\n// Laravel Artisan CLI\n")
+                
+            elif stack == "node":
+                # Create Node.js project structure
+                package_json = {
+                    "name": "test-node",
+                    "scripts": {
+                        "test": "jest"
+                    }
+                }
+                with open(f"{project_path}/package.json", "w") as f:
+                    json.dump(package_json, f, indent=2)
+                    
+            elif stack == "generic":
+                # Create generic project
+                with open(f"{project_path}/README.md", "w") as f:
+                    f.write("# Test Project\n")
+            
+            # Initial commit
+            subprocess.run(["git", "add", "."], cwd=project_path, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-m", f"Initial {stack} project"], cwd=project_path, capture_output=True, check=True)
+            
+            self.created_projects.append(project_id)
+            print(f"✅ Created test project: {project_id} ({stack})")
+            return True, project_path
+            
+        except Exception as e:
+            print(f"❌ Failed to setup test project: {e}")
+            return False, None
+
+    def test_endpoints_availability(self):
+        """Test that all 5 auto-heal endpoints are available"""
+        print("\n🔍 Testing Auto-Heal Endpoints Availability...")
+        
+        # Create a test project first
+        project_id = "test-endpoints-availability"
+        setup_success, _ = self.setup_test_project(project_id, "laravel")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup test project"}
+        
+        endpoints_results = {}
+        
+        # Test 1: POST /api/projects/{id}/auto-heal
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "test-endpoint.txt",
+                    "content": "Test endpoint availability"
+                }
+            ]
+        }
+        
+        heal_success, heal_response = self.run_test(
+            "POST /api/projects/{id}/auto-heal",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            200,
+            data=heal_data,
+            timeout=60
+        )
+        endpoints_results["auto_heal"] = heal_success
+        
+        # Test 2: GET /api/projects/{id}/branches
+        branches_success, branches_response = self.run_test(
+            "GET /api/projects/{id}/branches",
+            "GET",
+            f"projects/{project_id}/branches",
+            200
+        )
+        endpoints_results["branches"] = branches_success
+        
+        # Get a branch name for further tests
+        branch_name = None
+        if branches_success and "branches" in branches_response:
+            branches = branches_response["branches"]
+            if branches:
+                branch_name = branches[0].get("name")
+        
+        if branch_name:
+            # Test 3: POST /api/projects/{id}/branches/{branch}/test
+            test_success, test_response = self.run_test(
+                "POST /api/projects/{id}/branches/{branch}/test",
+                "POST",
+                f"projects/{project_id}/branches/{branch_name}/test",
+                200,
+                timeout=60
+            )
+            endpoints_results["branch_test"] = test_success
+            
+            # Test 4: GET /api/projects/{id}/branches/{branch}/artifacts
+            artifacts_success, artifacts_response = self.run_test(
+                "GET /api/projects/{id}/branches/{branch}/artifacts",
+                "GET",
+                f"projects/{project_id}/branches/{branch_name}/artifacts",
+                200
+            )
+            endpoints_results["artifacts"] = artifacts_success
+            
+            # Test 5: POST /api/projects/{id}/branches/{branch}/close
+            close_success, close_response = self.run_test(
+                "POST /api/projects/{id}/branches/{branch}/close",
+                "POST",
+                f"projects/{project_id}/branches/{branch_name}/close",
+                200
+            )
+            endpoints_results["close_branch"] = close_success
+        else:
+            print("⚠️  No branches found, skipping branch-specific endpoint tests")
+            endpoints_results["branch_test"] = False
+            endpoints_results["artifacts"] = False
+            endpoints_results["close_branch"] = False
+        
+        # Calculate success rate
+        successful_endpoints = sum(1 for success in endpoints_results.values() if success)
+        total_endpoints = len(endpoints_results)
+        
+        print(f"\n📊 Endpoints Availability Results:")
+        for endpoint, success in endpoints_results.items():
+            status = "✅" if success else "❌"
+            print(f"   {status} {endpoint}")
+        
+        print(f"   Success Rate: {successful_endpoints}/{total_endpoints} ({successful_endpoints/total_endpoints*100:.1f}%)")
+        
+        return successful_endpoints >= 3, endpoints_results
+
+    def test_case_a_laravel_auto_heal(self):
+        """Case A: Laravel Auto-Heal"""
+        print("\n🔍 Testing Case A: Laravel Auto-Heal...")
+        
+        project_id = "test-laravel-heal"
+        setup_success, project_path = self.setup_test_project(project_id, "laravel")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup Laravel project"}
+        
+        # Auto-heal request
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "routes/api.php",
+                    "content": "<?php\nRoute::get('/health', fn() => ['status' => 'ok']);"
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Laravel Auto-Heal",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            200,
+            data=heal_data,
+            timeout=120
+        )
+        
+        if success and response:
+            # Validate expected response structure
+            expected_fields = ["status", "branch_name", "operations_executed", "health_results"]
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"⚠️  Missing expected fields: {missing_fields}")
+            
+            # Check if branch was created
+            branch_name = response.get("branch_name")
+            if branch_name and branch_name.startswith("autofix/"):
+                print(f"✅ Branch created: {branch_name}")
+            else:
+                print(f"❌ Invalid branch name: {branch_name}")
+            
+            # Check operations executed
+            ops_executed = response.get("operations_executed", 0)
+            if ops_executed >= 1:
+                print(f"✅ Operations executed: {ops_executed}")
+            else:
+                print(f"❌ No operations executed")
+            
+            # Check health results
+            health_results = response.get("health_results", {})
+            if health_results:
+                print(f"✅ Health pipeline executed")
+                
+                # Check for Laravel-specific health checks
+                checks = health_results.get("checks", [])
+                laravel_checks = ["composer", "pint", "pest", "phpstan"]
+                found_checks = [check.get("name") for check in checks if check.get("name") in laravel_checks]
+                print(f"   Laravel checks found: {found_checks}")
+            
+            return True, response
+        
+        return success, response
+
+    def test_case_b_node_auto_heal(self):
+        """Case B: Node Auto-Heal"""
+        print("\n🔍 Testing Case B: Node Auto-Heal...")
+        
+        project_id = "test-node-heal"
+        setup_success, project_path = self.setup_test_project(project_id, "node")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup Node project"}
+        
+        # Auto-heal request
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "src/health.js",
+                    "content": "module.exports = { status: 'ok' };"
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Node Auto-Heal",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            200,
+            data=heal_data,
+            timeout=120
+        )
+        
+        if success and response:
+            # Check health results for Node-specific checks
+            health_results = response.get("health_results", {})
+            if health_results:
+                checks = health_results.get("checks", [])
+                node_checks = ["npm", "eslint", "test"]
+                found_checks = [check.get("name") for check in checks if check.get("name") in node_checks]
+                print(f"   Node checks found: {found_checks}")
+            
+            return True, response
+        
+        return success, response
+
+    def test_case_c_generic_auto_heal(self):
+        """Case C: Generic Stack Auto-Heal"""
+        print("\n🔍 Testing Case C: Generic Stack Auto-Heal...")
+        
+        project_id = "test-generic-heal"
+        setup_success, project_path = self.setup_test_project(project_id, "generic")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup generic project"}
+        
+        # Auto-heal request
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "health-check.txt",
+                    "content": "Generic health check file"
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Generic Auto-Heal",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            200,
+            data=heal_data,
+            timeout=120
+        )
+        
+        if success and response:
+            # Check health results for generic checks
+            health_results = response.get("health_results", {})
+            if health_results:
+                checks = health_results.get("checks", [])
+                generic_checks = ["git", "files", "structure"]
+                found_checks = [check.get("name") for check in checks if check.get("name") in generic_checks]
+                print(f"   Generic checks found: {found_checks}")
+            
+            return True, response
+        
+        return success, response
+
+    def test_case_d_protected_paths_rejection(self):
+        """Case D: Protected Paths Rejection"""
+        print("\n🔍 Testing Case D: Protected Paths Rejection...")
+        
+        project_id = "test-protected-paths"
+        setup_success, project_path = self.setup_test_project(project_id, "laravel")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup project for protected paths test"}
+        
+        # Try to modify protected path
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "update",
+                    "path": ".env",
+                    "content": "MALICIOUS=true"
+                }
+            ]
+        }
+        
+        success, response = self.run_test(
+            "Protected Paths Rejection",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            422,  # Should be rejected with 422
+            data=heal_data
+        )
+        
+        if not success:
+            # Try 400 or 500 as alternative error codes
+            success, response = self.run_test(
+                "Protected Paths Rejection (400)",
+                "POST",
+                f"projects/{project_id}/auto-heal",
+                400,
+                data=heal_data
+            )
+            
+            if not success:
+                success, response = self.run_test(
+                    "Protected Paths Rejection (500)",
+                    "POST",
+                    f"projects/{project_id}/auto-heal",
+                    500,
+                    data=heal_data
+                )
+        
+        if success:
+            # Check error message mentions protected path
+            error_message = response.get("detail", "")
+            if "protected" in error_message.lower() or ".env" in error_message:
+                print(f"✅ Proper error message: {error_message}")
+            else:
+                print(f"⚠️  Error message doesn't mention protected path: {error_message}")
+        
+        return success, response
+
+    def test_branches_management(self):
+        """Test branches management functionality"""
+        print("\n🔍 Testing Branches Management...")
+        
+        project_id = "test-branches-mgmt"
+        setup_success, project_path = self.setup_test_project(project_id, "laravel")
+        
+        if not setup_success:
+            return False, {"error": "Failed to setup project for branches test"}
+        
+        # Create an auto-heal to generate a branch
+        heal_data = {
+            "max_steps": 1,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "branch-test.txt",
+                    "content": "Testing branch management"
+                }
+            ]
+        }
+        
+        heal_success, heal_response = self.run_test(
+            "Create Auto-Heal for Branch Test",
+            "POST",
+            f"projects/{project_id}/auto-heal",
+            200,
+            data=heal_data,
+            timeout=60
+        )
+        
+        if not heal_success:
+            return False, {"error": "Failed to create auto-heal for branch test"}
+        
+        branch_name = heal_response.get("branch_name")
+        if not branch_name:
+            return False, {"error": "No branch name returned from auto-heal"}
+        
+        # Test GET branches
+        branches_success, branches_response = self.run_test(
+            "List Project Branches",
+            "GET",
+            f"projects/{project_id}/branches",
+            200
+        )
+        
+        if not branches_success:
+            return False, {"error": "Failed to list branches"}
+        
+        # Test branch artifacts
+        artifacts_success, artifacts_response = self.run_test(
+            "Get Branch Artifacts",
+            "GET",
+            f"projects/{project_id}/branches/{branch_name}/artifacts",
+            200
+        )
+        
+        # Test rerun health pipeline
+        rerun_success, rerun_response = self.run_test(
+            "Rerun Health Pipeline",
+            "POST",
+            f"projects/{project_id}/branches/{branch_name}/test",
+            200,
+            timeout=60
+        )
+        
+        results = {
+            "branches_list": branches_success,
+            "artifacts": artifacts_success,
+            "rerun_health": rerun_success,
+            "branch_name": branch_name
+        }
+        
+        successful_tests = sum(1 for success in [branches_success, artifacts_success, rerun_success] if success)
+        
+        return successful_tests >= 2, results
+
+    def test_validation_scenarios(self):
+        """Test various validation scenarios"""
+        print("\n🔍 Testing Validation Scenarios...")
+        
+        validation_results = {}
+        
+        # Test 1: Auto-heal on non-existent project
+        nonexistent_success, _ = self.run_test(
+            "Auto-heal Non-existent Project",
+            "POST",
+            "projects/nonexistent-project-12345/auto-heal",
+            404,
+            data={"max_steps": 1, "operations": []}
+        )
+        validation_results["nonexistent_project"] = nonexistent_success
+        
+        # Test 2: Auto-heal without operations (should work with warning)
+        project_id = "test-validation"
+        setup_success, _ = self.setup_test_project(project_id, "generic")
+        
+        if setup_success:
+            no_ops_success, no_ops_response = self.run_test(
+                "Auto-heal Without Operations",
+                "POST",
+                f"projects/{project_id}/auto-heal",
+                200,
+                data={"max_steps": 1}
+            )
+            validation_results["no_operations"] = no_ops_success
+        else:
+            validation_results["no_operations"] = False
+        
+        # Test 3: Invalid branch operations
+        invalid_branch_success, _ = self.run_test(
+            "Invalid Branch Test",
+            "POST",
+            f"projects/{project_id}/branches/nonexistent-branch/test",
+            404
+        )
+        validation_results["invalid_branch"] = invalid_branch_success
+        
+        # Test 4: Invalid branch artifacts
+        invalid_artifacts_success, _ = self.run_test(
+            "Invalid Branch Artifacts",
+            "GET",
+            f"projects/{project_id}/branches/nonexistent-branch/artifacts",
+            404
+        )
+        validation_results["invalid_artifacts"] = invalid_artifacts_success
+        
+        successful_validations = sum(1 for success in validation_results.values() if success)
+        total_validations = len(validation_results)
+        
+        print(f"\n📊 Validation Results:")
+        for test_name, success in validation_results.items():
+            status = "✅" if success else "❌"
+            print(f"   {status} {test_name}")
+        
+        return successful_validations >= total_validations * 0.75, validation_results
+
+    def cleanup_test_projects(self):
+        """Clean up created test projects"""
+        import shutil
+        import os
+        
+        for project_id in self.created_projects:
+            try:
+                project_path = f"/app/projects/{project_id}"
+                if os.path.exists(project_path):
+                    shutil.rmtree(project_path)
+                    print(f"🧹 Cleaned up project: {project_id}")
+            except Exception as e:
+                print(f"⚠️  Failed to cleanup project {project_id}: {e}")
+
+    def run_all_phase3_tests(self):
+        """Run all Phase 3 Auto-Heal tests"""
+        print("🔥 PHASE 3 AUTO-HEAL BACKEND TESTING")
+        print("=" * 70)
+        
+        tests = [
+            ("Endpoints Availability", self.test_endpoints_availability),
+            ("Case A: Laravel Auto-Heal", self.test_case_a_laravel_auto_heal),
+            ("Case B: Node Auto-Heal", self.test_case_b_node_auto_heal),
+            ("Case C: Generic Auto-Heal", self.test_case_c_generic_auto_heal),
+            ("Case D: Protected Paths Rejection", self.test_case_d_protected_paths_rejection),
+            ("Branches Management", self.test_branches_management),
+            ("Validation Scenarios", self.test_validation_scenarios),
+        ]
+        
+        results = {}
+        
+        for test_name, test_func in tests:
+            print(f"\n{'='*10} {test_name} {'='*10}")
+            try:
+                success, data = test_func()
+                results[test_name] = {"success": success, "data": data}
+            except Exception as e:
+                print(f"❌ Test {test_name} crashed: {str(e)}")
+                results[test_name] = {"success": False, "error": str(e)}
+        
+        # Cleanup
+        self.cleanup_test_projects()
+        
+        return results
+
+def main_phase3():
+    """Main function for Phase 3 testing"""
+    print("🚀 Starting PHASE 3 AUTO-HEAL Backend Testing")
+    print("=" * 70)
+    
+    # Run Phase 3 Auto-Heal Tests
+    phase3_tester = Phase3AutoHealTester()
+    phase3_results = phase3_tester.run_all_phase3_tests()
+    
+    # Print Phase 3 Results
+    print(f"\n{'='*70}")
+    print(f"📊 PHASE 3 AUTO-HEAL RESULTS")
+    print(f"Tests Run: {phase3_tester.tests_run}")
+    print(f"Tests Passed: {phase3_tester.tests_passed}")
+    print(f"Tests Failed: {phase3_tester.tests_run - phase3_tester.tests_passed}")
+    print(f"Success Rate: {(phase3_tester.tests_passed/phase3_tester.tests_run*100):.1f}%" if phase3_tester.tests_run > 0 else "0%")
+    
+    # Detailed results
+    print(f"\n📋 DETAILED RESULTS:")
+    for test_name, result in phase3_results.items():
+        status = "✅ PASS" if result["success"] else "❌ FAIL"
+        print(f"   {status} - {test_name}")
+        if not result["success"] and "error" in result:
+            print(f"      Error: {result['error']}")
+    
+    # Summary for main agent
+    failed_tests = [name for name, result in phase3_results.items() if not result["success"]]
+    critical_failures = []
+    
+    # Identify critical failures
+    for test_name, result in phase3_results.items():
+        if not result["success"]:
+            if "Endpoints Availability" in test_name:
+                critical_failures.append("Auto-heal endpoints not responding")
+            elif "Protected Paths" in test_name:
+                critical_failures.append("Protected paths validation failing")
+            elif "Laravel Auto-Heal" in test_name:
+                critical_failures.append("Laravel auto-heal pipeline broken")
+    
+    return {
+        "total_tests": phase3_tester.tests_run,
+        "passed_tests": phase3_tester.tests_passed,
+        "failed_tests": failed_tests,
+        "critical_failures": critical_failures,
+        "success_rate": (phase3_tester.tests_passed/phase3_tester.tests_run*100) if phase3_tester.tests_run > 0 else 0
+    }
+
 if __name__ == "__main__":
     import sys
     
-    # Check if we should run Phase 2 tests specifically
-    if len(sys.argv) > 1 and sys.argv[1] == "phase2":
-        sys.exit(main_phase2())
+    # Check which phase to run
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "phase2":
+            sys.exit(main_phase2())
+        elif sys.argv[1] == "phase3":
+            results = main_phase3()
+            if results["success_rate"] >= 70:
+                print("🎉 Phase 3 Auto-Heal tests mostly passed!")
+                sys.exit(0)
+            else:
+                print("⚠️  Phase 3 Auto-Heal tests need attention")
+                sys.exit(1)
     else:
         sys.exit(main())
