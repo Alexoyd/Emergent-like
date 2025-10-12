@@ -407,9 +407,51 @@ class FileWriter:
                 raise FileWriterError(f"Failed to delete {file_path}: {str(e)}")
 
 
+def _sort_operations_by_priority(operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Trie les opérations par priorité pour assurer l'ordre correct:
+    1. create (doit venir en premier pour que insert/update/etc puissent fonctionner)
+    2. update, insert, search_replace (opérations de modification)
+    3. rename (peut casser les références)
+    4. delete (doit venir en dernier)
+    
+    Préserve l'ordre relatif entre opérations du même type
+    """
+    priority_map = {
+        "create": 1,
+        "update": 2,
+        "insert": 2,
+        "search_replace": 2,
+        "rename": 3,
+        "delete": 4
+    }
+    
+    # Ajouter index original pour préserver l'ordre relatif
+    operations_with_index = [
+        {**op, "_original_index": i, "_priority": priority_map.get(op.get("type"), 999)}
+        for i, op in enumerate(operations)
+    ]
+    
+    # Trier par priorité, puis par index original
+    sorted_ops = sorted(operations_with_index, key=lambda x: (x["_priority"], x["_original_index"]))
+    
+    # Retirer les champs temporaires
+    for op in sorted_ops:
+        op.pop("_priority", None)
+        op.pop("_original_index", None)
+    
+    return sorted_ops
+
+
 async def execute_operations(operations: List[Dict[str, Any]], project_path: str, project_id: str) -> List[Dict[str, Any]]:
     """
     Exécute une liste d'opérations d'écriture de fichiers
+    
+    Les opérations sont automatiquement triées par priorité:
+    1. create (en premier)
+    2. update, insert, search_replace
+    3. rename
+    4. delete (en dernier)
     
     Args:
         operations: Liste d'opérations à exécuter
@@ -418,11 +460,19 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
     
     Returns:
         Liste des résultats d'exécution
+    
+    Raises:
+        FileWriterError: Si un chemin protégé est tenté (doit être propagé comme 422)
     """
     writer = FileWriter(project_path)
     results = []
     
-    for i, operation in enumerate(operations):
+    # Trier les opérations par priorité (create avant insert, etc.)
+    sorted_operations = _sort_operations_by_priority(operations)
+    
+    logger.info(f"📋 Executing {len(sorted_operations)} operations (sorted by priority)")
+    
+    for i, operation in enumerate(sorted_operations):
         op_type = operation.get("type")
         
         try:
@@ -469,7 +519,13 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
             result["operation_index"] = i
             results.append(result)
             
-        except Exception as e:
+        except FileWriterError as e:
+            # Pour les chemins protégés, on propage l'exception pour retourner 422
+            if "Protected path not writable" in str(e):
+                logger.error(f"🛡️ Protected path violation: {e}")
+                raise  # Propage l'exception pour HTTP 422
+            
+            # Pour les autres erreurs, on continue avec fail-safe
             logger.error(f"❌ Operation {i} ({op_type}) failed: {e}")
             results.append({
                 "status": "failed",
@@ -479,5 +535,15 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
                 "timestamp": datetime.now().isoformat()
             })
             # Continue avec les autres opérations (fail-safe)
+        
+        except Exception as e:
+            logger.error(f"❌ Operation {i} ({op_type}) unexpected error: {e}")
+            results.append({
+                "status": "failed",
+                "operation_index": i,
+                "operation_type": op_type,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            })
     
     return results
