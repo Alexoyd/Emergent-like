@@ -124,6 +124,10 @@ class RunCreate(BaseModel):
     max_steps: int = Field(20, ge=1, le=50, description="Maximum number of steps to execute")
     max_retries_per_step: int = Field(2, ge=0, le=5, description="Maximum retries per step")
     daily_budget_eur: float = Field(5.0, ge=0.1, le=100.0, description="Daily budget limit in EUR")
+    
+    # 🔥 PHASE 2: Attach mode
+    project_mode: Literal["create", "attach"] = Field("create", description="'create' = new project, 'attach' = existing project")
+    project_id: Optional[str] = Field(None, description="Project ID to attach (if project_mode='attach')")
 
 class Run(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
