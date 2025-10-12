@@ -81,6 +81,10 @@ else:
 
 reviewer_agent = ReviewerAgent(llm_router)
 
+# 🔥 PHASE 3: Initialize Auto-Heal
+health_pipeline_runner = HealthPipelineRunner(timeout_seconds=300)
+auto_heal_manager = AutoHealManager(health_pipeline_runner)
+
 # Create the main app without a prefix
 app = FastAPI(title="AI Agent Orchestrator", version="1.0.0")
 
