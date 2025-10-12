@@ -336,6 +336,10 @@ class LLMRouter:
             model = "gpt-4o"  # Supports better caching
             extra_params = {}
             
+            # 🔥 FIX: Force JSON response format for coding tasks
+            if task_type == "coding":
+                extra_params["response_format"] = {"type": "json_object"}
+            
             # Try to use OpenAI's native caching if supported
             if cache_used and len(conversation_history) > 0:
                 # Use message caching for longer conversations
