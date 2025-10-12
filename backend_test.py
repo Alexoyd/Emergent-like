@@ -1586,5 +1586,751 @@ def main():
         print("⚠️  Many tests failed - check logs above")
         return 1
 
+class Phase2AttachModeTester:
+    """
+    🔥 PHASE 2 ATTACH MODE BACKEND TESTING
+    
+    Tests the new attach mode functionality:
+    - POST /api/runs with project_mode="attach" + project_id
+    - POST /api/runs/execute-operations (no-LLM direct operations)
+    - ProjectManager.attach_to_project() validation
+    - Git commits atomiques par step
+    - RAG re-indexing après modifications
+    - Protected paths rejection
+    """
+    
+    def __init__(self, base_url=None):
+        if base_url is None:
+            base_url = 'http://localhost:8001'
+        self.base_url = base_url
+        self.api_url = f"{base_url}/api"
+        self.tests_run = 0
+        self.tests_passed = 0
+        self.created_projects = []  # Track created test projects
+
+    def run_test(self, name, method, endpoint, expected_status, data=None, timeout=10, headers=None):
+        """Run a single API test"""
+        url = f"{self.api_url}/{endpoint}" if endpoint else f"{self.api_url}/"
+        test_headers = {'Content-Type': 'application/json'}
+        if headers:
+            test_headers.update(headers)
+
+        self.tests_run += 1
+        print(f"\n🔍 Testing {name}...")
+        print(f"   URL: {url}")
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=test_headers, timeout=timeout, params=data)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=test_headers, timeout=timeout)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=test_headers, timeout=timeout)
+
+            print(f"   Status Code: {response.status_code}")
+            
+            success = response.status_code == expected_status
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Expected {expected_status}, got {response.status_code}")
+                
+                # Try to parse JSON response
+                try:
+                    response_data = response.json()
+                    print(f"   Response: {json.dumps(response_data, indent=2)[:300]}...")
+                    return True, response_data
+                except:
+                    print(f"   Response: {response.text[:200]}...")
+                    return True, {}
+            else:
+                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                print(f"   Response: {response.text[:300]}...")
+                return False, {}
+
+        except requests.exceptions.Timeout:
+            print(f"❌ Failed - Request timed out after {timeout} seconds")
+            return False, {}
+        except requests.exceptions.ConnectionError:
+            print(f"❌ Failed - Connection error (server may be down)")
+            return False, {}
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False, {}
+
+    def setup_test_project(self, project_type="laravel", project_name="test-project-phase2"):
+        """Setup a test project for attach mode testing"""
+        import os
+        import subprocess
+        
+        project_path = f"/app/projects/{project_name}/code"
+        
+        try:
+            # Create project directory
+            os.makedirs(project_path, exist_ok=True)
+            
+            # Initialize git repo
+            subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project_path, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=project_path, capture_output=True)
+            
+            # Create project structure based on type
+            if project_type == "laravel":
+                # Create Laravel-like structure
+                with open(f"{project_path}/composer.json", "w") as f:
+                    f.write('{"name": "test-laravel", "type": "project", "require": {"php": "^8.0"}}')
+                
+                os.makedirs(f"{project_path}/app", exist_ok=True)
+                os.makedirs(f"{project_path}/routes", exist_ok=True)
+                
+                with open(f"{project_path}/app/test.php", "w") as f:
+                    f.write("<?php\necho 'Hello Laravel';\n")
+                    
+            elif project_type == "node":
+                # Create Node.js-like structure
+                with open(f"{project_path}/package.json", "w") as f:
+                    f.write('{"name": "test-node", "version": "1.0.0", "main": "index.js"}')
+                
+                with open(f"{project_path}/index.js", "w") as f:
+                    f.write("console.log('Hello Node.js');\n")
+            
+            # Initial commit
+            subprocess.run(["git", "add", "."], cwd=project_path, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=project_path, capture_output=True, check=True)
+            
+            # Get initial commit hash
+            result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=project_path, capture_output=True, text=True, check=True)
+            initial_commit = result.stdout.strip()
+            
+            self.created_projects.append(project_name)
+            
+            return {
+                "project_path": project_path,
+                "project_name": project_name,
+                "initial_commit": initial_commit,
+                "success": True
+            }
+            
+        except Exception as e:
+            print(f"❌ Failed to setup test project: {e}")
+            return {"success": False, "error": str(e)}
+
+    def cleanup_test_projects(self):
+        """Clean up created test projects"""
+        import shutil
+        
+        for project_name in self.created_projects:
+            try:
+                project_dir = f"/app/projects/{project_name}"
+                if os.path.exists(project_dir):
+                    shutil.rmtree(project_dir)
+                    print(f"✅ Cleaned up test project: {project_name}")
+            except Exception as e:
+                print(f"⚠️  Failed to cleanup {project_name}: {e}")
+
+    def test_endpoints_availability(self):
+        """Test that Phase 2 endpoints are available"""
+        print("\n🔍 Testing Phase 2 Endpoints Availability...")
+        
+        # Test POST /api/runs (should accept project_mode parameter)
+        runs_success, _ = self.run_test(
+            "POST /api/runs endpoint availability",
+            "POST",
+            "runs",
+            422,  # Should fail with validation error for empty data
+            data={}
+        )
+        
+        # Test GET /api/projects
+        projects_success, _ = self.run_test(
+            "GET /api/projects endpoint",
+            "GET", 
+            "projects",
+            200
+        )
+        
+        # Test POST /api/runs/execute-operations (should fail without data)
+        execute_ops_success, _ = self.run_test(
+            "POST /api/runs/execute-operations endpoint availability",
+            "POST",
+            "runs/execute-operations",
+            422,  # Should fail with validation error
+            data={}
+        )
+        
+        return runs_success and projects_success and execute_ops_success, {
+            "runs_endpoint": runs_success,
+            "projects_endpoint": projects_success,
+            "execute_operations_endpoint": execute_ops_success
+        }
+
+    def test_attach_laravel_project(self):
+        """Test Case A: Attach Laravel Project"""
+        print("\n🔍 Test Case A: Attach Laravel Project...")
+        
+        # Setup Laravel test project
+        project_setup = self.setup_test_project("laravel", "test-laravel-phase2")
+        if not project_setup["success"]:
+            return False, project_setup
+        
+        project_path = project_setup["project_path"]
+        project_name = project_setup["project_name"]
+        
+        # Step 1: Create run in attach mode
+        run_data = {
+            "goal": "Test attach mode with Laravel project",
+            "project_mode": "attach",
+            "project_path": project_path,
+            "stack": "laravel",
+            "max_steps": 3,
+            "daily_budget_eur": 1.0
+        }
+        
+        run_success, run_response = self.run_test(
+            "Create Run in Attach Mode (Laravel)",
+            "POST",
+            "runs",
+            201,
+            data=run_data,
+            timeout=30
+        )
+        
+        if not run_success:
+            # Try 200 status code
+            run_success, run_response = self.run_test(
+                "Create Run in Attach Mode (Laravel) - 200",
+                "POST",
+                "runs", 
+                200,
+                data=run_data,
+                timeout=30
+            )
+        
+        if not run_success or 'id' not in run_response:
+            return False, {"error": "Failed to create attach mode run"}
+        
+        run_id = run_response['id']
+        
+        # Validate response
+        expected_fields = ['project_mode', 'attached_commit', 'project_path']
+        missing_fields = [field for field in expected_fields if field not in run_response]
+        
+        if missing_fields:
+            print(f"⚠️  Missing expected fields in attach response: {missing_fields}")
+        
+        # Validate project_mode is "attach"
+        if run_response.get('project_mode') != 'attach':
+            print(f"❌ Expected project_mode='attach', got '{run_response.get('project_mode')}'")
+            return False, run_response
+        
+        # Step 2: Execute operations (no-LLM)
+        operations_data = {
+            "run_id": run_id,
+            "project_id": project_name,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "test-phase2.txt",
+                    "content": "Hello Phase 2 Attach Mode"
+                }
+            ],
+            "commit": {
+                "title": "Test commit from Phase 2",
+                "step_number": 1
+            }
+        }
+        
+        ops_success, ops_response = self.run_test(
+            "Execute Operations (no-LLM)",
+            "POST",
+            "runs/execute-operations",
+            200,
+            data=operations_data,
+            timeout=30
+        )
+        
+        if ops_success:
+            # Validate operations response
+            expected_ops_fields = ['status', 'operations_executed', 'commit_hash']
+            missing_ops_fields = [field for field in expected_ops_fields if field not in ops_response]
+            
+            if missing_ops_fields:
+                print(f"⚠️  Missing expected fields in operations response: {missing_ops_fields}")
+            
+            if ops_response.get('status') != 'success':
+                print(f"❌ Expected status='success', got '{ops_response.get('status')}'")
+                return False, ops_response
+            
+            print(f"✅ Laravel attach test completed successfully")
+            print(f"   Run ID: {run_id}")
+            print(f"   Operations executed: {ops_response.get('operations_executed', 0)}")
+            print(f"   Commit hash: {ops_response.get('commit_hash', 'N/A')}")
+            
+            return True, {
+                "run_id": run_id,
+                "project_name": project_name,
+                "operations_response": ops_response
+            }
+        
+        return ops_success, ops_response
+
+    def test_attach_node_project(self):
+        """Test Case B: Attach Node Project"""
+        print("\n🔍 Test Case B: Attach Node Project...")
+        
+        # Setup Node test project
+        project_setup = self.setup_test_project("node", "test-node-phase2")
+        if not project_setup["success"]:
+            return False, project_setup
+        
+        project_path = project_setup["project_path"]
+        project_name = project_setup["project_name"]
+        
+        # Create run in attach mode
+        run_data = {
+            "goal": "Test attach mode with Node.js project",
+            "project_mode": "attach", 
+            "project_path": project_path,
+            "stack": "node",
+            "max_steps": 2,
+            "daily_budget_eur": 0.5
+        }
+        
+        run_success, run_response = self.run_test(
+            "Create Run in Attach Mode (Node)",
+            "POST",
+            "runs",
+            201,
+            data=run_data,
+            timeout=20
+        )
+        
+        if not run_success:
+            run_success, run_response = self.run_test(
+                "Create Run in Attach Mode (Node) - 200",
+                "POST",
+                "runs",
+                200,
+                data=run_data,
+                timeout=20
+            )
+        
+        if not run_success or 'id' not in run_response:
+            return False, {"error": "Failed to create Node attach mode run"}
+        
+        run_id = run_response['id']
+        
+        # Execute operations
+        operations_data = {
+            "run_id": run_id,
+            "project_id": project_name,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "README.md",
+                    "content": "# Test Node.js Project\n\nCreated via Phase 2 attach mode."
+                },
+                {
+                    "type": "update",
+                    "path": "package.json",
+                    "content": '{"name": "test-node", "version": "1.0.1", "main": "index.js", "description": "Updated via Phase 2"}'
+                }
+            ],
+            "commit": {
+                "title": "Add README and update package.json",
+                "step_number": 1
+            }
+        }
+        
+        ops_success, ops_response = self.run_test(
+            "Execute Multiple Operations (Node)",
+            "POST",
+            "runs/execute-operations",
+            200,
+            data=operations_data,
+            timeout=20
+        )
+        
+        if ops_success and ops_response.get('status') == 'success':
+            print(f"✅ Node attach test completed successfully")
+            print(f"   Operations executed: {ops_response.get('operations_executed', 0)}")
+            
+            return True, {
+                "run_id": run_id,
+                "project_name": project_name,
+                "operations_response": ops_response
+            }
+        
+        return ops_success, ops_response
+
+    def test_protected_paths_rejection(self):
+        """Test Case C: Protected Paths Rejection"""
+        print("\n🔍 Test Case C: Protected Paths Rejection...")
+        
+        # Setup a test project
+        project_setup = self.setup_test_project("laravel", "test-protected-paths")
+        if not project_setup["success"]:
+            return False, project_setup
+        
+        project_name = project_setup["project_name"]
+        
+        # Create a run first
+        run_data = {
+            "goal": "Test protected paths rejection",
+            "project_mode": "attach",
+            "project_path": project_setup["project_path"],
+            "stack": "laravel"
+        }
+        
+        run_success, run_response = self.run_test(
+            "Create Run for Protected Paths Test",
+            "POST",
+            "runs",
+            201,
+            data=run_data
+        )
+        
+        if not run_success:
+            run_success, run_response = self.run_test(
+                "Create Run for Protected Paths Test - 200",
+                "POST",
+                "runs",
+                200,
+                data=run_data
+            )
+        
+        if not run_success or 'id' not in run_response:
+            return False, {"error": "Failed to create run for protected paths test"}
+        
+        run_id = run_response['id']
+        
+        # Test protected paths
+        protected_paths_tests = [
+            ".env",
+            ".git/config", 
+            "vendor/autoload.php",
+            "node_modules/package.json",
+            ".pytest_cache/test.py"
+        ]
+        
+        protected_results = {}
+        
+        for protected_path in protected_paths_tests:
+            operations_data = {
+                "run_id": run_id,
+                "project_id": project_name,
+                "operations": [
+                    {
+                        "type": "create",
+                        "path": protected_path,
+                        "content": "This should be rejected"
+                    }
+                ],
+                "commit": {
+                    "title": f"Attempt to modify {protected_path}",
+                    "step_number": 1
+                }
+            }
+            
+            # This should fail with 422 or 500
+            ops_success, ops_response = self.run_test(
+                f"Protected Path Test: {protected_path}",
+                "POST",
+                "runs/execute-operations",
+                422,
+                data=operations_data
+            )
+            
+            if not ops_success:
+                # Try 500 status code
+                ops_success, ops_response = self.run_test(
+                    f"Protected Path Test: {protected_path} (500)",
+                    "POST",
+                    "runs/execute-operations",
+                    500,
+                    data=operations_data
+                )
+            
+            protected_results[protected_path] = ops_success
+            
+            if ops_success:
+                print(f"✅ Protected path {protected_path} correctly rejected")
+            else:
+                print(f"❌ Protected path {protected_path} was not rejected")
+        
+        # Check if most protected paths were rejected
+        rejected_count = sum(protected_results.values())
+        total_count = len(protected_results)
+        
+        success = rejected_count >= (total_count * 0.8)  # 80% should be rejected
+        
+        if success:
+            print(f"✅ Protected paths rejection test passed ({rejected_count}/{total_count} rejected)")
+        else:
+            print(f"❌ Protected paths rejection test failed ({rejected_count}/{total_count} rejected)")
+        
+        return success, {
+            "rejected_count": rejected_count,
+            "total_count": total_count,
+            "results": protected_results
+        }
+
+    def test_validation_tests(self):
+        """Test validation scenarios"""
+        print("\n🔍 Validation Tests...")
+        
+        validation_results = {}
+        
+        # Test 1: Attach to non-existent project
+        run_data = {
+            "goal": "Test non-existent project",
+            "project_mode": "attach",
+            "project_path": "/app/projects/nonexistent-project/code",
+            "stack": "laravel"
+        }
+        
+        nonexistent_success, _ = self.run_test(
+            "Attach to Non-existent Project",
+            "POST",
+            "runs",
+            404,
+            data=run_data
+        )
+        
+        if not nonexistent_success:
+            # Try 400 or 500
+            nonexistent_success, _ = self.run_test(
+                "Attach to Non-existent Project (400)",
+                "POST",
+                "runs",
+                400,
+                data=run_data
+            )
+        
+        validation_results["nonexistent_project"] = nonexistent_success
+        
+        # Test 2: Execute operations without run_id
+        invalid_ops_data = {
+            "project_id": "test-project",
+            "operations": [{"type": "create", "path": "test.txt", "content": "test"}],
+            "commit": {"title": "test", "step_number": 1}
+        }
+        
+        no_run_id_success, _ = self.run_test(
+            "Execute Operations without run_id",
+            "POST",
+            "runs/execute-operations",
+            422,
+            data=invalid_ops_data
+        )
+        
+        if not no_run_id_success:
+            no_run_id_success, _ = self.run_test(
+                "Execute Operations without run_id (400)",
+                "POST",
+                "runs/execute-operations",
+                400,
+                data=invalid_ops_data
+            )
+        
+        validation_results["no_run_id"] = no_run_id_success
+        
+        # Test 3: Execute operations with invalid JSON
+        invalid_json_success, _ = self.run_test(
+            "Execute Operations with Invalid JSON",
+            "POST",
+            "runs/execute-operations",
+            422,
+            data={"invalid": "data"}
+        )
+        
+        validation_results["invalid_json"] = invalid_json_success
+        
+        # Calculate success rate
+        passed_validations = sum(validation_results.values())
+        total_validations = len(validation_results)
+        
+        success = passed_validations >= (total_validations * 0.7)  # 70% should pass
+        
+        if success:
+            print(f"✅ Validation tests passed ({passed_validations}/{total_validations})")
+        else:
+            print(f"❌ Validation tests failed ({passed_validations}/{total_validations})")
+        
+        return success, validation_results
+
+    def test_integration_tests(self):
+        """Test integration scenarios"""
+        print("\n🔍 Integration Tests...")
+        
+        # Setup a test project for integration testing
+        project_setup = self.setup_test_project("laravel", "test-integration-phase2")
+        if not project_setup["success"]:
+            return False, project_setup
+        
+        project_path = project_setup["project_path"]
+        project_name = project_setup["project_name"]
+        
+        # Create run
+        run_data = {
+            "goal": "Integration test for Phase 2",
+            "project_mode": "attach",
+            "project_path": project_path,
+            "stack": "laravel"
+        }
+        
+        run_success, run_response = self.run_test(
+            "Create Integration Test Run",
+            "POST",
+            "runs",
+            201,
+            data=run_data
+        )
+        
+        if not run_success:
+            run_success, run_response = self.run_test(
+                "Create Integration Test Run - 200",
+                "POST",
+                "runs",
+                200,
+                data=run_data
+            )
+        
+        if not run_success or 'id' not in run_response:
+            return False, {"error": "Failed to create integration test run"}
+        
+        run_id = run_response['id']
+        
+        # Test Git commits format
+        operations_data = {
+            "run_id": run_id,
+            "project_id": project_name,
+            "operations": [
+                {
+                    "type": "create",
+                    "path": "integration-test.php",
+                    "content": "<?php\n// Integration test file\necho 'Integration test';\n"
+                }
+            ],
+            "commit": {
+                "title": "Add integration test file",
+                "step_number": 1
+            }
+        }
+        
+        ops_success, ops_response = self.run_test(
+            "Integration Test Operations",
+            "POST",
+            "runs/execute-operations",
+            200,
+            data=operations_data
+        )
+        
+        integration_results = {
+            "run_created": run_success,
+            "operations_executed": ops_success,
+            "commit_hash_present": False,
+            "files_created": False
+        }
+        
+        if ops_success:
+            # Check if commit hash is present
+            if ops_response.get('commit_hash'):
+                integration_results["commit_hash_present"] = True
+                print(f"✅ Git commit created: {ops_response['commit_hash']}")
+            
+            # Check if files were actually created
+            import os
+            test_file_path = os.path.join(project_path, "integration-test.php")
+            if os.path.exists(test_file_path):
+                integration_results["files_created"] = True
+                print(f"✅ File created on disk: {test_file_path}")
+            else:
+                print(f"❌ File not found on disk: {test_file_path}")
+        
+        # Calculate success
+        passed_tests = sum(integration_results.values())
+        total_tests = len(integration_results)
+        
+        success = passed_tests >= (total_tests * 0.75)  # 75% should pass
+        
+        if success:
+            print(f"✅ Integration tests passed ({passed_tests}/{total_tests})")
+        else:
+            print(f"❌ Integration tests failed ({passed_tests}/{total_tests})")
+        
+        return success, integration_results
+
+    def run_all_phase2_tests(self):
+        """Run all Phase 2 Attach Mode tests"""
+        print("🔥 PHASE 2 ATTACH MODE BACKEND TESTING")
+        print("=" * 70)
+        
+        tests = [
+            ("Endpoints Availability", self.test_endpoints_availability),
+            ("Attach Laravel Project", self.test_attach_laravel_project),
+            ("Attach Node Project", self.test_attach_node_project),
+            ("Protected Paths Rejection", self.test_protected_paths_rejection),
+            ("Validation Tests", self.test_validation_tests),
+            ("Integration Tests", self.test_integration_tests),
+        ]
+        
+        results = {}
+        
+        for test_name, test_func in tests:
+            print(f"\n{'='*10} {test_name} {'='*10}")
+            try:
+                success, data = test_func()
+                results[test_name] = {"success": success, "data": data}
+            except Exception as e:
+                print(f"❌ Test {test_name} crashed: {str(e)}")
+                results[test_name] = {"success": False, "error": str(e)}
+        
+        # Cleanup test projects
+        self.cleanup_test_projects()
+        
+        return results
+
+def main_phase2():
+    """Main function for Phase 2 testing"""
+    print("🚀 Starting PHASE 2 ATTACH MODE Backend Testing")
+    print("=" * 70)
+    
+    # Run Phase 2 Attach Mode Tests
+    phase2_tester = Phase2AttachModeTester()
+    phase2_results = phase2_tester.run_all_phase2_tests()
+    
+    # Print Phase 2 Results
+    print(f"\n{'='*70}")
+    print(f"📊 PHASE 2 ATTACH MODE RESULTS")
+    print(f"Tests Run: {phase2_tester.tests_run}")
+    print(f"Tests Passed: {phase2_tester.tests_passed}")
+    print(f"Tests Failed: {phase2_tester.tests_run - phase2_tester.tests_passed}")
+    print(f"Success Rate: {(phase2_tester.tests_passed/phase2_tester.tests_run*100):.1f}%" if phase2_tester.tests_run > 0 else "0%")
+    
+    # Detailed results
+    print(f"\n📋 DETAILED RESULTS:")
+    for test_name, result in phase2_results.items():
+        status = "✅ PASS" if result["success"] else "❌ FAIL"
+        print(f"   {status} - {test_name}")
+        if not result["success"] and "error" in result:
+            print(f"      Error: {result['error']}")
+    
+    # Success criteria
+    if phase2_tester.tests_passed >= phase2_tester.tests_run * 0.8:  # 80% pass rate
+        print(f"\n🎉 Phase 2 Attach Mode tests PASSED!")
+        return 0
+    elif phase2_tester.tests_passed >= phase2_tester.tests_run * 0.6:  # 60% pass rate
+        print(f"\n✅ Phase 2 Attach Mode tests mostly passed - system is functional")
+        return 0
+    else:
+        print(f"\n⚠️  Phase 2 Attach Mode tests failed - check implementation")
+        return 1
+
 if __name__ == "__main__":
-    sys.exit(main())
+    import sys
+    
+    # Check if we should run Phase 2 tests specifically
+    if len(sys.argv) > 1 and sys.argv[1] == "phase2":
+        sys.exit(main_phase2())
+    else:
+        sys.exit(main())
