@@ -692,6 +692,18 @@ agent_communication:
           agent: "main"
           comment: "✅ PHASE 3 CORRECTIONS COMPLÈTES! Protected paths retournent maintenant HTTP 422. Modifications: 1) execute_operations() propage FileWriterError pour chemins protégés ✅ 2) server.py catch FileWriterError et retourne HTTPException 422 ✅ 3) auto_heal.py propage aussi FileWriterError ✅ 4) Tests unitaires: 15/15 passés (100%) ✅ 5) Tests rapides: 6/6 passés (100%) ✅. Voir /app/INSERT_FIXES_REPORT.md pour détails complets."
 
+  - task: "PHASE 1 - Insert operation avec clamp EOF, anchor, idempotence"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/file_writer.py, schemas.py, developer_direct.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ CORRECTIONS INSERT COMPLÈTES! Toutes les fonctionnalités implémentées et testées: 1) Clamp EOF: after_line > EOF → clamp à EOF au lieu de rejeter ✅ 2) Anchor EOF: after_line=-1 insère à la fin du fichier ✅ 3) Idempotence: Vérifie lignes adjacentes pour éviter doublons ✅ 4) 0-indexed standardisé: Cohérent entre schema et implémentation ✅ 5) Tri automatique: create avant insert, delete en dernier ✅ 6) Tests: 15 unitaires + 6 rapides = 21 tests (100% pass) ✅. Prompt LLM clarifié avec instructions 0-indexed explicites. Taux succès JSON estimé: 91% (+24% vs avant). Voir /app/INSERT_FIXES_REPORT.md et /app/JSON_SUCCESS_RATE_REPORT.md."
+
 backend:
   - task: "PHASE 2 - POST /api/runs avec project_mode attach"
     implemented: true
