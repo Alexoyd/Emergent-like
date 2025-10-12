@@ -588,3 +588,76 @@ agent_communication:
       message: "🔍 AUDIT GLOBAL COMPLÉTÉ - 3 PROBLÈMES CRITIQUES DÉTECTÉS ET CORRIGÉS: 1) ✅ CommandResult undefined dans tools.py ligne 1108 → Classe @dataclass créée et utilisée partout (8 remplacements de type() dynamiques) 2) ✅ validate_plan défini deux fois dans server.py lignes 876 et 945 → Doublon supprimé, version complète conservée 3) ✅ Dépendances manquantes (gitpython, pydantic 2.12.0, typing-inspect) → Installées et ajoutées à requirements.txt. VÉRIFICATIONS PATTERNS: Aucun split('') trouvé ✅, Aucun ''.join() problématique ✅, Protection await sur string active ✅. LINTING: 0 erreurs critiques dans tous les fichiers (developer.py, tools.py, server.py, laravel_handler.py, base_handler.py). Backend redémarré avec succès, API opérationnelle. Documentation complète: /app/AUDIT_CORRECTIONS_PHASE_DEV.md. SYSTÈME 100% OPÉRATIONNEL - Prêt pour tests complets Laravel et autres stacks!"
     - agent: "main"
       message: "🔥 PHASE 1 DIRECT WRITE COMPLÉTÉE - RÉVOLUTION ARCHITECTURALE! Transition complète du système de patches Git vers écriture directe via JSON. 4 NOUVEAUX MODULES: 1) ✅ file_writer.py: 6 primitives (create/update/insert/search_replace/rename/delete), deny-list 19 chemins, validation stricte, locks par projet, SHA-256 hashing 2) ✅ schemas.py: Modèles Pydantic pour validation JSON (6 operations + DeveloperOutput + StepCommit) 3) ✅ developer_direct.py: Génère JSON au lieu de diffs, prompt LLM adapté, extraction robuste, max 3 tentatives 4) ✅ server.py intégration: Dual-mode (FILE_WRITE_MODE=direct/patch), endpoint /api/admin/mode, fonction _commit_step_changes() (commits atomiques Git: feat(run:<run_id>): step <n> – <titre>), RAG re-indexing après modifs. FIX: Downgrade pydantic 2.12.0→2.8.2 pour résoudre typing_inspection AttributeError. Backend RUNNING, API testée ✅. Documentation: /app/PHASE1_DIRECT_WRITE_COMPLETE.md. BÉNÉFICES: Plus de patches corrompus, traçabilité complète, sécurité renforcée. PRÊT POUR TESTS COMPLETS + PHASE 2 (Attach mode)!"
+
+backend:
+  - task: "PHASE 2 - POST /api/runs avec project_mode attach"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 2 ATTACH MODE ENDPOINT TESTÉ ET VALIDÉ! POST /api/runs accepte maintenant project_mode='attach' + project_id/project_path. Tests réussis: 1) Attach Laravel project: Run créé avec project_mode='attach', stack détecté automatiquement (php), project_path configuré ✅ 2) Attach Node project: Run créé avec project_mode='attach', stack='node', project_path configuré ✅ 3) Validation des champs: project_mode, attached_commit, project_path présents dans la réponse ✅. L'endpoint fonctionne parfaitement et permet d'attacher des projets existants sans les recréer."
+
+  - task: "PHASE 2 - POST /api/runs/execute-operations (no-LLM)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 2 EXECUTE-OPERATIONS ENDPOINT TESTÉ ET VALIDÉ! Nouveau endpoint POST /api/runs/execute-operations fonctionne parfaitement pour exécution directe sans LLM. Tests réussis: 1) Laravel: 1 opération (create test-phase2.txt) exécutée avec succès, commit Git créé (hash: ee2c62bb2c5f8a67ffbfb246232a4d10949cb937) ✅ 2) Node: 2 opérations (create README.md + update package.json) exécutées, commit Git créé (hash: 4b63e1ffb379a98a3822f1d0481c217a668501d6) ✅ 3) Réponse complète: status='success', operations_executed, commit_hash, artifacts avec files_changed ✅. Pipeline complet: validation → exécution → commit Git → RAG re-indexing fonctionne end-to-end."
+
+  - task: "PHASE 2 - ProjectManager.attach_to_project() validation"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/project_manager.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 2 PROJECT MANAGER ATTACH TESTÉ ET VALIDÉ! ProjectManager.attach_to_project() fonctionne correctement avec validation Git et détection de stack. Tests réussis: 1) Validation Git: Projets avec repos Git initialisés sont acceptés, commit initial détecté ✅ 2) Détection stack: Laravel détecté comme 'php', Node.js détecté comme 'node' ✅ 3) Structure validation: composer.json pour Laravel, package.json pour Node validés ✅ 4) Attach response: project_path, stack, initial_commit retournés correctement ✅. La méthode valide la structure Git et détecte automatiquement le stack avant d'attacher le projet."
+
+  - task: "PHASE 2 - Git commits atomiques par step"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 2 GIT COMMITS ATOMIQUES TESTÉS ET VALIDÉS! Fonction _commit_step_changes() crée des commits Git atomiques avec format standardisé. Tests réussis: 1) Format commit: feat(run:<run_id>): step <n> – <titre> respecté ✅ 2) Commits créés: Laravel (ee2c62bb2c5f8a67ffbfb246232a4d10949cb937), Node (4b63e1ffb379a98a3822f1d0481c217a668501d6), Integration (bd681ab9cd10dc23774e2cdf89058ef2627f1002) ✅ 3) Files tracking: files_changed correctement trackés dans artifacts ✅ 4) Atomicité: Chaque step génère un commit séparé avec métadonnées complètes ✅. Les commits Git sont créés de manière atomique pour chaque step avec traçabilité complète."
+
+  - task: "PHASE 2 - RAG re-indexing après modifications"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 2 RAG RE-INDEXING TESTÉ ET VALIDÉ! RAG re-indexing automatique après modifications en mode direct fonctionne. Tests réussis: 1) Trigger automatique: RAG re-indexing déclenché après execute-operations quand files_changed présents ✅ 2) Mode direct: Re-indexing actif seulement en FILE_WRITE_MODE='direct' ✅ 3) Gestion erreurs: Échecs RAG non-bloquants avec warnings appropriés ✅ 4) Performance: Re-indexing en arrière-plan sans bloquer la réponse API ✅. Le système maintient automatiquement l'index RAG à jour après chaque modification de fichier."
+
+  - task: "PHASE 2 - Protected paths deny-list enforcement"
+    implemented: true
+    working: false
+    file: "/app/backend/orchestrator/file_writer.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "🔥 PHASE 2 PROTECTED PATHS PARTIELLEMENT FONCTIONNEL! Le deny-list de 19 chemins protégés fonctionne mais avec comportement inattendu. Tests effectués: 1) Protection active: Tous les chemins protégés (.env, .git/, vendor/, node_modules/, .pytest_cache/) sont correctement rejetés ✅ 2) Messages d'erreur: Erreurs détaillées 'Protected path not writable: X (matches Y)' générées ✅ 3) PROBLÈME: API retourne status=200 avec status='failed' au lieu de HTTP 422/500 ❌ 4) Fonctionnalité: Protection effective - aucun fichier protégé n'est créé ✅. Le système protège correctement les chemins sensibles mais la réponse HTTP devrait être 422 au lieu de 200 pour les erreurs de validation."
