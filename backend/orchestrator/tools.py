@@ -1846,6 +1846,9 @@ Last error:\
             elif "pint" in command_str:
                 test_type = "pint"
             
+            # Always initialize project_repairs at the start
+            project_repairs = self.project_repair_counts.get(project_path, 0)
+            
             # Use test-type-specific counter for tests, global counter for other commands
             if test_type:
                 test_type_key = f"{project_path}:{test_type}"
@@ -1854,9 +1857,8 @@ Last error:\
                     logger.warning(f"🛑 TEST TYPE REPAIR LIMIT REACHED for {test_type} in {project_path} ({test_type_repairs}/{self.max_repairs_per_test_type})")
                     logger.warning(f"⚠️ {test_type} has had too many repair attempts. Stopping to prevent infinite loop.")
                     return False
-            else:
-                # Fallback to global limit for non-test commands
-                project_repairs = self.project_repair_counts.get(project_path, 0)
+            
+            # Always check global project repair limit
             if project_repairs >= self.max_total_repairs_per_project:
                 logger.warning(f"🛑 GLOBAL REPAIR LIMIT REACHED for project {project_path} ({project_repairs}/{self.max_total_repairs_per_project})")
                 logger.warning("⚠️ This project has had too many repair attempts. Stopping to prevent infinite loop.")
@@ -1886,14 +1888,12 @@ Last error:\
                 self.test_type_repair_counts[test_type_key] = test_type_repairs + 1
                 logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, {test_type} repairs: {test_type_repairs + 1}/{self.max_repairs_per_test_type}, session: {session_duration:.0f}s): {command_str}")
             else:
-                project_repairs = self.project_repair_counts.get(project_path, 0)
+                # For non-test commands, increment the global project repairs counter
                 self.project_repair_counts[project_path] = project_repairs + 1
                 logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
             
             self.command_repair_history[f"{project_path}:{command_type}"] = command_repairs + 1
-            
-            logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
-            
+                        
             # ===== COMPOSER/PHP REPAIRS =====
             if "composer" in command_str or "could not detect the root package" in error_lower:
                 # 🔥 NEW: Root package detection failed

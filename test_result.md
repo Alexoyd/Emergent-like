@@ -706,6 +706,18 @@ agent_communication:
           agent: "main"
           comment: "✅ CORRECTIONS INSERT COMPLÈTES! Toutes les fonctionnalités implémentées et testées: 1) Clamp EOF: after_line > EOF → clamp à EOF au lieu de rejeter ✅ 2) Anchor EOF: after_line=-1 insère à la fin du fichier ✅ 3) Idempotence: Vérifie lignes adjacentes pour éviter doublons ✅ 4) 0-indexed standardisé: Cohérent entre schema et implémentation ✅ 5) Tri automatique: create avant insert, delete en dernier ✅ 6) Tests: 15 unitaires + 6 rapides = 21 tests (100% pass) ✅. Prompt LLM clarifié avec instructions 0-indexed explicites. Taux succès JSON estimé: 91% (+24% vs avant). Voir /app/INSERT_FIXES_REPORT.md et /app/JSON_SUCCESS_RATE_REPORT.md."
 
+  - task: "CORRECTION CRITIQUE - Bug compteur de réparations project_repairs"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/tools.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "🔧 CORRECTION CRITIQUE APPLIQUÉE! Bug 'local variable project_repairs referenced before assignment' résolu. Problème: La refactorisation pour compteurs par type de test laissait project_repairs non défini dans certains chemins. Solution: 1) ✅ Initialisation anticipée de project_repairs AVANT toute condition (ligne ~1850) 2) ✅ Vérification limite globale toujours effectuée pour tous types de commandes 3) ✅ Log dupliqué supprimé (ligne ~1897) 4) ✅ typing-inspection 0.4.1→0.4.2 pour corriger AttributeError 'is_noextraitems'. IMPACT: Pest, PHPStan et Pint ont maintenant chacun 3 tentatives isolées sans se bloquer mutuellement. Limite globale: 5 réparations totales par projet. Backend redémarré avec succès ✅. API /api/ fonctionnelle ✅. Voir /app/REPAIR_COUNTER_BUG_FIX.md pour détails complets."
+
 backend:
   - task: "PHASE 2 - POST /api/runs avec project_mode attach"
     implemented: true
