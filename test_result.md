@@ -378,6 +378,78 @@ backend:
         - working: true
           agent: "main"
           comment: "📦 DÉPENDANCES MISES À JOUR: Installation de gitpython==3.1.45, pydantic==2.12.0, pydantic_core==2.41.1, typing-inspect==0.9.0. Résolution des conflits de versions. requirements.txt mis à jour. Backend démarre maintenant sans erreur 'No module named git' ou 'typing_inspection.typing_objects has no attribute is_noextraitems'. Toutes les dépendances sont synchronisées."
+
+  - task: "PHASE 1 - Module file_writer.py (écriture directe)"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/file_writer.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 1 COMPLÉTÉE: Module file_writer.py créé avec 6 primitives d'écriture (create, update, insert, search_replace, rename, delete). Implémente deny-list de 19 chemins protégés (.git/, .env*, vendor/, node_modules/, caches, locks). Validation stricte: chemins relatifs uniquement, pas de .., limite 10MB, UTF-8, SHA-256 hashing, verrouillage par projet (asyncio.Lock). Fonction execute_operations() pour exécution batch avec fail-safe."
+
+  - task: "PHASE 1 - Schemas Pydantic (validation JSON)"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/schemas.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 1 COMPLÉTÉE: schemas.py créé avec modèles Pydantic pour toutes les opérations de fichiers. 6 operations (CreateOperation, UpdateOperation, InsertOperation, SearchReplaceOperation, RenameOperation, DeleteOperation), DeveloperOutput (container), StepCommit (métadonnées Git). Validation stricte avec validators personnalisés. Union discriminated par champ 'type'."
+
+  - task: "PHASE 1 - DeveloperAgentDirect (génération JSON)"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/agents/developer_direct.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 1 COMPLÉTÉE: developer_direct.py créé pour remplacer DeveloperAgent en mode écriture directe. Génère opérations JSON au lieu de Git diffs. Prompt LLM adapté avec format JSON strict. Extraction robuste (support markdown code fences). Validation via Pydantic. Max 3 tentatives avec feedback d'erreurs. Support guidelines par stack (Laravel, React, Python, etc.)."
+
+  - task: "PHASE 1 - Intégration server.py (dual-mode)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 1 COMPLÉTÉE: server.py intégré avec support dual-mode. FILE_WRITE_MODE (direct/patch) via .env. Initialisation conditionnelle DeveloperAgentDirect vs DeveloperAgent. Endpoint GET /api/admin/mode avec deny_list. Fonction _commit_step_changes() pour commits Git atomiques (format: feat(run:<run_id>): step <n> – <titre>). Refonte _execute_step_with_agents() pour exécuter operations ou patches selon mode. RAG re-indexing après modifications en mode direct."
+
+  - task: "PHASE 1 - Configuration FILE_WRITE_MODE"
+    implemented: true
+    working: true
+    file: "/app/backend/.env"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 1 COMPLÉTÉE: Variable FILE_WRITE_MODE=direct ajoutée dans .env avec documentation. Mode 'direct' (JSON operations) par défaut, mode 'patch' (Git diffs) disponible en fallback. Configuration active au démarrage avec log explicite."
+
+  - task: "PHASE 1 - Fix Pydantic compatibility"
+    implemented: true
+    working: true
+    file: "/app/backend/requirements.txt"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "🔧 FIX CRITIQUE: Erreur 'typing_inspection.typing_objects has no attribute is_noextraitems' lors du démarrage. Cause: Pydantic 2.12.0 incompatible avec typing_inspection 0.4.1. Solution: Downgrade pydantic==2.8.2, pydantic_core==2.20.1. requirements.txt mis à jour. Backend démarre avec succès. API /api/admin/mode testée et fonctionnelle."
 frontend:
   - task: "Créer section Admin dans l'interface"
     implemented: true
