@@ -1690,7 +1690,7 @@ class ToolManager:
             logger.error(f"Error in auto-setup environment: {e}")
             return False
     
-    async def smart_command_execution(self, commands: List[List[str]], project_path: str, test_type: str) -> 'TestResult':
+    async def smart_command_execution(self, commands: List[List[str]], project_path: str, test_type: str) -> TestResult:
         """
         🔥 ENHANCED: Self-Healing Command Execution with anti-loop protection
         🔥 PHASE 2 FIX: Added validation to ensure commands are lists, not strings
