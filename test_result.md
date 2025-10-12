@@ -591,6 +591,102 @@ agent_communication:
     - agent: "testing"
       message: "🔥 PHASE 2 ATTACH MODE BACKEND TESTING COMPLÉTÉ! Tests exhaustifs effectués sur la nouvelle fonctionnalité d'attach mode. RÉSULTATS: ✅ Endpoints disponibles: POST /api/runs (project_mode), POST /api/runs/execute-operations, GET /api/projects ✅ Attach Laravel: Run créé en mode attach, opérations exécutées, commit Git (ee2c62bb2c5f8a67ffbfb246232a4d10949cb937) ✅ Attach Node: Run créé en mode attach, 2 opérations exécutées, commit Git (4b63e1ffb379a98a3822f1d0481c217a668501d6) ✅ Git commits atomiques: Format feat(run:<run_id>): step <n> – <titre> respecté ✅ RAG re-indexing: Automatique après modifications en mode direct ✅ Integration tests: Files créés sur disque, commits Git fonctionnels ❌ Protected paths: Fonctionnel mais retourne HTTP 200 au lieu de 422 (comportement inattendu) ❌ Validation: Projets inexistants retournent 500 au lieu de 404. INFRASTRUCTURE PHASE 2 SOLIDE: 5/6 fonctionnalités majeures opérationnelles. Seuls problèmes: codes de statut HTTP pour erreurs de validation."
 
+  - task: "PHASE 3 - POST /api/projects/{id}/auto-heal endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 AUTO-HEAL ENDPOINT TESTÉ ET VALIDÉ! POST /api/projects/{id}/auto-heal fonctionne parfaitement. Tests réussis: 1) Laravel auto-heal: Branch autofix/YYYYMMDD-HHMMSS créée, opérations exécutées, health pipeline Laravel lancé ✅ 2) Node auto-heal: Stack détecté, npm health checks exécutés ✅ 3) Generic auto-heal: Pipeline générique fonctionnel, status ready-to-merge ✅ 4) Response structure: branch_name, branch_commit, steps_applied, files_changed, health_status, health_results ✅. L'endpoint crée correctement les branches autofix avec commits atomiques et exécute les pipelines de santé stack-spécifiques."
+
+  - task: "PHASE 3 - GET /api/projects/{id}/branches endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 BRANCHES ENDPOINT TESTÉ ET VALIDÉ! GET /api/projects/{id}/branches retourne correctement la liste des branches autofix. Tests réussis: 1) Structure response: project_id, branches array, total count ✅ 2) Branch details: branch_name, commit, commit_message, author, committed_at, status, health_results ✅ 3) Status tagging: needs-review et ready-to-merge correctement assignés ✅ 4) Multiple branches support: Gestion de plusieurs branches autofix par projet ✅. L'endpoint liste toutes les branches autofix avec leurs métadonnées complètes."
+
+  - task: "PHASE 3 - POST /api/projects/{id}/branches/{branch}/test endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 BRANCH TEST ENDPOINT TESTÉ ET VALIDÉ! POST /api/projects/{id}/branches/{branch}/test permet de relancer les pipelines de santé. Tests réussis: 1) Rerun health pipeline: Checkout branch, détection stack, exécution checks ✅ 2) Status update: Mise à jour automatique du status (ready-to-merge/needs-review) ✅ 3) Response structure: branch_name, health_status, health_results avec détails des checks ✅ 4) Error handling: 404 pour branches inexistantes ✅. L'endpoint permet de retester les branches après modifications."
+
+  - task: "PHASE 3 - GET /api/projects/{id}/branches/{branch}/artifacts endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 ARTIFACTS ENDPOINT TESTÉ ET VALIDÉ! GET /api/projects/{id}/branches/{branch}/artifacts retourne les artefacts complets. Tests réussis: 1) Diff generation: Git diff complet entre main et branch autofix ✅ 2) Commits history: Liste des commits avec hash, message, author, date ✅ 3) Files changed: Liste des fichiers modifiés avec détails ✅ 4) Health logs: Résultats détaillés des health checks ✅. L'endpoint fournit toutes les informations nécessaires pour review des branches autofix."
+
+  - task: "PHASE 3 - POST /api/projects/{id}/branches/{branch}/close endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 CLOSE BRANCH ENDPOINT TESTÉ ET VALIDÉ! POST /api/projects/{id}/branches/{branch}/close permet de nettoyer les branches. Tests réussis: 1) Branch deletion: Suppression propre de la branche autofix ✅ 2) Cleanup: Nettoyage des fichiers de status et métadonnées ✅ 3) Response structure: status success/failed avec message descriptif ✅ 4) Safety: Impossible de supprimer main ou branches non-autofix ✅. L'endpoint permet le nettoyage sécurisé des branches autofix terminées."
+
+  - task: "PHASE 3 - AutoHealManager workflow complet"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/auto_heal.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 AUTO-HEAL MANAGER TESTÉ ET VALIDÉ! Workflow complet d'auto-heal fonctionnel. Tests réussis: 1) Branch creation: Création automatique branches autofix/YYYYMMDD-HHMMSS ✅ 2) Operations execution: Application des opérations JSON avec validation ✅ 3) Git commits: Commits atomiques avec format fix(autofix:run:<run_id>): step <n> ✅ 4) Health pipelines: Exécution pipelines Laravel/Node/Generic selon stack ✅ 5) Status tagging: Attribution automatique ready-to-merge/needs-review ✅ 6) No auto-merge: Respect de la règle JAMAIS d'auto-merge vers main ✅. Le système auto-heal est complètement opérationnel."
+
+  - task: "PHASE 3 - HealthPipelineRunner stack-agnostique"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/health_pipelines.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 3 HEALTH PIPELINE RUNNER TESTÉ ET VALIDÉ! Pipelines de santé stack-agnostiques fonctionnels. Tests réussis: 1) Laravel pipeline: composer install, pint, pest, phpstan checks ✅ 2) Node pipeline: npm ci, eslint, npm test, build checks ✅ 3) Generic pipeline: git clean, README exists, file sizes checks ✅ 4) Timeout handling: Gestion gracieuse des timeouts (300s) ✅ 5) Error resilience: Échecs individuels n'interrompent pas le pipeline ✅ 6) Status determination: Calcul correct ready-to-merge vs needs-review ✅. Les pipelines de santé couvrent tous les stacks supportés."
+
+  - task: "PHASE 3 - Protected paths validation dans auto-heal"
+    implemented: true
+    working: false
+    file: "/app/backend/orchestrator/file_writer.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "🔥 PHASE 3 PROTECTED PATHS VALIDATION PROBLÈME DÉTECTÉ! La validation des chemins protégés fonctionne mais avec comportement inattendu. Tests effectués: 1) Protection active: Tentative modification .env correctement bloquée ✅ 2) Operations skipped: Opérations sur chemins protégés ignorées ✅ 3) PROBLÈME: API retourne HTTP 200 avec steps_applied=0 au lieu de HTTP 422 ❌ 4) Logs: Aucune erreur visible dans les logs, opération silencieusement ignorée ❌. Le système protège les chemins mais devrait retourner une erreur explicite HTTP 422 'Protected path not writable' au lieu de succès silencieux."
+
 backend:
   - task: "PHASE 2 - POST /api/runs avec project_mode attach"
     implemented: true
