@@ -681,6 +681,176 @@ async def preview_project(project_id: str):
         logging.error(f"Error previewing project {project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# 🔥 PHASE 3: Auto-Heal Routes
+
+@api_router.post("/projects/{project_id}/auto-heal")
+async def start_auto_heal(project_id: str, request: AutoHealRequest):
+    """
+    🔥 PHASE 3: Start auto-heal process for a project
+    
+    Creates autofix/* branch, applies fixes, runs health pipelines,
+    and tags branch as ready-to-merge or needs-review.
+    
+    NEVER auto-merges to main.
+    """
+    try:
+        # Get project path
+        project_code_path = project_manager.get_code_path(project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        # Start auto-heal
+        logger.info(f"🔥 Starting auto-heal for project {project_id}")
+        result = await auto_heal_manager.start_auto_heal(
+            project_id=project_id,
+            project_path=str(project_code_path),
+            max_steps=request.max_steps,
+            branch_name=request.branch_name,
+            auto_merge=False,  # ALWAYS FALSE
+            operations=request.operations
+        )
+        
+        return result
+        
+    except AutoHealError as e:
+        logger.error(f"Auto-heal error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error starting auto-heal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}/branches")
+async def get_project_branches(project_id: str):
+    """
+    🔥 PHASE 3: Get all autofix branches for a project
+    
+    Returns list with statuses (ready-to-merge / needs-review)
+    """
+    try:
+        project_code_path = project_manager.get_code_path(project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        branches = await auto_heal_manager.get_branches(str(project_code_path))
+        
+        return {
+            "project_id": project_id,
+            "branches": branches,
+            "total": len(branches)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting branches: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/projects/{project_id}/branches/{branch_name:path}/test")
+async def rerun_health_pipeline(project_id: str, branch_name: str):
+    """
+    🔥 PHASE 3: Rerun health pipeline for a specific branch
+    """
+    try:
+        project_code_path = project_manager.get_code_path(project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        # Checkout branch
+        import git
+        repo = git.Repo(str(project_code_path))
+        
+        if branch_name not in [b.name for b in repo.heads]:
+            raise HTTPException(status_code=404, detail=f"Branch {branch_name} not found")
+        
+        # Save current branch
+        current_branch = repo.active_branch.name
+        
+        # Checkout target branch
+        repo.heads[branch_name].checkout()
+        
+        # Detect stack and run pipeline
+        stack = await auto_heal_manager._detect_stack(project_code_path)
+        health_results = await health_pipeline_runner.run_health_pipeline(
+            project_path=str(project_code_path),
+            stack=stack
+        )
+        
+        # Update branch tag
+        all_passed = all(
+            result.get("status") == "passed" 
+            for result in health_results.get("checks", [])
+        )
+        health_status = "ready-to-merge" if all_passed else "needs-review"
+        
+        await auto_heal_manager._tag_branch(repo, branch_name, health_status, health_results)
+        
+        # Return to original branch
+        repo.heads[current_branch].checkout()
+        
+        return {
+            "branch_name": branch_name,
+            "health_status": health_status,
+            "health_results": health_results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rerunning health pipeline: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/projects/{project_id}/branches/{branch_name:path}/artifacts")
+async def get_branch_artifacts(project_id: str, branch_name: str):
+    """
+    🔥 PHASE 3: Get artifacts for a specific autofix branch
+    
+    Returns: diffs, files_changed, logs, health_results
+    """
+    try:
+        project_code_path = project_manager.get_code_path(project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        artifacts = await auto_heal_manager.get_branch_artifacts(
+            str(project_code_path),
+            branch_name
+        )
+        
+        return artifacts
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting branch artifacts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/projects/{project_id}/branches/{branch_name:path}/close")
+async def close_branch(project_id: str, branch_name: str):
+    """
+    🔥 PHASE 3: Close/cleanup an autofix branch
+    
+    Deletes branch and status files
+    """
+    try:
+        project_code_path = project_manager.get_code_path(project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        success = await auto_heal_manager.close_branch(
+            str(project_code_path),
+            branch_name
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"Branch {branch_name} closed successfully"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to close branch")
+        
+    except Exception as e:
+        logger.error(f"Error closing branch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # GitHub Integration Routes
 
 @api_router.get("/github/oauth-url")
