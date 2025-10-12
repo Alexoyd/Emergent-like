@@ -215,34 +215,67 @@ async def preview_plan(run_data: RunCreate):
 
 @api_router.post("/runs", response_model=Run)
 async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
-    """Create a new AI agent run with project isolation"""
+    """
+    Create a new AI agent run with project isolation
+    
+    🔥 PHASE 2: Supports two modes:
+    - project_mode="create": Create new isolated project workspace
+    - project_mode="attach": Attach to existing project (no recreation)
+    """
     try:
         # Create run record
         run = Run(**run_data.dict())
         
-        # 🔥 PHASE 1 FIX: Auto-detect stack if unknown or if project_path exists
-        if run.stack == "unknown" or run.project_path:
-            if run.project_path and os.path.exists(run.project_path):
-                # Detect from existing project
-                detected_stack = tool_manager._detect_project_stack(run.project_path)
-                if detected_stack != "unknown":
-                    run.stack = detected_stack
-                    logging.info(f"🔍 Auto-detected stack '{detected_stack}' from existing project: {run.project_path}")
+        # 🔥 PHASE 2: Handle attach vs create mode
+        if run.project_mode == "attach":
+            # === MODE ATTACH: Attach to existing project ===
+            if not run.project_id and not run.project_path:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="project_id or project_path required for attach mode"
+                )
+            
+            # Attach to project
+            attach_result = await project_manager.attach_to_project(
+                project_id=run.project_id,
+                project_path=run.project_path,
+                run_id=run.id
+            )
+            
+            # Update run with attached project info
+            run.project_path = attach_result["project_path"]
+            run.stack = attach_result["stack"]
+            run.project_id = attach_result.get("project_id", run.project_id)
+            run.attached_commit = attach_result.get("initial_commit")
+            
+            logging.info(f"✅ Attached run {run.id} to project {run.project_id} at {run.project_path}")
+            
+        else:
+            # === MODE CREATE: Create new project workspace ===
+            # Auto-detect stack if unknown or if project_path exists
+            if run.stack == "unknown" or run.project_path:
+                if run.project_path and os.path.exists(run.project_path):
+                    detected_stack = tool_manager._detect_project_stack(run.project_path)
+                    if detected_stack != "unknown":
+                        run.stack = detected_stack
+                        logging.info(f"🔍 Auto-detected stack '{detected_stack}' from existing project: {run.project_path}")
+                    else:
+                        logging.warning(f"⚠️ Unable to detect stack from existing project: {run.project_path}")
                 else:
-                    logging.warning(f"⚠️ Unable to detect stack from existing project: {run.project_path}")
-                    # Keep as unknown - will be handled during project creation
-            else:
-                logging.info(f"🔍 Stack is 'unknown' - will be determined during project creation based on goal analysis")
-        
-        # Create isolated project workspace
-        project_workspace = await project_manager.create_project_workspace(
-            project_id=run.id,
-            stack=run.stack,
-            project_name=f"Run {run.id[:8]}"
-        )
-        
-        # Update run with project path
-        run.project_path = project_workspace["code_path"]
+                    logging.info(f"🔍 Stack is 'unknown' - will be determined during project creation based on goal analysis")
+            
+            # Create isolated project workspace
+            project_workspace = await project_manager.create_project_workspace(
+                project_id=run.id,
+                stack=run.stack,
+                project_name=f"Run {run.id[:8]}"
+            )
+            
+            # Update run with project path
+            run.project_path = project_workspace["code_path"]
+            run.project_id = run.id  # Use run ID as project ID for new projects
+            
+            logging.info(f"✅ Created new project workspace for run {run.id}")
         
         # Save to database
         await db.runs.insert_one(bson_utils.bson_safe(run.dict()))
@@ -251,6 +284,8 @@ async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
         background_tasks.add_task(execute_run, run.id)
         
         return run
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error creating run: {e}")
         raise HTTPException(status_code=500, detail=str(e))
