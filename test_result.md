@@ -400,11 +400,14 @@ backend:
     file: "/app/backend/orchestrator/schemas.py"
     stuck_count: 0
     priority: "critical"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: true
           agent: "main"
           comment: "✅ PHASE 1 COMPLÉTÉE: schemas.py créé avec modèles Pydantic pour toutes les opérations de fichiers. 6 operations (CreateOperation, UpdateOperation, InsertOperation, SearchReplaceOperation, RenameOperation, DeleteOperation), DeveloperOutput (container), StepCommit (métadonnées Git). Validation stricte avec validators personnalisés. Union discriminated par champ 'type'."
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 1 SCHEMAS PYDANTIC TESTÉS ET VALIDÉS! Modèles Pydantic fonctionnels pour validation JSON. 6 opérations (create, update, insert, search_replace, rename, delete) avec validation stricte: chemins relatifs obligatoires, pas de path traversal (..), validation longueur minimale. DeveloperOutput container et StepCommit pour métadonnées Git implémentés. Union discriminated par champ 'type' fonctionnelle. Validation des erreurs 422 confirmée via tests API."
 
   - task: "PHASE 1 - DeveloperAgentDirect (génération JSON)"
     implemented: true
