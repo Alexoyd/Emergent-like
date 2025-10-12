@@ -160,6 +160,104 @@ class ProjectManager:
         
         return str(project_path)
     
+    async def attach_to_project(
+        self, 
+        project_id: Optional[str] = None,
+        project_path: Optional[str] = None,
+        run_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        🔥 PHASE 2: Attach to an existing project without recreation
+        
+        Validates:
+        - Project exists
+        - Git repo is clean (no uncommitted changes)
+        - Project structure is valid
+        
+        Returns:
+        - project_path: Absolute path to code directory
+        - stack: Detected stack
+        - project_id: Project ID
+        - initial_commit: Current Git commit hash
+        """
+        import git
+        
+        try:
+            # Determine project path
+            if project_id:
+                # Look up project by ID
+                target_path = self.get_code_path(project_id)
+                if not target_path.exists():
+                    raise FileNotFoundError(f"Project {project_id} not found at {target_path}")
+            elif project_path:
+                # Use provided path
+                target_path = Path(project_path).resolve()
+                if not target_path.exists():
+                    raise FileNotFoundError(f"Project path not found: {project_path}")
+                # Extract project_id from path if possible
+                if target_path.parent.parent == self.projects_base_path:
+                    project_id = target_path.parent.name
+                else:
+                    project_id = target_path.name
+            else:
+                raise ValueError("Either project_id or project_path must be provided")
+            
+            logger.info(f"🔗 Attaching to project: {target_path}")
+            
+            # Validate Git repository
+            try:
+                repo = git.Repo(target_path)
+            except git.InvalidGitRepositoryError:
+                # Initialize Git repo if not present
+                repo = git.Repo.init(target_path)
+                logger.info(f"✅ Initialized Git repository at {target_path}")
+            
+            # Check for uncommitted changes
+            if repo.is_dirty(untracked_files=True):
+                logger.warning(f"⚠️ Project has uncommitted changes. Committing before attach...")
+                repo.git.add(A=True)
+                repo.index.commit(f"Pre-attach commit for run {run_id or 'unknown'}")
+                logger.info("✅ Committed pending changes")
+            
+            # Get current commit hash
+            try:
+                initial_commit = repo.head.commit.hexsha
+            except ValueError:
+                # No commits yet
+                initial_commit = None
+            
+            # Detect stack
+            from .tools import ToolManager
+            from .llm_router import LLMRouter
+            llm_router = LLMRouter()
+            tool_manager = ToolManager(llm_router=llm_router)
+            detected_stack = tool_manager._detect_project_stack(str(target_path))
+            
+            if detected_stack == "unknown":
+                logger.warning(f"⚠️ Unable to detect stack from {target_path}")
+            else:
+                logger.info(f"✅ Detected stack: {detected_stack}")
+            
+            # Validate project structure (basic check)
+            has_files = any(target_path.iterdir())
+            if not has_files:
+                logger.warning(f"⚠️ Project directory is empty: {target_path}")
+            
+            logger.info(f"✅ Successfully attached to project {project_id}")
+            
+            return {
+                "project_path": str(target_path),
+                "stack": detected_stack,
+                "project_id": project_id,
+                "initial_commit": initial_commit,
+                "git_clean": True,
+                "attached_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to attach to project: {e}")
+            raise
+    
     async def install_dependencies(self, project_path: str, stack: str) -> bool:
         """Backward compatible signature; delegates to stack handler."""
         code_path = Path(project_path) / "code"
