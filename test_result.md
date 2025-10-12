@@ -430,11 +430,14 @@ backend:
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "critical"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: true
           agent: "main"
           comment: "✅ PHASE 1 COMPLÉTÉE: server.py intégré avec support dual-mode. FILE_WRITE_MODE (direct/patch) via .env. Initialisation conditionnelle DeveloperAgentDirect vs DeveloperAgent. Endpoint GET /api/admin/mode avec deny_list. Fonction _commit_step_changes() pour commits Git atomiques (format: feat(run:<run_id>): step <n> – <titre>). Refonte _execute_step_with_agents() pour exécuter operations ou patches selon mode. RAG re-indexing après modifications en mode direct."
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 1 INTÉGRATION SERVER.PY TESTÉE ET VALIDÉE! Dual-mode parfaitement implémenté: FILE_WRITE_MODE=direct actif via .env. DeveloperAgentDirect initialisé correctement (confirmé par logs orchestrator.agents.developer_direct). Endpoint /api/admin/mode fonctionnel: retourne mode='direct', agent='DeveloperAgentDirect', deny_list=19 chemins. Fonction _commit_step_changes() disponible pour commits Git atomiques. API endpoints critiques opérationnels: /api/ (200), /api/admin/stats (200), /api/runs (200/201), /api/projects (200). Gestion erreurs 404/422 fonctionnelle."
 
   - task: "PHASE 1 - Configuration FILE_WRITE_MODE"
     implemented: true
