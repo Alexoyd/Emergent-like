@@ -531,9 +531,10 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 0
+  version: "2.0"
+  test_sequence: 1
   run_ui: false
+  phase: "PHASE_1_DIRECT_WRITE"
   
 test_plan:
   current_focus:
