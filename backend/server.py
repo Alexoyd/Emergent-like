@@ -1902,11 +1902,28 @@ async def _execute_step_with_agents(
                     
                     # Execute operations
                     project_code_path = project_manager.get_code_path(run_id)
-                    exec_results = await execute_operations(
-                        operations_result.operations,
-                        str(project_code_path),
-                        run_id
-                    )
+                    
+                    try:
+                        exec_results = await execute_operations(
+                            operations_result.operations,
+                            str(project_code_path),
+                            run_id
+                        )
+                    except FileWriterError as e:
+                        # Protected paths and validation errors
+                        await state_manager.add_log(run_id, {
+                            "type": "error",
+                            "content": f"File operation validation failed: {str(e)}"
+                        })
+                        # For protected paths, fail immediately (don't retry)
+                        if "Protected path not writable" in str(e):
+                            await state_manager.update_run(run_id, {
+                                "status": "failed",
+                                "error": f"Protected path violation: {str(e)}"
+                            })
+                            return
+                        attempt += 1
+                        continue
                     
                     # Check for failures
                     failed_ops = [r for r in exec_results if r.get("status") == "failed"]
