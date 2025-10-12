@@ -553,9 +553,9 @@ metadata:
   
 test_plan:
   current_focus:
-    - "PHASE 2 - Protected paths deny-list enforcement"
+    - "PHASE 3 - Protected paths validation dans auto-heal"
   stuck_tasks: 
-    - "PHASE 2 - Protected paths deny-list enforcement"
+    - "PHASE 3 - Protected paths validation dans auto-heal"
   test_all: false
   test_priority: "high_first"
 
