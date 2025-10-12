@@ -193,7 +193,7 @@ class DeveloperAgentDirect:
             "    {\n"
             '      "type": "insert",\n'
             '      "path": "relative/path/to/file.ext",\n'
-            '      "after_line": 10,\n'
+            '      "after_line": 10,  // 0-indexed: 0=start, -1=EOF\n'
             '      "content": "text to insert"\n'
             "    },\n"
             "    {\n"
