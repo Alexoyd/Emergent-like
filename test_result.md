@@ -445,11 +445,14 @@ backend:
     file: "/app/backend/.env"
     stuck_count: 0
     priority: "critical"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: true
           agent: "main"
           comment: "✅ PHASE 1 COMPLÉTÉE: Variable FILE_WRITE_MODE=direct ajoutée dans .env avec documentation. Mode 'direct' (JSON operations) par défaut, mode 'patch' (Git diffs) disponible en fallback. Configuration active au démarrage avec log explicite."
+        - working: true
+          agent: "testing"
+          comment: "🔥 PHASE 1 CONFIGURATION FILE_WRITE_MODE TESTÉE ET VALIDÉE! Variable FILE_WRITE_MODE=direct correctement configurée dans .env. Configuration active confirmée via /api/admin/mode: file_write_mode='direct', description='direct = JSON operations, patch = Git diffs'. Mode direct opérationnel avec DeveloperAgentDirect initialisé. DEVELOPMENT_MODE=true actif permettant tests sans vraies API keys LLM. Toutes les variables d'environnement critiques présentes et fonctionnelles."
 
   - task: "PHASE 1 - Fix Pydantic compatibility"
     implemented: true
