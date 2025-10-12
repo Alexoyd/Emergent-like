@@ -1991,7 +1991,7 @@ Last error:\
             # Only use LLM repair for complex/unknown issues on last attempt
             if self.repair_agent and current_attempts == self.max_repair_attempts - 1:
                 logger.info("🤖 Using LLM-powered repair as last resort for complex issue...")
-                stack = await self._detect_project_stack(project_path)
+                stack = self._detect_project_stack(project_path)  # 🔥 FIX: Not async, no await needed
                 repair_result = await self.repair_agent.analyze_and_repair(
                     project_path, stack, error_output, command_str
                 )
