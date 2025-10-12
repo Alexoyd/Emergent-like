@@ -239,19 +239,33 @@ class FileWriter:
                 # Idempotence: Vérifier si le contenu à insérer existe déjà à cette position
                 # Pour éviter les insertions dupliquées
                 normalized_content = content if content.endswith('\n') else content + '\n'
+                normalized_stripped = normalized_content.strip()
                 
-                # Vérifier la ligne suivante (si elle existe) pour éviter les doublons
-                if after_line < len(lines):
-                    next_line = lines[after_line] if after_line < len(lines) else ""
-                    if next_line.strip() == normalized_content.strip():
-                        logger.info(f"⚠️ Idempotence: Content already exists at line {after_line}, skipping insert")
-                        return {
-                            "status": "skipped",
-                            "path": file_path,
-                            "after_line": after_line,
-                            "reason": "content_already_exists",
-                            "timestamp": datetime.now().isoformat()
-                        }
+                # Vérifier les lignes adjacentes (avant et après la position d'insertion)
+                # pour détecter si le contenu existe déjà
+                skip_insert = False
+                
+                # Vérifier ligne à la position d'insertion (sera décalée par l'insert)
+                if after_line < len(lines) and lines[after_line].strip() == normalized_stripped:
+                    skip_insert = True
+                
+                # Vérifier ligne précédente (si elle existe)
+                if not skip_insert and after_line > 0 and lines[after_line - 1].strip() == normalized_stripped:
+                    skip_insert = True
+                
+                # Vérifier ligne suivante (si elle existe)
+                if not skip_insert and after_line + 1 < len(lines) and lines[after_line + 1].strip() == normalized_stripped:
+                    skip_insert = True
+                
+                if skip_insert:
+                    logger.info(f"⚠️ Idempotence: Content already exists near line {after_line}, skipping insert")
+                    return {
+                        "status": "skipped",
+                        "path": file_path,
+                        "after_line": after_line,
+                        "reason": "content_already_exists",
+                        "timestamp": datetime.now().isoformat()
+                    }
                 
                 # Insérer contenu après la ligne spécifiée
                 lines.insert(after_line, normalized_content)
