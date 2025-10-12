@@ -144,6 +144,11 @@ class Run(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     logs: List[Dict[str, Any]] = []
+    
+    # 🔥 PHASE 2: Attach mode
+    project_mode: str = "create"
+    project_id: Optional[str] = None
+    attached_commit: Optional[str] = None  # Initial commit hash when attached
 
 class Step(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
