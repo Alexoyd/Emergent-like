@@ -1461,10 +1461,33 @@ class EmergentSystemTester:
         return runs_success, {"runs_count": len(runs)}
 
 def main():
-    print("🚀 Starting Emergent-like System Comprehensive Tests")
+    print("🚀 Starting PHASE 1 DIRECT WRITE Backend Testing")
     print("=" * 70)
     
-    tester = EmergentSystemTester()
+    # Run Phase 1 Direct Write Tests
+    phase1_tester = Phase1DirectWriteTester()
+    phase1_results = phase1_tester.run_all_phase1_tests()
+    
+    # Print Phase 1 Results
+    print(f"\n{'='*70}")
+    print(f"📊 PHASE 1 DIRECT WRITE RESULTS")
+    print(f"Tests Run: {phase1_tester.tests_run}")
+    print(f"Tests Passed: {phase1_tester.tests_passed}")
+    print(f"Tests Failed: {phase1_tester.tests_run - phase1_tester.tests_passed}")
+    print(f"Success Rate: {(phase1_tester.tests_passed/phase1_tester.tests_run*100):.1f}%" if phase1_tester.tests_run > 0 else "0%")
+    
+    # Detailed results
+    print(f"\n📋 DETAILED RESULTS:")
+    for test_name, result in phase1_results.items():
+        status = "✅ PASS" if result["success"] else "❌ FAIL"
+        print(f"   {status} - {test_name}")
+        if not result["success"] and "error" in result:
+            print(f"      Error: {result['error']}")
+    
+    # Run comprehensive tests if Phase 1 passes
+    if phase1_tester.tests_passed >= phase1_tester.tests_run * 0.8:  # 80% pass rate
+        print(f"\n🎉 Phase 1 tests mostly passed! Running comprehensive tests...")
+        tester = EmergentSystemTester()
     
     # Core functionality tests
     core_tests = [
