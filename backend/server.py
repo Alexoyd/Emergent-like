@@ -265,13 +265,14 @@ async def execute_operations_endpoint(request: ExecuteOperationsRequest):
         # Check for failures
         failed_ops = [r for r in exec_results if r.get("status") == "failed"]
         if failed_ops:
-            errors = "; ".join([f"{r.get('operation_type')}: {r.get('error')}" for r in failed_ops])
-            return {
-                "status": "failed",
-                "operations_executed": len(exec_results) - len(failed_ops),
-                "errors": errors,
-                "results": exec_results
-            }
+            errors = "; ".join([f"{r.get('operation_type', 'unknown')}: {r.get('error', 'unknown')}" for r in failed_ops])
+            
+            # 🔥 PHASE 2 FIX: Return HTTP 422 for validation failures (e.g., protected paths)
+            # Check if errors are validation-related
+            if any("Protected path" in r.get("error", "") for r in failed_ops):
+                raise HTTPException(status_code=422, detail=f"Validation failed: {errors}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Operation failed: {errors}")
         
         # Extract changed files
         files_changed = [r.get("path") for r in exec_results if r.get("path")]
