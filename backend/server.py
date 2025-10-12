@@ -271,23 +271,24 @@ async def execute_operations_endpoint(request: ExecuteOperationsRequest):
         # Execute operations
         logger.info(f"🔥 Executing {len(request.operations)} operations for run {request.run_id}")
         
-        exec_results = await execute_operations(
-            request.operations,
-            str(project_code_path),
-            request.project_id
-        )
+        try:
+            exec_results = await execute_operations(
+                request.operations,
+                str(project_code_path),
+                request.project_id
+            )
+        except FileWriterError as e:
+            # Protected paths and validation errors propagated as 422
+            if "Protected path not writable" in str(e):
+                raise HTTPException(status_code=422, detail=f"Protected path violation: {str(e)}")
+            else:
+                raise HTTPException(status_code=422, detail=f"Validation error: {str(e)}")
         
         # Check for failures
         failed_ops = [r for r in exec_results if r.get("status") == "failed"]
         if failed_ops:
             errors = "; ".join([f"{r.get('operation_type', 'unknown')}: {r.get('error', 'unknown')}" for r in failed_ops])
-            
-            # 🔥 PHASE 2 FIX: Return HTTP 422 for validation failures (e.g., protected paths)
-            # Check if errors are validation-related
-            if any("Protected path" in r.get("error", "") for r in failed_ops):
-                raise HTTPException(status_code=422, detail=f"Validation failed: {errors}")
-            else:
-                raise HTTPException(status_code=500, detail=f"Operation failed: {errors}")
+            raise HTTPException(status_code=500, detail=f"Operation failed: {errors}")
         
         # Extract changed files
         files_changed = [r.get("path") for r in exec_results if r.get("path")]
