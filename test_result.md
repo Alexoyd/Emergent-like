@@ -538,7 +538,9 @@ metadata:
   
 test_plan:
   current_focus:
-    - "Système d'orchestration d'agents complet"
+    - "PHASE 1 - Module file_writer.py (écriture directe)"
+    - "PHASE 1 - DeveloperAgentDirect (génération JSON)"
+    - "PHASE 1 - Intégration server.py (dual-mode)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
