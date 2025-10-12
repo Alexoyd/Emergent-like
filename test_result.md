@@ -553,12 +553,11 @@ metadata:
   
 test_plan:
   current_focus:
-    - "PHASE 1 - Module file_writer.py (écriture directe)"
     - "PHASE 1 - DeveloperAgentDirect (génération JSON)"
-    - "PHASE 1 - Intégration server.py (dual-mode)"
-  stuck_tasks: []
+  stuck_tasks: 
+    - "PHASE 1 - DeveloperAgentDirect (génération JSON)"
   test_all: false
-  test_priority: "high_first"
+  test_priority: "stuck_first"
 
 agent_communication:
     - agent: "main"
