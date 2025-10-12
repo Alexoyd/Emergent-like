@@ -54,7 +54,7 @@ class InsertOperation(BaseModel):
     """Insérer du texte après une ligne spécifique"""
     type: Literal["insert"] = "insert"
     path: str = Field(..., description="Chemin relatif du fichier")
-    after_line: int = Field(..., ge=0, description="Numéro de ligne après laquelle insérer (0-indexed)")
+    after_line: int = Field(..., ge=-1, description="Numéro de ligne après laquelle insérer (0-indexed). 0=début, N=après ligne N, -1=EOF")
     content: str = Field(..., description="Contenu à insérer")
     
     @validator('path')
