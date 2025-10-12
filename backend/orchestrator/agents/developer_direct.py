@@ -273,43 +273,96 @@ class DeveloperAgentDirect:
     
     def _extract_and_validate_json(self, text: str) -> List[Dict[str, Any]]:
         """
-        Extrait et valide le JSON depuis la réponse du LLM
+        🔥 ENHANCED: Extrait et valide le JSON depuis la réponse du LLM
+        Gère divers formats de réponse (markdown, texte explicatif, etc.)
         """
         if not text:
             return []
         
-        # Try to find JSON in the response
+        original_text = text
         text = text.strip()
         
-        # Remove markdown code fences if present
+        # 1. Remove markdown code fences (multiple variants)
         if text.startswith("```json"):
             text = text[7:]
-        if text.startswith("```"):
+        elif text.startswith("```JSON"):
+            text = text[7:]
+        elif text.startswith("```"):
             text = text[3:]
+        
         if text.endswith("```"):
             text = text[:-3]
+        
         text = text.strip()
         
-        # Try to parse JSON
+        # 2. Remove common text prefixes
+        common_prefixes = [
+            "Here is the JSON:",
+            "Here's the JSON:",
+            "The JSON output is:",
+            "JSON:",
+            "Response:",
+            "Output:",
+        ]
+        for prefix in common_prefixes:
+            if text.startswith(prefix):
+                text = text[len(prefix):].strip()
+        
+        # 3. Try to parse JSON directly first
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
-            # Try to extract JSON from text
+            # 4. Try to extract JSON from text by finding first { and last }
             start = text.find("{")
             end = text.rfind("}")
+            
             if start != -1 and end != -1 and start < end:
+                json_candidate = text[start:end+1]
                 try:
-                    data = json.loads(text[start:end+1])
-                except:
-                    raise ValueError(f"Could not parse JSON: {e}")
+                    data = json.loads(json_candidate)
+                    self.log.info(f"✅ Extracted JSON from position {start} to {end}")
+                except json.JSONDecodeError as e2:
+                    # 5. Last resort: try to find {"operations": pattern
+                    ops_start = text.find('{"operations":')
+                    if ops_start == -1:
+                        ops_start = text.find("{'operations':")
+                    
+                    if ops_start != -1:
+                        # Find matching closing brace
+                        bracket_count = 0
+                        for i in range(ops_start, len(text)):
+                            if text[i] == '{':
+                                bracket_count += 1
+                            elif text[i] == '}':
+                                bracket_count -= 1
+                                if bracket_count == 0:
+                                    json_candidate = text[ops_start:i+1]
+                                    try:
+                                        data = json.loads(json_candidate)
+                                        self.log.info(f"✅ Extracted JSON using bracket counting")
+                                        break
+                                    except:
+                                        pass
+                        else:
+                            self.log.error(f"❌ JSON extraction failed. Original text length: {len(original_text)}")
+                            self.log.error(f"First 200 chars: {original_text[:200]}")
+                            raise ValueError(f"Could not parse JSON: {e}")
+                    else:
+                        self.log.error(f"❌ No JSON structure found in response")
+                        self.log.error(f"First 200 chars: {original_text[:200]}")
+                        raise ValueError(f"No valid JSON found in response: {e}")
             else:
+                self.log.error(f"❌ No JSON braces found in response")
                 raise ValueError(f"No valid JSON found in response: {e}")
         
-        # Validate with Pydantic
+        # 6. Validate with Pydantic
         try:
             validated = DeveloperOutput(**data)
             # Convert Pydantic models to dicts
             operations = [op.dict() for op in validated.operations]
+            self.log.info(f"✅ Validated {len(operations)} operations")
             return operations
         except ValidationError as e:
+            self.log.error(f"❌ JSON validation failed: {e}")
+            self.log.error(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
             raise ValueError(f"JSON validation failed: {e}")
