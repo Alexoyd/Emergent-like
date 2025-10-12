@@ -42,6 +42,10 @@ from orchestrator.agents.developer_direct import DeveloperAgentDirect, Operation
 from orchestrator.file_writer import execute_operations, FileWriterError
 from orchestrator.schemas import DeveloperOutput, StepCommit
 
+# 🔥 PHASE 3: Auto-Heal imports
+from orchestrator.auto_heal import AutoHealManager, AutoHealError
+from orchestrator.health_pipelines import HealthPipelineRunner
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
