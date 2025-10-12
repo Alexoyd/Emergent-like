@@ -130,6 +130,9 @@ class ToolManager:
         # 🔥 ENHANCED: Global repair counter per project to prevent infinite loops
         self.project_repair_counts = {}  # track total repairs per project
         self.max_total_repairs_per_project = 5  # Absolute limit
+        # 🔥 NEW: Repair counter per test type to allow fresh repairs per test
+        self.test_type_repair_counts = {}  # track repairs per project+test_type (e.g. "path:phpstan" => 3)
+        self.max_repairs_per_test_type = 3  # Max repairs per test type (pest, phpstan, pint)
         # 🔥 NEW: Repair session tracking to prevent cross-session loops
         self.repair_session_start = {}  # track when repair sessions started
         self.max_repair_session_duration = 1800  # 30 minutes max per session
@@ -1833,8 +1836,27 @@ Last error:\
                 logger.warning("⚠️ Repair session has been running too long. Stopping to prevent infinite loop.")
                 return False
             
-            # 🔥 NEW: Check global project repair limit first
-            project_repairs = self.project_repair_counts.get(project_path, 0)
+            # 🔥 ENHANCED: Check test-type-specific repair limit for PHPStan/Pest/Pint
+            # Extract test type from command
+            test_type = None
+            if "phpstan" in command_str:
+                test_type = "phpstan"
+            elif "pest" in command_str or "artisan test" in command_str:
+                test_type = "pest"
+            elif "pint" in command_str:
+                test_type = "pint"
+            
+            # Use test-type-specific counter for tests, global counter for other commands
+            if test_type:
+                test_type_key = f"{project_path}:{test_type}"
+                test_type_repairs = self.test_type_repair_counts.get(test_type_key, 0)
+                if test_type_repairs >= self.max_repairs_per_test_type:
+                    logger.warning(f"🛑 TEST TYPE REPAIR LIMIT REACHED for {test_type} in {project_path} ({test_type_repairs}/{self.max_repairs_per_test_type})")
+                    logger.warning(f"⚠️ {test_type} has had too many repair attempts. Stopping to prevent infinite loop.")
+                    return False
+            else:
+                # Fallback to global limit for non-test commands
+                project_repairs = self.project_repair_counts.get(project_path, 0)
             if project_repairs >= self.max_total_repairs_per_project:
                 logger.warning(f"🛑 GLOBAL REPAIR LIMIT REACHED for project {project_path} ({project_repairs}/{self.max_total_repairs_per_project})")
                 logger.warning("⚠️ This project has had too many repair attempts. Stopping to prevent infinite loop.")
@@ -1856,7 +1878,18 @@ Last error:\
                 return False
             
             self.repair_attempts[repair_key] = current_attempts + 1
-            self.project_repair_counts[project_path] = project_repairs + 1
+            
+            # Update appropriate counter
+            if test_type:
+                test_type_key = f"{project_path}:{test_type}"
+                test_type_repairs = self.test_type_repair_counts.get(test_type_key, 0)
+                self.test_type_repair_counts[test_type_key] = test_type_repairs + 1
+                logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, {test_type} repairs: {test_type_repairs + 1}/{self.max_repairs_per_test_type}, session: {session_duration:.0f}s): {command_str}")
+            else:
+                project_repairs = self.project_repair_counts.get(project_path, 0)
+                self.project_repair_counts[project_path] = project_repairs + 1
+                logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
+            
             self.command_repair_history[f"{project_path}:{command_type}"] = command_repairs + 1
             
             logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
