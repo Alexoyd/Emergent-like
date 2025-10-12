@@ -963,13 +963,27 @@ return [
 '''
 
     def _get_routes_web_stub(self) -> str:
-        """Get Laravel routes/web.php content"""
+        """
+        Get Laravel routes/web.php content
+        🔥 PHASE 4: Route / with intelligent fallback
+        """
         return '''<?php
 
 use Illuminate\\Support\\Facades\\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    // 🔥 PHASE 4: Try views created by steps first, then fallback to welcome
+    // Order: home → index → welcome
+    if (view()->exists('home')) {
+        return view('home');
+    } elseif (view()->exists('index')) {
+        return view('index');
+    } elseif (view()->exists('welcome')) {
+        return view('welcome');
+    }
+    
+    // Final fallback: basic response
+    return response()->view('welcome', [], 200);
 });
 '''
 
