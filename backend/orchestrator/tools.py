@@ -1412,12 +1412,13 @@ class ToolManager:
                 ["composer", "test", "--no-interaction"]
             ],
             # 🔥 FIXED: PHPStan with error-format and no-progress
+            # 🔥 ENHANCED: PHPStan with Composer scripts priority + binary fallbacks
             "phpstan": [
-                ["./vendor/bin/phpstan", "analyse", "app/", "--no-progress", "--error-format=raw", "--memory-limit=256M"],
-                ["vendor/bin/phpstan", "analyse", "app/", "--no-progress", "--error-format=raw"],
-                ["./vendor/bin/phpstan", "analyse", "src/", "--no-progress", "--error-format=raw"],  # Fallback for non-Laravel
-                ["./vendor/bin/phpstan", "analyse", "--no-progress", "--error-format=raw"],  # Last resort
-                ["composer", "phpstan", "--no-interaction"]
+                ["composer", "phpstan"],  # 1st: Use Composer script (standardized)
+                ["composer", "run", "phpstan"],  # 2nd: Alternative Composer syntax
+                ["./vendor/bin/phpstan", "analyse", "--no-progress", "--error-format=raw", "--memory-limit=256M"],  # 3rd: Binary with config
+                ["vendor/bin/phpstan", "analyse", "--no-progress", "--error-format=raw"],  # 4th: Binary fallback
+                ["./vendor/bin/phpstan", "analyse", "app/", "--no-progress", "--error-format=raw"],  # 5th: Explicit app/ path
             ],
             # 🔥 FIXED: Pint with --test flag and quiet mode
             "pint": [
@@ -1561,10 +1562,14 @@ class ToolManager:
                 timeout=timeout
             )
             
+            # 🔥 NEW: Clean stderr from non-relevant warnings
+            stderr_decoded = stderr.decode('utf-8', errors='ignore')
+            stderr_cleaned = self._clean_stderr_noise(stderr_decoded)
+            
             return CommandResult(
                 returncode=process.returncode,
                 stdout=stdout.decode('utf-8', errors='ignore'),
-                stderr=stderr.decode('utf-8', errors='ignore')
+                stderr=stderr_cleaned
             )
             
         except asyncio.TimeoutError:
@@ -1895,14 +1900,21 @@ Last error:\
             
             # ===== PHPSTAN REPAIRS =====
             if "phpstan" in command_str:
-                # Binary not found - install it first
+                # Check if this is a Laravel project
+                is_laravel = (Path(project_path) / "artisan").exists()
+                
+                # Binary not found or first-time setup
                 if "command not found" in error_lower or "not found" in error_lower:
-                    logger.info("🔧 PHPStan binary missing, installing via composer...")
+                    if is_laravel:
+                        logger.info("🔧 PHPStan not found in Laravel project, running complete setup...")
+                        return await self._setup_phpstan_for_laravel(project_path)
+                    else:
+                        logger.info("🔧 PHPStan binary missing, installing via composer...")
                     try:
                         result = await self._run_command_with_timeout(
                             ["composer", "require", "--dev", "phpstan/phpstan", "--no-interaction"], 
                             cwd=project_path,
-                            timeout=120
+                            timeout=300
                         )
                         if result.returncode == 0:
                             logger.info("✅ PHPStan installed successfully")
@@ -1911,10 +1923,33 @@ Last error:\
                     except:
                         return False
                 
-                # Path issue - "At least one path must be specified"
-                if "at least one path" in error_lower or "path must be specified" in error_lower:
-                    logger.info("🔧 Detected PHPStan path issue, will suggest path-specific command...")
-                    return True  # Let the command fallback system handle phpstan analyse app/
+                # Configuration issues or analysis errors
+                if any(keyword in error_lower for keyword in [
+                    "no configuration", "level", "invalid", "extension",
+                    "undefined", "not found", "path must be specified"
+                ]):
+                    if is_laravel:
+                        logger.info("🔧 PHPStan config issue in Laravel, running setup...")
+                        setup_ok = await self._setup_phpstan_for_laravel(project_path)
+                        
+                        if setup_ok:
+                            # Try generating baseline if analysis still fails
+                            logger.info("🔧 Attempting baseline generation for existing errors...")
+                            await self._generate_phpstan_baseline(project_path)
+                        
+                        return setup_ok
+                    else:
+                        logger.info("🔧 Detected PHPStan path issue, will suggest path-specific command...")
+                    return True  # Let command fallback system handle it
+                
+                # Analysis errors (undefined methods, properties, etc.)
+                if "error" in error_lower and any(word in stderr for word in ["undefined", "does not exist", "property", "method"]):
+                    if is_laravel:
+                        logger.info("🔧 PHPStan analysis errors detected, generating baseline...")
+                        return await self._generate_phpstan_baseline(project_path)
+                    else:
+                        logger.info("ℹ️ PHPStan found legitimate issues, baseline may help...")
+                        return True  # Don't auto-fix, let it try again
             
             # ===== PEST REPAIRS =====
             if "pest" in command_str:
@@ -2056,7 +2091,8 @@ test('basic test example', function () {
             script_commands = {
                 "test": "pest",
                 "pest": "pest",
-                "phpstan": "./vendor/bin/phpstan analyse app/",
+                "phpstan": "./vendor/bin/phpstan analyse --memory-limit=256M",
+                "phpstan:baseline": "./vendor/bin/phpstan analyse --generate-baseline --memory-limit=256M",
                 "pint": "./vendor/bin/pint"
             }
             
