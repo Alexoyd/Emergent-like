@@ -8,130 +8,101 @@ from .registry import StackRegistry
 
 class VueHandler(StackHandler):
     name = "vue"
-    default_test_command: List[str] = ["npm", "test", "--", "--watchAll=false"]
+    # 🔥 PHASE 4 FIX: Updated for Vite + Vitest
+    default_test_command: List[str] = ["npm", "run", "test"]
 
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
+        """
+        🔥 PHASE 4 FIX: Complete Vue.js project with Vite (modern setup)
+        Fixes: Missing index.html, src/main.js, vite.config.js, and proper scripts
+        """
         dirs = [
             "src/components",
             "src/views",
             "src/router",
             "src/store",
+            "src/assets",
             "public",
-            "tests",
+            "tests/unit",
         ]
         for d in dirs:
             (code_path / d).mkdir(parents=True, exist_ok=True)
+        
+        # 🔥 PHASE 4 FIX: Modern Vite-based Vue.js project
         files = {
-            "package.json": f"""{{\n  \"name\": \"{project_name or 'vue-project'}\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"scripts\": {{\n    \"serve\": \"vue-cli-service serve\",\n    \"build\": \"vue-cli-service build\",\n    \"test\": \"vue-cli-service test:unit\",\n    \"lint\": \"vue-cli-service lint\"\n  }},\n  \"dependencies\": {{\n    \"vue\": \"^3.0.0\",\n    \"vue-router\": \"^4.0.0\"\n  }},\n  \"devDependencies\": {{\n    \"@vue/cli-service\": \"^5.0.0\",\n    \"@vue/test-utils\": \"^2.0.0\",\n    \"jest\": \"^29.0.0\"\n  }}\n}}""",
-            "src/App.vue": """<template>\n  <div id=\"app\">\n    <header>\n      <h1>Welcome to Vue.js</h1>\n    </header>\n    <main>\n      <p>This is a Vue.js application.</p>\n    </main>\n  </div>\n</template>\n<script>\nexport default { name: 'App' }\n</script>\n<style>\n#app {\n  font-family: 'Avenir', Helvetica, Arial, sans-serif;\n  text-align: center;\n  color: #2c3e50;\n  margin-top: 60px;\n}\n</style>\n""",
-            "src/main.js": """import { createApp } from 'vue'\nimport App from './App.vue'\ncreateApp(App).mount('#app')\n""",
-            "public/index.html": f"""<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">\n    <title>{project_name or 'Vue App'}</title>\n  </head>\n  <body>\n    <noscript>\n      <strong>We're sorry but this app doesn't work properly without JavaScript enabled.</strong>\n    </noscript>\n    <div id=\"app\"></div>\n  </body>\n</html>""",
+            # Root index.html (required by Vite)
+            "index.html": f"""<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8">\n    <link rel="icon" type="image/svg+xml" href="/vite.svg">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>{{project_name or 'Vue App'}}</title>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script type="module" src="/src/main.js"></script>\n  </body>\n</html>\n""",
+
+            # 🔥 Modern package.json with Vite and proper scripts
+            "package.json": f"""{{\n  "name": "{{project_name or 'vue-project'}}",\n  "version": "0.1.0",\n  "private": true,\n  "type": "module",\n  "scripts": {{\n    "dev": "vite",\n    "build": "vite build",\n    "preview": "vite preview",\n    "test": "vitest run",\n    "test:watch": "vitest",\n    "lint": "eslint src/ --ext .js,.vue",\n    "lint:fix": "eslint src/ --ext .js,.vue --fix"\n  }},\n  "dependencies": {{\n    "vue": "^3.4.0",\n    "vue-router": "^4.2.0"\n  }},\n  "devDependencies": {{\n    "@vitejs/plugin-vue": "^5.0.0",\n    "vite": "^5.0.0",\n    "vitest": "^1.0.0",\n    "@vue/test-utils": "^2.4.0",\n    "eslint": "^8.56.0",\n    "eslint-plugin-vue": "^9.19.0",\n    "jsdom": "^23.0.0"\n  }}\n}}""",
+
+            # 🔥 Vite config (required for Vue)
+            "vite.config.js": """import { defineConfig } from 'vite'\nimport vue from '@vitejs/plugin-vue'\n\nexport default defineConfig({\n  plugins: [vue()],\n  server: {\n    port: 3000,\n    host: true\n  },\n  test: {\n    environment: 'jsdom',\n    globals: true\n  }\n})\n""",
+
+            # Main App component
+            "src/App.vue": """<template>\n  <div id="app">\n    <header>\n      <h1>Welcome to Vue.js 3 + Vite</h1>\n    </header>\n    <main>\n      <p>This is a modern Vue.js application with Vite.</p>\n      <Counter />\n    </main>\n  </div>\n</template>\n\n<script>\nimport Counter from './components/Counter.vue'\n\nexport default {\n  name: 'App',\n  components: {\n    Counter\n  }\n}\n</script>\n\n<style>\n#app {\n  font-family: 'Avenir', Helvetica, Arial, sans-serif;\n  text-align: center;\n  color: #2c3e50;\n  margin-top: 60px;\n}\n</style>\n""",
+
+            # 🔥 Main.js entry point (proper Vite import)
+            "src/main.js": """import { createApp } from 'vue'\nimport App from './App.vue'\n\nconst app = createApp(App)\napp.mount('#app')\n""",
+
+            # Sample component
+            "src/components/Counter.vue": """<template>\n  <div class="counter">\n    <button @click="decrement">-</button>\n    <span>{{ count }}</span>\n    <button @click="increment">+</button>\n  </div>\n</template>\n\n<script>\nimport { ref } from 'vue'\n\nexport default {\n  name: 'Counter',\n  setup() {\n    const count = ref(0)\n    \n    const increment = () => count.value++\n    const decrement = () => count.value--\n    \n    return {\n      count,\n      increment,\n      decrement\n    }\n  }\n}\n</script>\n\n<style scoped>\n.counter {\n  margin: 20px;\n}\nbutton {\n  font-size: 18px;\n  margin: 0 10px;\n  padding: 5px 15px;\n}\nspan {\n  font-size: 24px;\n  font-weight: bold;\n}\n</style>\n""",
+
+            # ESLint config
+            ".eslintrc.cjs": """module.exports = {\n  root: true,\n  env: {\n    browser: true,\n    es2021: true,\n    node: true\n  },\n  extends: [\n    'eslint:recommended',\n    'plugin:vue/vue3-recommended'\n  ],\n  parserOptions: {\n    ecmaVersion: 'latest',\n    sourceType: 'module'\n  },\n  rules: {\n    'vue/multi-word-component-names': 'off'\n  }\n}\n""",
+
+            # Vitest setup
+            "tests/unit/Counter.spec.js": """import { describe, it, expect } from 'vitest'\nimport { mount } from '@vue/test-utils'\nimport Counter from '../../src/components/Counter.vue'\n\ndescribe('Counter', () => {\n  it('renders properly', () => {\n    const wrapper = mount(Counter)\n    expect(wrapper.text()).toContain('0')\n  })\n  \n  it('increments count when + clicked', async () => {\n    const wrapper = mount(Counter)\n    const buttons = wrapper.findAll('button')\n    await buttons[1].trigger('click')\n    expect(wrapper.text()).toContain('1')\n  })\n  \n  it('decrements count when - clicked', async () => {\n    const wrapper = mount(Counter)\n    const buttons = wrapper.findAll('button')\n    await buttons[0].trigger('click')\n    expect(wrapper.text()).toContain('-1')\n  })\n})\n""",
+
+            # README
+            "README.md": f"""# {{project_name or 'Vue Project'}}\n\nModern Vue.js 3 application with Vite.\n\n## Setup\n```bash\nnpm install\n# or\nyarn install\n```\n\n## Development\n```bash\nnpm run dev\n# or\nyarn dev\n```\n\n## Build\n```bash\nnpm run build\n# or\nyarn build\n```\n\n## Test\n```bash\nnpm run test\n# or\nyarn test\n```\n"""
         }
+
         for fp, content in files.items():
             p = code_path / fp
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
+
         if self.logger:
-            self.logger.info(f"Created Vue structure at {code_path}")
+            self.logger.info(f"✅ Created complete Vue.js 3 + Vite structure at {code_path}")
 
     async def install_dependencies(self, code_path: Path) -> bool:
-        """Install Vue.js dependencies with enhanced dev tools setup"""
+        """
+        🔥 PHASE 4 FIX: Install Vue.js dependencies with Vite
+        All dependencies now in package.json, just need to run install
+        """
         success = True
         
-        # 1. Install base dependencies (yarn preferred, npm fallback)
-        yarn_lock = code_path / "yarn.lock"
-        if yarn_lock.exists():
-            if self.logger:
-                self.logger.info("Installing Vue dependencies with yarn...")
-            res = await self.run_command(["yarn", "install"], cwd=str(code_path))
-            if res.returncode == 0:
-                package_manager = "yarn"
-            else:
-                if self.logger:
-                    self.logger.warning(f"Yarn install failed: {res.stderr}, trying npm...")
-                npm = await self.run_command(["npm", "install"], cwd=str(code_path))
-                success = npm.returncode == 0
-                package_manager = "npm" if success else None
-        else:
-            if self.logger:
-                self.logger.info("Installing Vue dependencies with npm...")
-            npm = await self.run_command(["npm", "install"], cwd=str(code_path))
-            success = npm.returncode == 0
-            package_manager = "npm" if success else None
-        
-        if not success or not package_manager:
-            if self.logger:
-                self.logger.error("Failed to install base dependencies")
-            return False
-        
-        # 2. Install essential dev dependencies for testing/linting
-        dev_deps = [
-            "vitest@^0.34.0",
-            "eslint@^8.0.0", 
-            "@vue/test-utils@^2.4.0",
-            "@vitejs/plugin-vue@^4.0.0",
-            "jsdom@^22.0.0"  # Required for vitest browser environment
-        ]
-        
+        # Prefer npm for consistency (Vite recommends npm)
         if self.logger:
-            self.logger.info("Installing Vue dev dependencies (vitest, eslint, test-utils)...")
+            self.logger.info("Installing Vue.js + Vite dependencies with npm...")
         
-        install_cmd = ["yarn", "add", "-D"] if package_manager == "yarn" else ["npm", "install", "--save-dev"]
-        dev_result = await self.run_command(install_cmd + dev_deps, cwd=str(code_path))
+        npm = await self.run_command(["npm", "install"], cwd=str(code_path))
+        success = npm.returncode == 0
         
-        if dev_result.returncode != 0:
+        if not success:
             if self.logger:
-                self.logger.warning(f"Some dev dependencies failed to install: {dev_result.stderr}")
-            # Don't fail the whole process for dev deps, but log the issue
+                self.logger.warning(f"npm install failed: {npm.stderr}, trying yarn...")
+            # Fallback to yarn
+            res = await self.run_command(["yarn", "install"], cwd=str(code_path))
+            success = res.returncode == 0
+        
+        if success:
+            if self.logger:
+                self.logger.info("✅ Vue.js + Vite dependencies installed successfully")
         else:
             if self.logger:
-                self.logger.info("✅ Vue dev dependencies installed successfully")
-        
-        # 3. Update package.json scripts if needed
-        await self._ensure_vue_test_scripts(code_path)
+                self.logger.error("❌ Failed to install Vue.js dependencies")
         
         return success
     
     async def _ensure_vue_test_scripts(self, code_path: Path) -> None:
-        """Ensure package.json has proper test and lint scripts"""
-        try:
-            import json
-            package_json_path = code_path / "package.json"
-            
-            if not package_json_path.exists():
-                return
-            
-            with open(package_json_path, 'r') as f:
-                package_data = json.load(f)
-            
-            # Update scripts for modern Vue.js with Vitest
-            scripts = package_data.get('scripts', {})
-            scripts.update({
-                "test": "vitest run",
-                "test:watch": "vitest",
-                "test:ui": "vitest --ui",
-                "lint": "eslint src/ --ext .js,.vue",
-                "lint:fix": "eslint src/ --ext .js,.vue --fix"
-            })
-            package_data['scripts'] = scripts
-            
-            # Add vitest config in package.json if not exists
-            if 'vitest' not in package_data:
-                package_data['vitest'] = {
-                    "environment": "jsdom",
-                    "testMatch": ["**/src/**/*.{test,spec}.{js,ts,vue}"],
-                    "collectCoverage": True,
-                    "coverageDirectory": "coverage"
-                }
-            
-            with open(package_json_path, 'w') as f:
-                json.dump(package_data, f, indent=2)
-            
-            if self.logger:
-                self.logger.info("Updated Vue package.json with test scripts")
-                
-        except Exception as e:
-            if self.logger:
-                self.logger.warning(f"Failed to update Vue test scripts: {e}")
+        """
+        🔥 PHASE 4 FIX: No longer needed - scripts are in skeleton
+        Kept for backward compatibility with existing projects
+        """
+        # Scripts are now complete in create_project_skeleton
+        # This method kept for compatibility but does nothing for new projects
+        pass
 
 StackRegistry.register(VueHandler.name, VueHandler)

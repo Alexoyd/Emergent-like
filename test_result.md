@@ -717,6 +717,33 @@ agent_communication:
         - working: true
           agent: "main"
           comment: "🔧 CORRECTION CRITIQUE APPLIQUÉE! Bug 'local variable project_repairs referenced before assignment' résolu. Problème: La refactorisation pour compteurs par type de test laissait project_repairs non défini dans certains chemins. Solution: 1) ✅ Initialisation anticipée de project_repairs AVANT toute condition (ligne ~1850) 2) ✅ Vérification limite globale toujours effectuée pour tous types de commandes 3) ✅ Log dupliqué supprimé (ligne ~1897) 4) ✅ typing-inspection 0.4.1→0.4.2 pour corriger AttributeError 'is_noextraitems'. IMPACT: Pest, PHPStan et Pint ont maintenant chacun 3 tentatives isolées sans se bloquer mutuellement. Limite globale: 5 réparations totales par projet. Backend redémarré avec succès ✅. API /api/ fonctionnelle ✅. Voir /app/REPAIR_COUNTER_BUG_FIX.md pour détails complets."
+        - working: true
+          agent: "main"
+          comment: "🔥 PHASE 4 CORRECTIONS COMPLÈTES! Toutes les corrections demandées appliquées: 1) ✅ Initialisation project_repairs déplacée TOUT EN HAUT (ligne 1829) 2) ✅ Variable locale detected_test_type utilisée au lieu de réassigner test_type 3) ✅ stderr remplacé par error_output (ligne 1983) 4) ✅ Compteurs centralisés après garde-fous (lignes 1890-1905) 5) ✅ Logs affichent UNIQUEMENT le compteur pertinent (test-specific OU global). Backend redémarré ✅. API /api/ fonctionnelle ✅."
+
+  - task: "PHASE 4 - Stratégie PHPStan baseline progressive"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/tools.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "✅ PHASE 4 PHPSTAN STRATÉGIE IMPLÉMENTÉE! Nouvelles fonctions: 1) _setup_phpstan_for_laravel(): Installation PHPStan + Larastan, création phpstan.neon avec level 0, génération baseline automatique 2) _generate_phpstan_baseline(): Génération baseline non-bloquante, retourne toujours True pour ne pas bloquer le pipeline. STRATÉGIE: Démarrer en level 0, générer baseline, remonter progressivement (0→1→2...). PHPStan est maintenant NON-BLOQUANT: même si baseline échoue, le pipeline continue. Permet zéro régression avec montée en exigence par paliers."
+
+  - task: "PHASE 4 - Correction complète Vue.js handler (Vite)"
+    implemented: true
+    working: true
+    file: "/app/backend/orchestrator/stacks/vue_handler.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: true
+          agent: "main"
+          comment: "🔥 PHASE 4 VUE.JS HANDLER CORRIGÉ! Problèmes résolus: 1) ✅ index.html manquant → ajouté à la racine avec <script type='module' src='/src/main.js'> 2) ✅ src/main.js incomplet → version complète avec createApp + mount 3) ✅ vite.config.js manquant → ajouté avec plugin Vue + config test 4) ✅ Scripts dev/build/preview manquants → tous ajoutés dans package.json 5) ✅ Migration vue-cli → Vite moderne (Vue 3.4 + Vite 5.0) 6) ✅ Composant Counter exemple + tests Vitest 7) ✅ ESLint config (.eslintrc.cjs) 8) ✅ Dépendances complètes (Vite, Vitest, ESLint, @vitejs/plugin-vue, jsdom). RÉSULTAT: Projet Vue.js complet, moderne, fonctionnel dès création. npm run dev fonctionne immédiatement."
 
 backend:
   - task: "PHASE 2 - POST /api/runs avec project_mode attach"

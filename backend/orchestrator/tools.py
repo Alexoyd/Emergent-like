@@ -1825,6 +1825,9 @@ Last error:\
             command_str = ' '.join(command)
             error_lower = error_output.lower()
             
+            # 🔥 PHASE 4 FIX: Initialize project_repairs BEFORE any conditions
+            project_repairs = self.project_repair_counts.get(project_path, 0)
+            
             # 🔥 NEW: Check repair session duration
             current_time = time.time()
             if project_path not in self.repair_session_start:
@@ -1836,26 +1839,30 @@ Last error:\
                 logger.warning("⚠️ Repair session has been running too long. Stopping to prevent infinite loop.")
                 return False
             
-            # 🔥 ENHANCED: Check test-type-specific repair limit for PHPStan/Pest/Pint
-            # Extract test type from command
-            test_type = None
-            if "phpstan" in command_str:
-                test_type = "phpstan"
-            elif "pest" in command_str or "artisan test" in command_str:
-                test_type = "pest"
-            elif "pint" in command_str:
-                test_type = "pint"
+            # 🔥 PHASE 4 FIX: Use local variable for auto-detection, don't reassign argument
+            # Extract test type from command if not already provided
+            detected_test_type = test_type  # Start with provided value
+            if not detected_test_type:
+                if "phpstan" in command_str:
+                    detected_test_type = "phpstan"
+                elif "pest" in command_str or "artisan test" in command_str:
+                    detected_test_type = "pest"
+                elif "pint" in command_str:
+                    detected_test_type = "pint"
             
-            # Always initialize project_repairs at the start
-            project_repairs = self.project_repair_counts.get(project_path, 0)
+            # 🔥 PHASE 4 FIX: Always check global project repair limit FIRST
+            if project_repairs >= self.max_total_repairs_per_project:
+                logger.warning(f"🛑 GLOBAL REPAIR LIMIT REACHED for project {project_path} ({project_repairs}/{self.max_total_repairs_per_project})")
+                logger.warning("⚠️ This project has had too many repair attempts. Stopping to prevent infinite loop.")
+                return False
             
-            # Use test-type-specific counter for tests, global counter for other commands
-            if test_type:
-                test_type_key = f"{project_path}:{test_type}"
+            # Use test-type-specific counter for tests
+            if detected_test_type:
+                test_type_key = f"{project_path}:{detected_test_type}"
                 test_type_repairs = self.test_type_repair_counts.get(test_type_key, 0)
                 if test_type_repairs >= self.max_repairs_per_test_type:
-                    logger.warning(f"🛑 TEST TYPE REPAIR LIMIT REACHED for {test_type} in {project_path} ({test_type_repairs}/{self.max_repairs_per_test_type})")
-                    logger.warning(f"⚠️ {test_type} has had too many repair attempts. Stopping to prevent infinite loop.")
+                    logger.warning(f"🛑 TEST TYPE REPAIR LIMIT REACHED for {detected_test_type} in {project_path} ({test_type_repairs}/{self.max_repairs_per_test_type})")
+                    logger.warning(f"⚠️ {detected_test_type} has had too many repair attempts. Stopping to prevent infinite loop.")
                     return False
             
             # Always check global project repair limit
@@ -1879,21 +1886,24 @@ Last error:\
                 logger.warning(f"🔄 Command type repair limit reached for {command_type} in {project_path}")
                 return False
             
+            # 🔥 PHASE 4 FIX: Centralize counter increments AFTER all guard clauses
+            # This ensures we only increment when we actually proceed with repair
             self.repair_attempts[repair_key] = current_attempts + 1
+            self.command_repair_history[f"{project_path}:{command_type}"] = command_repairs + 1
             
-            # Update appropriate counter
-            if test_type:
-                test_type_key = f"{project_path}:{test_type}"
+            # 🔥 PHASE 4 FIX: Update ONLY the relevant counter (test-specific OR global)
+            if detected_test_type:
+                # For test commands (PHPStan, Pest, Pint): use test-specific counter
+                test_type_key = f"{project_path}:{detected_test_type}"
                 test_type_repairs = self.test_type_repair_counts.get(test_type_key, 0)
                 self.test_type_repair_counts[test_type_key] = test_type_repairs + 1
-                logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, {test_type} repairs: {test_type_repairs + 1}/{self.max_repairs_per_test_type}, session: {session_duration:.0f}s): {command_str}")
+                logger.info(f"🔍 Analyzing {detected_test_type} failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, {detected_test_type} repairs: {test_type_repairs + 1}/{self.max_repairs_per_test_type}, session: {session_duration:.0f}s): {command_str}")
             else:
-                # For non-test commands, increment the global project repairs counter
+                # For non-test commands: increment the global project counter
                 self.project_repair_counts[project_path] = project_repairs + 1
                 logger.info(f"🔍 Analyzing failure for auto-repair (attempt {current_attempts + 1}/{self.max_repair_attempts}, project total: {project_repairs + 1}/{self.max_total_repairs_per_project}, session: {session_duration:.0f}s): {command_str}")
             
-            self.command_repair_history[f"{project_path}:{command_type}"] = command_repairs + 1
-                        
+                                    
             # ===== COMPOSER/PHP REPAIRS =====
             if "composer" in command_str or "could not detect the root package" in error_lower:
                 # 🔥 NEW: Root package detection failed
@@ -1976,7 +1986,8 @@ Last error:\
                     return True  # Let command fallback system handle it
                 
                 # Analysis errors (undefined methods, properties, etc.)
-                if "error" in error_lower and any(word in stderr for word in ["undefined", "does not exist", "property", "method"]):
+                # 🔥 PHASE 4 FIX: Use error_output instead of undefined stderr
+                if "error" in error_lower and any(word in error_output.lower() for word in ["undefined", "does not exist", "property", "method"]):
                     if is_laravel:
                         logger.info("🔧 PHPStan analysis errors detected, generating baseline...")
                         return await self._generate_phpstan_baseline(project_path)
