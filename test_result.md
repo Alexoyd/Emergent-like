@@ -553,11 +553,11 @@ metadata:
   
 test_plan:
   current_focus:
-    - "PHASE 1 - DeveloperAgentDirect (génération JSON)"
+    - "PHASE 2 - Protected paths deny-list enforcement"
   stuck_tasks: 
-    - "PHASE 1 - DeveloperAgentDirect (génération JSON)"
+    - "PHASE 2 - Protected paths deny-list enforcement"
   test_all: false
-  test_priority: "stuck_first"
+  test_priority: "high_first"
 
 agent_communication:
     - agent: "main"
