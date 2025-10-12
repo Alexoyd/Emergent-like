@@ -131,8 +131,8 @@ class ToolManager:
         self.project_repair_counts = {}  # track total repairs per project
         self.max_total_repairs_per_project = 5  # Absolute limit
         # 🔥 NEW: Repair counter per test type to allow fresh repairs per test
-        self.test_type_repair_counts = {}  # track repairs per project+test_type (e.g. "path:phpstan" => 3)
-        self.max_repairs_per_test_type = 3  # Max repairs per test type (pest, phpstan, pint)
+        self.test_type_repair_counts: Dict[str, int] = {}  # track repairs per project+test_type (e.g. "path:phpstan" => 3)
+        self.max_repairs_per_test_type: int = 3  # Max repairs per test type (pest, phpstan, pint)
         # 🔥 NEW: Repair session tracking to prevent cross-session loops
         self.repair_session_start = {}  # track when repair sessions started
         self.max_repair_session_duration = 1800  # 30 minutes max per session
