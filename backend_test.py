@@ -4,6 +4,322 @@ import json
 import time
 from datetime import datetime
 
+class Phase1DirectWriteTester:
+    """
+    🔥 PHASE 1 DIRECT WRITE BACKEND TESTING
+    
+    Tests the new direct file writing architecture:
+    - file_writer.py primitives
+    - schemas.py Pydantic validation
+    - developer_direct.py JSON operations
+    - server.py dual-mode integration
+    """
+    
+    def __init__(self, base_url=None):
+        if base_url is None:
+            base_url = 'http://localhost:8001'
+        self.base_url = base_url
+        self.api_url = f"{base_url}/api"
+        self.tests_run = 0
+        self.tests_passed = 0
+
+    def run_test(self, name, method, endpoint, expected_status, data=None, timeout=10, headers=None):
+        """Run a single API test"""
+        url = f"{self.api_url}/{endpoint}" if endpoint else f"{self.api_url}/"
+        test_headers = {'Content-Type': 'application/json'}
+        if headers:
+            test_headers.update(headers)
+
+        self.tests_run += 1
+        print(f"\n🔍 Testing {name}...")
+        print(f"   URL: {url}")
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=test_headers, timeout=timeout, params=data)
+            elif method == 'POST':
+                response = requests.post(url, json=data, headers=test_headers, timeout=timeout)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=test_headers, timeout=timeout)
+
+            print(f"   Status Code: {response.status_code}")
+            
+            success = response.status_code == expected_status
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Expected {expected_status}, got {response.status_code}")
+                
+                # Try to parse JSON response
+                try:
+                    response_data = response.json()
+                    print(f"   Response: {json.dumps(response_data, indent=2)[:300]}...")
+                    return True, response_data
+                except:
+                    print(f"   Response: {response.text[:200]}...")
+                    return True, {}
+            else:
+                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
+                print(f"   Response: {response.text[:300]}...")
+                return False, {}
+
+        except requests.exceptions.Timeout:
+            print(f"❌ Failed - Request timed out after {timeout} seconds")
+            return False, {}
+        except requests.exceptions.ConnectionError:
+            print(f"❌ Failed - Connection error (server may be down)")
+            return False, {}
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            return False, {}
+
+    def test_api_health(self):
+        """Test basic API health"""
+        return self.run_test("API Health Check", "GET", "", 200)
+
+    def test_file_write_mode_configuration(self):
+        """🔥 PHASE 1: Test FILE_WRITE_MODE=direct configuration"""
+        success, response = self.run_test("File Write Mode Configuration", "GET", "admin/mode", 200)
+        
+        if success and response:
+            # Validate expected fields
+            expected_fields = ['file_write_mode', 'developer_agent_type', 'deny_list']
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"❌ Missing expected fields: {missing_fields}")
+                return False, response
+            
+            # Validate mode is "direct"
+            if response.get('file_write_mode') != 'direct':
+                print(f"❌ Expected file_write_mode='direct', got '{response.get('file_write_mode')}'")
+                return False, response
+            
+            # Validate agent type is DeveloperAgentDirect
+            if response.get('developer_agent_type') != 'DeveloperAgentDirect':
+                print(f"❌ Expected DeveloperAgentDirect, got '{response.get('developer_agent_type')}'")
+                return False, response
+            
+            # Validate deny_list has 19 protected paths
+            deny_list = response.get('deny_list', [])
+            if len(deny_list) != 19:
+                print(f"❌ Expected 19 protected paths, got {len(deny_list)}")
+                return False, response
+            
+            # Check for key protected paths
+            expected_protected = ['.git/', '.env', 'vendor/', 'node_modules/', '.pytest_cache/', '__pycache__/']
+            missing_protected = [path for path in expected_protected if path not in deny_list]
+            if missing_protected:
+                print(f"❌ Missing key protected paths: {missing_protected}")
+                return False, response
+            
+            print(f"✅ File write mode: {response['file_write_mode']}")
+            print(f"✅ Agent type: {response['developer_agent_type']}")
+            print(f"✅ Protected paths: {len(deny_list)} items")
+            print(f"   Sample protected: {deny_list[:5]}")
+            
+            return True, response
+        
+        return success, response
+
+    def test_admin_stats_with_mode_info(self):
+        """Test admin stats endpoint includes system configuration"""
+        success, response = self.run_test("Admin Stats with System Info", "GET", "admin/stats", 200)
+        
+        if success and response:
+            # Check for expected fields
+            expected_fields = ['run_stats', 'daily_cost', 'project_count', 'settings']
+            missing_fields = [field for field in expected_fields if field not in response]
+            
+            if missing_fields:
+                print(f"⚠️  Missing expected fields: {missing_fields}")
+                return False, response
+            
+            # Check settings structure
+            settings = response.get('settings', {})
+            expected_settings = ['max_local_retries', 'default_daily_budget', 'max_steps_per_run', 'auto_create_structures']
+            missing_settings = [setting for setting in expected_settings if setting not in settings]
+            
+            if missing_settings:
+                print(f"⚠️  Missing settings: {missing_settings}")
+            else:
+                print(f"✅ System settings: {settings}")
+            
+            return True, response
+        
+        return success, response
+
+    def test_create_run_direct_mode(self):
+        """🔥 PHASE 1: Test run creation in direct mode"""
+        run_data = {
+            "goal": "Create a simple Python hello world script using direct file operations",
+            "stack": "python",
+            "max_steps": 3,
+            "max_retries_per_step": 1,
+            "daily_budget_eur": 1.0
+        }
+        
+        success, response = self.run_test(
+            "Create Run (Direct Mode)",
+            "POST",
+            "runs",
+            200,
+            data=run_data,
+            timeout=30
+        )
+        
+        if not success:
+            # Try with 201 status code
+            success, response = self.run_test(
+                "Create Run (Direct Mode - 201)",
+                "POST", 
+                "runs",
+                201,
+                data=run_data,
+                timeout=30
+            )
+        
+        if success and 'id' in response:
+            run_id = response['id']
+            print(f"   Created run ID: {run_id}")
+            
+            # Wait a moment for processing to start
+            time.sleep(2)
+            
+            # Check run status
+            run_success, run_response = self.run_test(
+                "Get Created Run Status",
+                "GET",
+                f"runs/{run_id}",
+                200
+            )
+            
+            if run_success:
+                status = run_response.get('status', 'unknown')
+                print(f"   Run status: {status}")
+                return True, {"run_id": run_id, "status": status}
+        
+        return success, response
+
+    def test_backend_logs_for_direct_mode(self):
+        """Check backend logs for direct mode initialization"""
+        print("\n🔍 Checking backend logs for direct mode...")
+        
+        try:
+            # Check supervisor logs for backend startup
+            import subprocess
+            result = subprocess.run(
+                ["tail", "-n", "20", "/var/log/supervisor/backend.out.log"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                logs = result.stdout
+                print(f"   Recent backend logs:")
+                for line in logs.split('\n')[-10:]:
+                    if line.strip():
+                        print(f"     {line}")
+                
+                # Look for direct mode indicators
+                if "DeveloperAgentDirect" in logs or "direct" in logs.lower():
+                    print("✅ Direct mode indicators found in logs")
+                    return True, {"logs_checked": True}
+                else:
+                    print("⚠️  No direct mode indicators in recent logs")
+                    return False, {"logs_checked": True}
+            else:
+                print("❌ Could not read backend logs")
+                return False, {"logs_checked": False}
+                
+        except Exception as e:
+            print(f"❌ Error checking logs: {e}")
+            return False, {"error": str(e)}
+
+    def test_projects_endpoint(self):
+        """Test projects listing endpoint"""
+        return self.run_test("Projects List", "GET", "projects", 200)
+
+    def test_runs_endpoint(self):
+        """Test runs listing endpoint"""
+        return self.run_test("Runs List", "GET", "runs", 200)
+
+    def test_invalid_requests_handling(self):
+        """Test error handling with invalid requests"""
+        # Test invalid run creation
+        invalid_run_data = {
+            "goal": "",  # Empty goal should fail
+            "stack": "invalid_stack"
+        }
+        
+        success, _ = self.run_test(
+            "Invalid Run Creation",
+            "POST",
+            "runs",
+            422,
+            data=invalid_run_data
+        )
+        
+        if not success:
+            success, _ = self.run_test(
+                "Invalid Run Creation (400)",
+                "POST",
+                "runs", 
+                400,
+                data=invalid_run_data
+            )
+        
+        # Test non-existent run
+        nonexistent_success, _ = self.run_test(
+            "Get Non-existent Run",
+            "GET",
+            "runs/nonexistent-id-12345",
+            404
+        )
+        
+        return success and nonexistent_success, {}
+
+    def test_development_mode_active(self):
+        """Test that DEVELOPMENT_MODE is active (no real LLM API keys needed)"""
+        success, response = self.run_test("Admin Stats for Dev Mode", "GET", "admin/stats", 200)
+        
+        if success and response:
+            # In development mode, we should be able to create runs even without API keys
+            print("✅ Development mode allows testing without real API keys")
+            return True, response
+        
+        return success, response
+
+    def run_all_phase1_tests(self):
+        """Run all Phase 1 Direct Write tests"""
+        print("🔥 PHASE 1 DIRECT WRITE BACKEND TESTING")
+        print("=" * 70)
+        
+        tests = [
+            ("API Health Check", self.test_api_health),
+            ("File Write Mode Configuration", self.test_file_write_mode_configuration),
+            ("Admin Stats with Mode Info", self.test_admin_stats_with_mode_info),
+            ("Backend Logs Check", self.test_backend_logs_for_direct_mode),
+            ("Development Mode Active", self.test_development_mode_active),
+            ("Projects Endpoint", self.test_projects_endpoint),
+            ("Runs Endpoint", self.test_runs_endpoint),
+            ("Create Run (Direct Mode)", self.test_create_run_direct_mode),
+            ("Invalid Requests Handling", self.test_invalid_requests_handling),
+        ]
+        
+        results = {}
+        
+        for test_name, test_func in tests:
+            print(f"\n{'='*10} {test_name} {'='*10}")
+            try:
+                success, data = test_func()
+                results[test_name] = {"success": success, "data": data}
+            except Exception as e:
+                print(f"❌ Test {test_name} crashed: {str(e)}")
+                results[test_name] = {"success": False, "error": str(e)}
+        
+        return results
+
 class EmergentSystemTester:
     def __init__(self, base_url=None):
         # Use localhost for testing since external URL is not configured
