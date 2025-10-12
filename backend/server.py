@@ -213,6 +213,123 @@ async def preview_plan(run_data: RunCreate):
         logging.error(f"Error generating plan preview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class ExecuteOperationsRequest(BaseModel):
+    """🔥 PHASE 2: Request for no-LLM operations execution"""
+    run_id: str = Field(..., description="Run ID")
+    project_id: str = Field(..., description="Project ID")
+    operations: List[Dict[str, Any]] = Field(..., min_items=1, description="List of file operations to execute")
+    commit: Dict[str, Any] = Field(..., description="Commit metadata: {title, step_number}")
+
+@api_router.post("/runs/execute-operations")
+async def execute_operations_endpoint(request: ExecuteOperationsRequest):
+    """
+    🔥 PHASE 2: Execute file operations directly (no-LLM path)
+    
+    Allows testing attach mode end-to-end without LLM keys.
+    Applies same pipeline as LLM mode:
+    - Validation (deny-list, path checks)
+    - File operations execution
+    - Git commit
+    - RAG re-indexing
+    - Artifacts logging
+    
+    Returns: {
+        "status": "success" | "failed",
+        "operations_executed": int,
+        "commit_hash": str,
+        "artifacts": {...}
+    }
+    """
+    try:
+        # Validate run exists
+        run_data = await db.runs.find_one({"id": request.run_id})
+        if not run_data:
+            raise HTTPException(status_code=404, detail=f"Run {request.run_id} not found")
+        
+        run = Run(**run_data)
+        
+        # Get project path
+        project_code_path = project_manager.get_code_path(request.project_id)
+        if not project_code_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project {request.project_id} not found")
+        
+        # Execute operations
+        logger.info(f"🔥 Executing {len(request.operations)} operations for run {request.run_id}")
+        
+        exec_results = await execute_operations(
+            request.operations,
+            str(project_code_path),
+            request.project_id
+        )
+        
+        # Check for failures
+        failed_ops = [r for r in exec_results if r.get("status") == "failed"]
+        if failed_ops:
+            errors = "; ".join([f"{r.get('operation_type')}: {r.get('error')}" for r in failed_ops])
+            return {
+                "status": "failed",
+                "operations_executed": len(exec_results) - len(failed_ops),
+                "errors": errors,
+                "results": exec_results
+            }
+        
+        # Extract changed files
+        files_changed = [r.get("path") for r in exec_results if r.get("path")]
+        
+        # Git commit
+        commit_title = request.commit.get("title", "Direct operations")
+        step_number = request.commit.get("step_number", 1)
+        
+        commit_success = await _commit_step_changes(
+            run_id=request.run_id,
+            step_number=step_number,
+            step_title=commit_title,
+            project_path=str(project_code_path),
+            files_changed=files_changed
+        )
+        
+        # Get commit hash
+        commit_hash = None
+        if commit_success:
+            try:
+                repo = git.Repo(project_code_path)
+                commit_hash = repo.head.commit.hexsha
+            except:
+                pass
+        
+        # RAG re-indexing
+        if files_changed and FILE_WRITE_MODE == "direct":
+            try:
+                logger.info(f"Re-indexing {len(files_changed)} changed files in RAG...")
+                if hasattr(rag_system, 'index_project'):
+                    await rag_system.index_project(str(project_code_path))
+                elif hasattr(rag_system, 'reindex'):
+                    await rag_system.reindex(str(project_code_path))
+                logger.info("✅ RAG re-indexing completed")
+            except Exception as e:
+                logger.warning(f"RAG re-indexing failed: {e}")
+        
+        # Build artifacts
+        artifacts = {
+            "operations_count": len(exec_results),
+            "files_changed": files_changed,
+            "commit_hash": commit_hash,
+            "operations_results": exec_results
+        }
+        
+        return {
+            "status": "success",
+            "operations_executed": len(exec_results),
+            "commit_hash": commit_hash,
+            "artifacts": artifacts
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing operations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.post("/runs", response_model=Run)
 async def create_run(run_data: RunCreate, background_tasks: BackgroundTasks):
     """
