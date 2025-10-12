@@ -411,15 +411,18 @@ backend:
 
   - task: "PHASE 1 - DeveloperAgentDirect (génération JSON)"
     implemented: true
-    working: true
+    working: false
     file: "/app/backend/orchestrator/agents/developer_direct.py"
-    stuck_count: 0
+    stuck_count: 1
     priority: "critical"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: true
           agent: "main"
           comment: "✅ PHASE 1 COMPLÉTÉE: developer_direct.py créé pour remplacer DeveloperAgent en mode écriture directe. Génère opérations JSON au lieu de Git diffs. Prompt LLM adapté avec format JSON strict. Extraction robuste (support markdown code fences). Validation via Pydantic. Max 3 tentatives avec feedback d'erreurs. Support guidelines par stack (Laravel, React, Python, etc.)."
+        - working: false
+          agent: "testing"
+          comment: "🔥 PHASE 1 DEVELOPERAGENTDIRECT TESTÉ - PROBLÈME DÉTECTÉ! Module implémenté et initialisé correctement (logs montrent orchestrator.agents.developer_direct actif), mais génération JSON échoue systématiquement. Erreur récurrente: 'JSON validation error: No valid JSON found in response: Expecting value: line 1 column 1 (char 0)'. Cause probable: LLM retourne réponse vide en DEVELOPMENT_MODE. DeveloperAgentDirect fonctionne mais nécessite vraies API keys LLM pour générer JSON valide. Architecture correcte, problème de contenu LLM."
 
   - task: "PHASE 1 - Intégration server.py (dual-mode)"
     implemented: true
