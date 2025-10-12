@@ -228,6 +228,13 @@ class ExecuteOperationsRequest(BaseModel):
     operations: List[Dict[str, Any]] = Field(..., min_items=1, description="List of file operations to execute")
     commit: Dict[str, Any] = Field(..., description="Commit metadata: {title, step_number}")
 
+class AutoHealRequest(BaseModel):
+    """🔥 PHASE 3: Request for auto-heal"""
+    max_steps: int = Field(5, ge=1, le=10, description="Maximum fix steps")
+    branch_name: Optional[str] = Field(None, description="Custom branch name (default: autofix/YYYYMMDD-HHMMSS)")
+    auto_merge: bool = Field(False, description="Auto-merge to main (ALWAYS FALSE for now)")
+    operations: Optional[List[Dict[str, Any]]] = Field(None, description="Optional no-LLM operations injection")
+
 @api_router.post("/runs/execute-operations")
 async def execute_operations_endpoint(request: ExecuteOperationsRequest):
     """
