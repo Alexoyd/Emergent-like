@@ -232,7 +232,8 @@ class DeveloperAgentDirect:
             "6. ✅ All paths must be relative (no leading /, no ..)\n"
             "7. ✅ Escape special characters in JSON strings (\\n, \\t, \\\", etc.)\n"
             "8. ✅ Maximum 5 operations per step\n"
-            "9. ✅ Operations execute in order - plan dependencies\n\n"
+            "9. ✅ Operations execute in order automatically (create before insert/update)\n"
+            "10. ✅ Use 0-indexed line numbers for insert operations (0=start, -1=EOF)\n\n"
             "🎯 YOUR RESPONSE MUST START EXACTLY LIKE THIS:\n"
             '{"operations": [\n'
         )
