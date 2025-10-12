@@ -113,11 +113,16 @@ class AutoHealManager:
                 # No-LLM path: apply provided operations
                 logger.info(f"🔧 Applying {len(operations)} no-LLM operations")
                 
-                exec_results = await execute_operations(
-                    operations,
-                    str(project_path),
-                    project_id
-                )
+                try:
+                    exec_results = await execute_operations(
+                        operations,
+                        str(project_path),
+                        project_id
+                    )
+                except FileWriterError as e:
+                    # Protected paths and validation errors
+                    logger.error(f"🛡️ File operation validation failed: {str(e)}")
+                    raise  # Propagate to endpoint for HTTP 422
                 
                 # Check for failures
                 failed_ops = [r for r in exec_results if r.get("status") == "failed"]
