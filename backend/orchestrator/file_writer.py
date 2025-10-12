@@ -198,12 +198,16 @@ class FileWriter:
         
         Args:
             file_path: Chemin relatif du fichier
-            after_line: Numéro de ligne après laquelle insérer (1-indexed)
+            after_line: Numéro de ligne après laquelle insérer (0-indexed)
+                       - 0 = insérer au début (avant la première ligne)
+                       - N = insérer après la ligne N
+                       - -1 = insérer à la fin (EOF anchor)
+                       - Si > nombre de lignes, clamp à EOF (idempotence)
             content: Contenu à insérer
             project_id: ID du projet (pour lock)
         
         Returns:
-            Dict avec status, path, line_number
+            Dict avec status, path, line_number, clamped (si clamped à EOF)
         """
         async with self._get_lock(project_id):
             try:
@@ -213,27 +217,66 @@ class FileWriter:
                     raise FileWriterError(f"File does not exist: {file_path}")
                 
                 # Lire lignes existantes
-                lines = target_path.read_text(encoding='utf-8').splitlines(keepends=True)
+                existing_content = target_path.read_text(encoding='utf-8')
+                lines = existing_content.splitlines(keepends=True)
                 
-                # Vérifier numéro de ligne valide
-                if after_line < 0 or after_line > len(lines):
-                    raise FileWriterError(f"Invalid line number: {after_line} (file has {len(lines)} lines)")
+                # Support anchor EOF: -1 = fin du fichier
+                if after_line == -1:
+                    after_line = len(lines)
                 
-                # Insérer contenu
-                lines.insert(after_line, content if content.endswith('\n') else content + '\n')
+                # Clamp EOF: Si after_line dépasse, clamper à la fin (idempotence)
+                original_line = after_line
+                clamped = False
+                if after_line > len(lines):
+                    logger.warning(f"⚠️ Line {after_line} exceeds file length {len(lines)}, clamping to EOF")
+                    after_line = len(lines)
+                    clamped = True
+                
+                # Validation: after_line ne peut pas être négatif (sauf -1 déjà traité)
+                if after_line < 0:
+                    raise FileWriterError(f"Invalid line number: {after_line} (must be >= 0 or -1 for EOF)")
+                
+                # Idempotence: Vérifier si le contenu à insérer existe déjà à cette position
+                # Pour éviter les insertions dupliquées
+                normalized_content = content if content.endswith('\n') else content + '\n'
+                
+                # Vérifier la ligne suivante (si elle existe) pour éviter les doublons
+                if after_line < len(lines):
+                    next_line = lines[after_line] if after_line < len(lines) else ""
+                    if next_line.strip() == normalized_content.strip():
+                        logger.info(f"⚠️ Idempotence: Content already exists at line {after_line}, skipping insert")
+                        return {
+                            "status": "skipped",
+                            "path": file_path,
+                            "after_line": after_line,
+                            "reason": "content_already_exists",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                
+                # Insérer contenu après la ligne spécifiée
+                lines.insert(after_line, normalized_content)
                 
                 # Écrire fichier modifié
                 new_content = ''.join(lines)
                 target_path.write_text(new_content, encoding='utf-8')
                 
-                logger.info(f"✅ Inserted text in {file_path} after line {after_line}")
+                result_msg = f"✅ Inserted text in {file_path} after line {after_line}"
+                if clamped:
+                    result_msg += f" (clamped from {original_line})"
+                logger.info(result_msg)
                 
-                return {
+                result = {
                     "status": "inserted",
                     "path": file_path,
                     "after_line": after_line,
                     "timestamp": datetime.now().isoformat()
                 }
+                
+                if clamped:
+                    result["clamped"] = True
+                    result["original_line"] = original_line
+                
+                return result
                 
             except Exception as e:
                 logger.error(f"❌ Failed to insert text in {file_path}: {e}")
