@@ -1717,6 +1717,7 @@ class Phase2AttachModeTester:
     def cleanup_test_projects(self):
         """Clean up created test projects"""
         import shutil
+        import os
         
         for project_name in self.created_projects:
             try:
