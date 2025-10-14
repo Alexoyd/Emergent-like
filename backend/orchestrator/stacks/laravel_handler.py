@@ -305,7 +305,10 @@ class LaravelHandler(StackHandler):
             # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
             await self._install_dev_dependencies_intelligent(code_path)
 
-            # 4️⃣ Verify the installation
+            # 4️⃣ Create fallback CSS in public/css for compatibility
+            await self._create_fallback_public_css(code_path)
+
+            # 5️⃣ Verify the installation
             if not await self._verify_laravel_installation(code_path):
                 raise Exception("❌ Laravel installation verification failed")
 
@@ -318,6 +321,259 @@ class LaravelHandler(StackHandler):
             if self.logger:
                 self.logger.error(f"❌ Laravel installation failed: {e}")
             raise
+    
+    async def _create_fallback_public_css(self, code_path: Path) -> None:
+        """
+        🎨 Create fallback CSS in public/css/app.css
+        
+        This ensures compatibility when views use {{ asset('css/app.css') }}
+        instead of the modern @vite() directive.
+        
+        The CSS is copied from resources/css/app.css if it exists,
+        or a minimal default stylesheet is created.
+        """
+        try:
+            resources_css = code_path / "resources" / "css" / "app.css"
+            public_css_dir = code_path / "public" / "css"
+            public_css_file = public_css_dir / "app.css"
+            
+            # Create public/css directory
+            public_css_dir.mkdir(parents=True, exist_ok=True)
+            
+            if resources_css.exists():
+                # Copy from resources/css/app.css
+                import shutil
+                shutil.copy2(resources_css, public_css_file)
+                if self.logger:
+                    self.logger.info(f"✅ Copied {resources_css} → {public_css_file}")
+            else:
+                # Create minimal default CSS
+                default_css = """/* Laravel Auto-Generated Fallback CSS */
+/* This file provides basic styling when @vite() directive is not used */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f8f9fa;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-bottom: 20px;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.5rem; }
+
+p {
+    margin-bottom: 15px;
+}
+
+a {
+    color: #3490dc;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Forms */
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+label {
+    font-weight: 600;
+    margin-bottom: 5px;
+    display: block;
+    color: #374151;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+/* Buttons */
+button,
+.btn {
+    background-color: #3b82f6;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+    display: inline-block;
+}
+
+button:hover,
+.btn:hover {
+    background-color: #2563eb;
+}
+
+button[type="submit"] {
+    background-color: #10b981;
+}
+
+button[type="submit"]:hover {
+    background-color: #059669;
+}
+
+button:disabled {
+    background-color: #9ca3af;
+    cursor: not-allowed;
+}
+
+/* Alerts */
+.alert {
+    padding: 15px 20px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    border-left: 4px solid;
+}
+
+.alert-success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border-left-color: #10b981;
+}
+
+.alert-error,
+.alert-danger {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-left-color: #ef4444;
+}
+
+.alert-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-left-color: #f59e0b;
+}
+
+.alert-info {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border-left-color: #3b82f6;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+th {
+    background-color: #f3f4f6;
+    font-weight: 600;
+    color: #374151;
+}
+
+tr:hover {
+    background-color: #f9fafb;
+}
+
+/* Cards */
+.card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+/* Utilities */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.mt-20 { margin-top: 20px; }
+.mb-20 { margin-bottom: 20px; }
+.hidden { display: none; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        padding: 15px;
+    }
+    
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.5rem; }
+}
+"""
+            public_css_file.write_text(default_css)
+            if self.logger:
+                self.logger.info(f"✅ Created default fallback CSS at {public_css_file}")
+    
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Could not create fallback CSS: {e}")
+            # Non-blocking - don't fail the installation for this
+
     
     async def _is_valid_laravel_project(self, code_path: Path) -> bool:
         """🔥 NEW: Check if we already have a valid Laravel project"""

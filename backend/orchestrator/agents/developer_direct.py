@@ -121,6 +121,15 @@ class DeveloperAgentDirect:
                     last_error = "No valid JSON operations found in LLM response"
                     self.log.info(f"Attempt {attempt}: {last_error}")
                     continue
+
+                # 5) Laravel-specific coherence validation (warnings only)
+                if stack == "laravel":
+                    warnings = self._validate_laravel_coherence(operations, stack)
+                    if warnings:
+                        self.log.warning(f"🔍 Laravel coherence checks found {len(warnings)} potential issues:")
+                        for warning in warnings:
+                            self.log.warning(f"  {warning}")
+                        # Don't fail, just log warnings for debugging
                 
                 # Success!
                 self.log.info(f"✅ Generated {len(operations)} valid file operations")
@@ -243,11 +252,71 @@ class DeveloperAgentDirect:
         stack = (stack or "").lower()
         if stack == "laravel":
             return (
-                "- PHP 8+, PSR-12, Laravel conventions.\n"
-                "- Prefer dependency injection, FormRequests, Eloquent models.\n"
-                "- Update routes, controllers, tests (Pest).\n"
-                "- Provide migrations/factories when schema changes."
-            )
+            """🎯 TARGET: Laravel 12+ (PHP 8.3+, Vite assets, modern conventions)
+
+📋 CORE PRINCIPLES:
+- PHP 8.3+, PSR-12 coding standards, Laravel 12 conventions
+- Prefer dependency injection, FormRequests validation, Eloquent models
+- Update routes, controllers, tests (Pest/PHPUnit)
+- Provide migrations/seeders/factories when schema changes
+
+🎨 ASSETS & VITE (Laravel 10+/11+/12+):
+  ⚠️ CRITICAL: Laravel 12 uses Vite for asset compilation
+  ✅ ALWAYS use @vite() directive in Blade templates:
+     @vite(['resources/css/app.css', 'resources/js/app.js'])
+  ❌ NEVER use {{ asset('css/app.css') }} for main stylesheets
+  ✅ Assets location: resources/css/ and resources/js/ (NOT public/)
+  ✅ Compiled output goes to public/build/ automatically
+  📝 Example Blade head section:
+     <head>
+         <meta charset="UTF-8">
+         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+         <title>{{ $title ?? 'Laravel App' }}</title>
+         @vite(['resources/css/app.css', 'resources/js/app.js'])
+     </head>
+
+🎯 CONTROLLERS & ROUTES (CRITICAL ORDER):
+  ⚠️ MANDATORY: Create controllers BEFORE referencing in routes
+  1️⃣ FIRST: Create controller file in app/Http/Controllers/
+  2️⃣ THEN: Add route that references the controller
+  3️⃣ FINALLY: Create corresponding Blade views
+  📝 Controller naming: PascalCase + 'Controller' suffix (e.g., ProductController)
+  📝 Controller template:
+     <?php
+     namespace App\Http\Controllers;
+     use Illuminate\Http\Request;
+     class YourController extends Controller {
+         public function index() {
+             return view('your_view');
+         }
+     }
+  ✅ Each route action MUST have corresponding controller method
+  ✅ Use resource controllers for CRUD: Route::resource('products', ProductController::class)
+
+🏠 DEFAULT ROUTE HANDLING:
+  - When creating main application feature, update '/' route to point to it
+  - Remove or replace default 'welcome' route in routes/web.php
+  - Example: Route::get('/', [HomeController::class, 'index']);
+  - Or redirect: Route::redirect('/', '/dashboard');
+
+✅ VALIDATION & SECURITY:
+  - Always use FormRequest classes for complex validation
+  - Include @csrf token in all forms
+  - Use route model binding when appropriate
+  - Implement authorization policies for sensitive actions
+
+🧪 TESTING:
+  - Write Pest tests for new features (Laravel 12 default)
+  - Test controller actions, validation rules, database operations
+  - Location: tests/Feature/ and tests/Unit/
+
+📦 COMMON PATTERNS:
+  - API responses: return response()->json($data)
+  - Redirects with data: return redirect()->route('name')->with('status', 'Success!')
+  - Flash messages: session()->flash('message', 'Saved successfully')
+  - Validation: $request->validate(['field' => 'required|string|max:255'])
+"""
+        )
         if stack == "react":
             return (
                 "- React 18, functional components, hooks.\n"
@@ -370,3 +439,76 @@ class DeveloperAgentDirect:
             self.log.error(f"❌ JSON validation failed: {e}")
             self.log.error(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
             raise ValueError(f"JSON validation failed: {e}")
+    
+    def _validate_laravel_coherence(self, operations: List[Dict[str, Any]], stack: str) -> List[str]:
+        """
+        🔥 Validate Laravel-specific coherence rules
+        Returns list of warning messages (non-blocking, for logging)
+        """
+        if stack != "laravel":
+            return []
+        
+        warnings = []
+        
+        # Extract files being created/modified
+        controller_files = []
+        route_files = []
+        view_files = []
+        
+        for op in operations:
+            path = op.get('path', '')
+            op_type = op.get('type', '')
+            
+            if 'app/Http/Controllers/' in path:
+                controller_files.append(path)
+            elif 'routes/' in path:
+                route_files.append(path)
+            elif 'resources/views/' in path:
+                view_files.append(path)
+        
+        # Check routes for controller references
+        import re
+        for route_op in [op for op in operations if 'routes/' in op.get('path', '')]:
+            content = route_op.get('content', '')
+            
+            # Find controller class references: SomeController::class
+            controller_refs = re.findall(r'([A-Z][a-zA-Z0-9]*Controller)::class', content)
+            
+            for controller_name in controller_refs:
+                # Check if this controller is being created in the operations
+                expected_path = f"app/Http/Controllers/{controller_name}.php"
+                
+                # Also check for namespaced controllers (e.g., Admin\ProductController)
+                namespace_refs = re.findall(rf'([A-Za-z0-9\\]+{controller_name})::class', content)
+                
+                found = False
+                for ctrl_file in controller_files:
+                    if controller_name in ctrl_file:
+                        found = True
+                        break
+                
+                if not found:
+                    warnings.append(
+                        f"⚠️ Route references '{controller_name}' but controller file not created in this step. "
+                        f"Expected file: {expected_path}"
+                    )
+        
+        # Check for asset() usage with css/js (should use @vite instead)
+        for view_op in [op for op in operations if 'resources/views/' in op.get('path', '')]:
+            content = view_op.get('content', '')
+            
+            # Check for old asset() pattern
+            if "{{ asset('css/" in content or '{{ asset("css/' in content:
+                warnings.append(
+                    f"⚠️ View '{view_op.get('path')}' uses {{ asset('css/...') }} which may not work with Vite. "
+                    f"Consider using @vite(['resources/css/app.css']) instead."
+                )
+            
+            if "{{ asset('js/" in content or '{{ asset("js/' in content:
+                warnings.append(
+                    f"⚠️ View '{view_op.get('path')}' uses {{ asset('js/...') }} which may not work with Vite. "
+                    f"Consider using @vite(['resources/js/app.js']) instead."
+                )
+        
+        return warnings
+

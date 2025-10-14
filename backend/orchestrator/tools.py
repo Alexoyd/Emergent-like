@@ -1820,8 +1820,8 @@ Output:\
                     )
                     
                     # Display tail in console
-                    stderr_lines = result.stderr.split('')
-                    stderr_tail = ''.join(stderr_lines[-20:]) if len(stderr_lines) > 20 else result.stderr
+                    stderr_lines = result.stderr.split('\n')
+                    stderr_tail = '\n'.join(stderr_lines[-20:]) if len(stderr_lines) > 20 else result.stderr
                     
                     last_error = (
                         f"Command '{' '.join(command)}' failed (exit {result.returncode})\n"
