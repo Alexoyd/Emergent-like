@@ -13,8 +13,8 @@ from ..utils import json_utils
 
 class LaravelHandler(StackHandler):
     name = "laravel"
-    # 🔥 FIXED: Non-interactive test command to prevent hanging
-    default_test_command: List[str] = ["vendor/bin/pest", "--no-interaction", "--stop-on-failure"]
+    # 🔥 FIXED: Pest test command without --no-interaction (unsupported)
+    default_test_command: List[str] = ["vendor/bin/pest", "--stop-on-failure"]
 
     @staticmethod
     def sanitize_composer_name(name: Optional[str]) -> str:
@@ -305,10 +305,13 @@ class LaravelHandler(StackHandler):
             # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
             await self._install_dev_dependencies_intelligent(code_path)
 
-            # 4️⃣ Create fallback CSS in public/css for compatibility
+            # 4️⃣ Install Vite and build assets (Laravel 12+ requirement)
+            await self._install_and_build_vite(code_path)
+
+            # 5️⃣ Create fallback CSS in public/css for compatibility
             await self._create_fallback_public_css(code_path)
 
-            # 5️⃣ Verify the installation
+            # 6️⃣ Verify the installation
             if not await self._verify_laravel_installation(code_path):
                 raise Exception("❌ Laravel installation verification failed")
 
@@ -321,6 +324,87 @@ class LaravelHandler(StackHandler):
             if self.logger:
                 self.logger.error(f"❌ Laravel installation failed: {e}")
             raise
+    
+    async def _install_and_build_vite(self, code_path: Path) -> None:
+        """
+        ⚡ Install Vite dependencies and build assets for Laravel 12+
+        
+        Laravel 12 uses Vite by default for asset compilation. This method:
+        1. Checks if package.json exists (should exist in fresh Laravel install)
+        2. Installs npm dependencies (including vite and laravel-vite-plugin)
+        3. Runs npm run build to compile assets to public/build/
+        
+        This ensures @vite() directive in Blade templates works immediately.
+        """
+        try:
+            package_json = code_path / "package.json"
+            
+            if not package_json.exists():
+                if self.logger:
+                    self.logger.warning("⚠️ package.json not found, skipping Vite setup")
+                return
+            
+            # Check if npm is available
+            npm_check = await self.run_command(["which", "npm"], cwd=str(code_path))
+            if npm_check.returncode != 0:
+                if self.logger:
+                    self.logger.warning("⚠️ npm not found, skipping Vite setup")
+                return
+            
+            if self.logger:
+                self.logger.info("📦 Installing npm dependencies (Vite + Laravel Vite Plugin)...")
+            
+            # Install npm dependencies
+            npm_install = await self.run_command(
+                ["npm", "install"],
+                cwd=str(code_path),
+                timeout=180  # 3 minutes for npm install
+            )
+            
+            if npm_install.returncode != 0:
+                if self.logger:
+                    self.logger.warning(f"⚠️ npm install failed: {npm_install.stderr}")
+                    self.logger.info("Continuing without Vite build...")
+                return
+            
+            if self.logger:
+                self.logger.info("✅ npm dependencies installed")
+                self.logger.info("🔨 Building Vite assets (npm run build)...")
+            
+            # Build Vite assets
+            npm_build = await self.run_command(
+                ["npm", "run", "build"],
+                cwd=str(code_path),
+                timeout=180  # 3 minutes for build
+            )
+            
+            if npm_build.returncode != 0:
+                if self.logger:
+                    self.logger.warning(f"⚠️ npm run build failed: {npm_build.stderr}")
+                    self.logger.info("Continuing without Vite build (fallback CSS will be used)...")
+                return
+            
+            # Verify build output
+            build_dir = code_path / "public" / "build"
+            manifest_file = build_dir / "manifest.json"
+            
+            if manifest_file.exists():
+                if self.logger:
+                    self.logger.info(f"✅ Vite assets built successfully at {build_dir}")
+                    self.logger.info("✅ @vite() directive will work in Blade templates")
+            else:
+                if self.logger:
+                    self.logger.warning("⚠️ Vite build completed but manifest.json not found")
+            
+        except asyncio.TimeoutError:
+            if self.logger:
+                self.logger.warning("⚠️ Vite installation/build timed out, continuing without it...")
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Could not install/build Vite: {e}")
+                self.logger.info("Continuing without Vite (fallback CSS will be used)...")
+            # Non-blocking - don't fail the installation for this
+    
     
     async def _create_fallback_public_css(self, code_path: Path) -> None:
         """

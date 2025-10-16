@@ -1471,12 +1471,12 @@ class ToolManager:
         Returns multiple command options in order of preference.
         """
         commands_map = {
-            # 🔥 FIXED: Laravel tests with non-interactive flags and timeouts
+            # 🔥 FIXED: Pest commands without --no-interaction (unsupported by Pest)
             "pest": [
-                ["./vendor/bin/pest", "--no-interaction", "--stop-on-failure", "--bail"],
-                ["vendor/bin/pest", "--no-interaction", "--stop-on-failure"],  
-                ["php", "artisan", "test", "--no-interaction", "--stop-on-failure"],
-                ["composer", "test", "--no-interaction"]
+                ["./vendor/bin/pest", "--stop-on-failure", "--bail"],
+                ["vendor/bin/pest", "--stop-on-failure"],  
+                ["php", "artisan", "test", "--stop-on-failure"],
+                ["composer", "test"]
             ],
             # 🔥 FIXED: PHPStan with error-format and no-progress
             # 🔥 ENHANCED: PHPStan with Composer scripts priority + binary fallbacks
