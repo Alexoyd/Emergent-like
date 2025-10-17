@@ -232,6 +232,12 @@ class DeveloperAgentDirect:
             "  🚨 For PHP files (routes/web.php, etc): NEVER use after_line=0!\n"
             "     This would insert after <?php, breaking imports. Use search_replace instead!\n"
             "• search_replace: Find and replace exact text (RECOMMENDED for routes/web.php)\n"
+            "  🚨 CRITICAL: You MUST know the EXACT current content before using search_replace!\n"
+            "  ⚠️ If unsure of file content, use RAG context or read file structure from plan\n"
+            "  ⚠️ Common files content:\n"
+            "     - Laravel 12 DatabaseSeeder.php has: public function run(): void { // User::factory(10)->create(); }\n"
+            "     - Laravel 12 routes/web.php has: Route::get('/', function () { return view('welcome'); });\n"
+            "  ✅ Match whitespace, line breaks, and indentation EXACTLY\n"
             "• rename: Move or rename file\n"
             "• delete: Remove file\n\n"
             "⚠️ MANDATORY RULES:\n"
@@ -369,6 +375,36 @@ Route::get('/products', [ProductController::class, 'index']);"
   - Multi-feature → Route::redirect('/', '/main-feature');
   
   🎯 Goal: User visits http://localhost:8000 and sees YOUR app, not Laravel default
+
+🗄️ DATABASE & SEEDERS (Laravel 12):
+  📋 Default DatabaseSeeder.php content (Laravel 12):
+  <?php
+  namespace Database\Seeders;
+  use Illuminate\Database\Seeder;
+  
+  class DatabaseSeeder extends Seeder {
+      public function run(): void {
+          // User::factory(10)->create();
+          // User::factory()->create(['name' => 'Test User', 'email' => 'test@example.com']);
+      }
+  }
+  
+  ✅ To call custom seeders, use search_replace:
+  {
+    "type": "search_replace",
+    "path": "database/seeders/DatabaseSeeder.php",
+    "search": "    public function run(): void
+    {
+        // User::factory(10)->create();",
+    "replace": "    public function run(): void
+    {
+        $this->call(CharacterSeeder::class);
+        // User::factory(10)->create();"
+  }
+  
+  ⚠️ CRITICAL: Match EXACT indentation (4 spaces in Laravel 12)
+  ⚠️ Include enough context to make search unique
+  ⚠️ Always check RAG context for actual file content before search_replace
 
 ✅ VALIDATION & SECURITY:
   - Always use FormRequest classes for complex validation
