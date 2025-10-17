@@ -225,11 +225,13 @@ class DeveloperAgentDirect:
             "📋 OPERATION TYPES:\n"
             "• create: New file (must not exist)\n"
             "• update: Replace entire file content (must exist)\n"
-            "• insert: Insert text after specific line number (0-indexed: 0=start, N=after line N, -1=EOF)\n"
-            "  ⚠️ Line numbers are 0-INDEXED! First line is 0, not 1.\n"
-            "  ⚠️ after_line=0 means insert at the very beginning (before all lines)\n"
-            "  ⚠️ after_line=-1 means insert at the end of file (EOF anchor)\n"
-            "• search_replace: Find and replace exact text\n"
+            "• insert: Insert text AFTER specific line number (0-indexed lines)\n"
+            "  ⚠️ Line numbers are 0-INDEXED! Line 0 is the first line.\n"
+            "  ⚠️ after_line=0 means insert AFTER line 0 (first line) → becomes line 1\n"
+            "  ⚠️ after_line=1 means insert AFTER line 1 (second line) → becomes line 2)\n"
+            "  🚨 For PHP files (routes/web.php, etc): NEVER use after_line=0!\n"
+            "     This would insert after <?php, breaking imports. Use search_replace instead!\n"
+            "• search_replace: Find and replace exact text (RECOMMENDED for routes/web.php)\n"
             "• rename: Move or rename file\n"
             "• delete: Remove file\n\n"
             "⚠️ MANDATORY RULES:\n"
@@ -239,10 +241,12 @@ class DeveloperAgentDirect:
             "4. ✅ START your response with {  (opening brace)\n"
             "5. ✅ END your response with }  (closing brace)\n"
             "6. ✅ All paths must be relative (no leading /, no ..)\n"
-            "7. ✅ Escape special characters in JSON strings (\\n, \\t, \\\", etc.)\n"
+            "7. ✅ Use proper JSON escaping: \\n for newline, \\t for tab, \\\" for quotes\n"
+            "   🚨 CRITICAL: These WILL be interpreted as actual newlines/tabs/quotes\n"
+            "   Example: \"use App\\\\Http\\\\Controllers\\\\ProductController;\\\\n\" becomes actual newline\n"
             "8. ✅ Maximum 5 operations per step\n"
             "9. ✅ Operations execute in order automatically (create before insert/update)\n"
-            "10. ✅ Use 0-indexed line numbers for insert operations (0=start, -1=EOF)\n\n"
+            "10. ✅ Use 0-indexed line numbers for insert operations\n"
             "🎯 YOUR RESPONSE MUST START EXACTLY LIKE THIS:\n"
             '{"operations": [\n'
         )
@@ -293,11 +297,78 @@ class DeveloperAgentDirect:
   ✅ Each route action MUST have corresponding controller method
   ✅ Use resource controllers for CRUD: Route::resource('products', ProductController::class)
 
-🏠 DEFAULT ROUTE HANDLING:
-  - When creating main application feature, update '/' route to point to it
-  - Remove or replace default 'welcome' route in routes/web.php
-  - Example: Route::get('/', [HomeController::class, 'index']);
-  - Or redirect: Route::redirect('/', '/dashboard');
+🚨 ROUTES FILE MODIFICATION (routes/web.php) - CRITICAL RULES:
+  ⛔ NEVER insert before <?php tag - file will be corrupted!
+  ⛔ NEVER insert at line 0 or 1 - this puts code before <?php
+  ✅ ALWAYS use "search_replace" operation for routes/web.php
+  ✅ ALWAYS read the ENTIRE file first to see existing structure
+  ✅ Use search_replace to add new "use" imports after existing ones
+  ✅ Use search_replace to add new routes after existing routes or at EOF
+  
+  📝 CORRECT Example for adding a route:
+  {
+    "type": "search_replace",
+    "path": "routes/web.php",
+    "search": "use Illuminate\Support\Facades\Route;",
+    "replace": "use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ProductController;"
+  }
+  Then add the route itself at the end:
+  {
+    "type": "search_replace", 
+    "path": "routes/web.php",
+    "search": "Route::get('/', function () {
+    return view('welcome');
+});",
+    "replace": "Route::get('/', function () {
+    return view('welcome');
+});
+
+Route::get('/products', [ProductController::class, 'index']);"
+  }
+  
+  ❌ WRONG Example (NEVER DO THIS):
+  {
+    "type": "insert",
+    "path": "routes/web.php", 
+    "after_line": 0,  // ❌ This inserts BEFORE <?php tag!
+    "content": "use App\Http\Controllers\ProductController;"
+  }
+
+🏠 DEFAULT ROUTE HANDLING (MANDATORY):
+  🚨 CRITICAL: When building ANY application, ALWAYS modify the '/' route!
+  
+  ⛔ NEVER leave the default Laravel welcome page as entry point
+  ⛔ Users should see YOUR application, not "Let's get started"
+  
+  ✅ REQUIRED: Replace or redirect the '/' route in routes/web.php:
+  
+  Option 1 - Direct replacement (PREFERRED):
+  {
+    "type": "search_replace",
+    "path": "routes/web.php",
+    "search": "Route::get('/', function () {
+    return view('welcome');
+});",
+    "replace": "Route::get('/', [ProductController::class, 'index']);"
+  }
+  
+  Option 2 - Redirect to main feature:
+  {
+    "type": "search_replace",
+    "path": "routes/web.php",
+    "search": "Route::get('/', function () {
+    return view('welcome');
+});",
+    "replace": "Route::redirect('/', '/products');"
+  }
+  
+  📝 Examples:
+  - Product listing app → Route::get('/', [ProductController::class, 'index']);
+  - Dashboard app → Route::get('/', [DashboardController::class, 'index']);
+  - Multi-feature → Route::redirect('/', '/main-feature');
+  
+  🎯 Goal: User visits http://localhost:8000 and sees YOUR app, not Laravel default
 
 ✅ VALIDATION & SECURITY:
   - Always use FormRequest classes for complex validation
@@ -433,12 +504,61 @@ class DeveloperAgentDirect:
             validated = DeveloperOutput(**data)
             # Convert Pydantic models to dicts
             operations = [op.dict() for op in validated.operations]
+            
+            # 🔧 FIX CRITIQUE: Nettoyer les séquences d'échappement littérales dans le contenu
+            operations = self._fix_literal_escapes(operations)
+            
             self.log.info(f"✅ Validated {len(operations)} operations")
             return operations
         except ValidationError as e:
             self.log.error(f"❌ JSON validation failed: {e}")
             self.log.error(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
             raise ValueError(f"JSON validation failed: {e}")
+    
+    def _fix_literal_escapes(self, operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        🔧 FIX: Corrige les séquences d'échappement littérales dans le contenu
+        
+        Problème: Le LLM génère parfois du texte avec des \n littéraux au lieu de retours à la ligne
+        Exemple: "use App\Http\Controllers\ProductController;\n"
+        
+        Cette fonction détecte et corrige ces cas.
+        """
+        fixed_operations = []
+        
+        for op in operations:
+            op = op.copy()  # Ne pas modifier l'original
+            
+            # Nettoyer le champ "content" s'il existe
+            if 'content' in op and isinstance(op['content'], str):
+                content = op['content']
+                
+                # Détecter si le contenu a des \n littéraux (non interprétés)
+                # Pattern: Si on voit \n mais pas de vrais retours à la ligne
+                if '\\n' in content and '\n' not in content:
+                    # C'est du \n littéral, remplacer par de vrais 
+                    content = content.replace('\\n', '\n')
+                    content = content.replace('\\\t', '\t')
+                    content = content.replace('\\n', '\n')
+                    op['content'] = content
+                    self.log.warning(f"⚠️ Fixed literal escape sequences in content for {op.get('path', 'unknown')}")
+            
+            # Nettoyer "search" et "replace" pour search_replace operations
+            if 'search' in op and isinstance(op['search'], str):
+                search = op['search']
+                if '\\n' in search and '\n' not in search:
+                    op['search'] = search.replace('\\n', '\n').replace('\\\t', '\t')
+                    self.log.warning(f"⚠️ Fixed literal escapes in search pattern")
+            
+            if 'replace' in op and isinstance(op['replace'], str):
+                replace = op['replace']
+                if '\\n' in replace and '\n' not in replace:
+                    op['replace'] = replace.replace('\\n', '\n').replace('\\\t', '\t')
+                    self.log.warning(f"⚠️ Fixed literal escapes in replace pattern")
+            
+            fixed_operations.append(op)
+        
+        return fixed_operations
     
     def _validate_laravel_coherence(self, operations: List[Dict[str, Any]], stack: str) -> List[str]:
         """
@@ -509,6 +629,32 @@ class DeveloperAgentDirect:
                     f"⚠️ View '{view_op.get('path')}' uses {{ asset('js/...') }} which may not work with Vite. "
                     f"Consider using @vite(['resources/js/app.js']) instead."
                 )
+
+                        # 🚨 CHECK: Verify that default '/' route is being replaced/redirected
+        # This is CRITICAL - users should see the app, not Laravel welcome page
+        for route_op in [op for op in operations if 'routes/web.php' in op.get('path', '')]:
+            content = route_op.get('content', '') or ''
+            replace = route_op.get('replace', '') or ''
+            search = route_op.get('search', '') or ''
+            
+            # Check if operations modify the default welcome route
+            modifies_root_route = (
+                "view('welcome')" in search or  # search_replace that touches welcome
+                "return view('welcome')" in content or  # Direct content modification
+                "Route::get('/'," in replace or  # Replacing root route
+                "Route::redirect('/'," in replace  # Redirecting root route
+            )
+            
+            # If creating routes but NOT modifying '/', warn
+            if not modifies_root_route and ('Route::' in content or 'Route::' in replace):
+                # Check if there are multiple routes being created
+                route_count = content.count('Route::') + replace.count('Route::')
+                if route_count > 0:
+                    warnings.append(
+                        f"🚨 CRITICAL: Creating routes but NOT modifying '/' (root route). "
+                        f"Users will see Laravel welcome page instead of your app! "
+                        f"Add a search_replace operation to change the default route."
+                    )
         
         return warnings
 

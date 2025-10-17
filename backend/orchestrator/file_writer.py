@@ -198,16 +198,22 @@ class FileWriter:
         
         Args:
             file_path: Chemin relatif du fichier
-            after_line: Numéro de ligne après laquelle insérer (0-indexed)
-                       - 0 = insérer au début (avant la première ligne)
-                       - N = insérer après la ligne N
+            after_line: Numéro de ligne après laquelle insérer (0-indexed, lignes comptées depuis 0)
+                       - 0 = insérer APRÈS ligne 0 (la première ligne), donc en position 1
+                       - N = insérer APRÈS ligne N, donc en position N+1
                        - -1 = insérer à la fin (EOF anchor)
                        - Si > nombre de lignes, clamp à EOF (idempotence)
             content: Contenu à insérer
             project_id: ID du projet (pour lock)
         
         Returns:
-            Dict avec status, path, line_number, clamped (si clamped à EOF)
+           Dict avec status, path, line_number, clamped (si clamped à EOF)
+            
+        Note: Lignes 0-indexed. Pour un fichier avec 3 lignes [0, 1, 2]:
+              - after_line=0 insère après ligne 0 → position 1
+              - after_line=1 insère après ligne 1 → position 2
+              - after_line=2 insère après ligne 2 → position 3 (EOF)
+              - after_line=-1 insère à EOF → position 3
         """
         async with self._get_lock(project_id):
             try:
@@ -222,20 +228,20 @@ class FileWriter:
                 
                 # Support anchor EOF: -1 = fin du fichier
                 if after_line == -1:
-                    after_line = len(lines)
-                
-                # Clamp EOF: Si after_line dépasse, clamper à la fin (idempotence)
-                original_line = after_line
-                clamped = False
-                if after_line > len(lines):
-                    logger.warning(f"⚠️ Line {after_line} exceeds file length {len(lines)}, clamping to EOF")
-                    after_line = len(lines)
-                    clamped = True
+                    after_line = len(lines) - 1  # Dernière ligne
                 
                 # Validation: after_line ne peut pas être négatif (sauf -1 déjà traité)
-                if after_line < 0:
+                if after_line < -1:
                     raise FileWriterError(f"Invalid line number: {after_line} (must be >= 0 or -1 for EOF)")
                 
+                # Clamp EOF: Si after_line dépasse, clamper à la dernière ligne (idempotence)
+                original_line = after_line
+                clamped = False
+                if after_line >= len(lines):
+                    logger.warning(f"⚠️ Line {after_line} exceeds file length {len(lines)}, clamping to EOF")
+                    after_line = len(lines) - 1 if len(lines) > 0 else 0
+                    clamped = True
+                              
                 # Idempotence: Vérifier si le contenu à insérer existe déjà à cette position
                 # Pour éviter les insertions dupliquées
                 normalized_content = content if content.endswith('\n') else content + '\n'
@@ -245,16 +251,19 @@ class FileWriter:
                 # pour détecter si le contenu existe déjà
                 skip_insert = False
                 
-                # Vérifier ligne à la position d'insertion (sera décalée par l'insert)
-                if after_line < len(lines) and lines[after_line].strip() == normalized_stripped:
+                # Position d'insertion réelle = after_line + 1
+                insert_position = after_line + 1
+                
+                # Vérifier ligne à la position d'insertion
+                if insert_position < len(lines) and lines[insert_position].strip() == normalized_stripped:
                     skip_insert = True
                 
-                # Vérifier ligne précédente (si elle existe)
-                if not skip_insert and after_line > 0 and lines[after_line - 1].strip() == normalized_stripped:
+                # Vérifier ligne à after_line (juste avant l'insertion)
+                if not skip_insert and after_line >= 0 and after_line < len(lines) and lines[after_line].strip() == normalized_stripped:
                     skip_insert = True
                 
-                # Vérifier ligne suivante (si elle existe)
-                if not skip_insert and after_line + 1 < len(lines) and lines[after_line + 1].strip() == normalized_stripped:
+                # Vérifier ligne juste après l'insertion
+                if not skip_insert and insert_position + 1 < len(lines) and lines[insert_position + 1].strip() == normalized_stripped:
                     skip_insert = True
                 
                 if skip_insert:
@@ -267,8 +276,10 @@ class FileWriter:
                         "timestamp": datetime.now().isoformat()
                     }
                 
-                # Insérer contenu après la ligne spécifiée
-                lines.insert(after_line, normalized_content)
+                # 🔧 FIX CRITIQUE: Insérer APRÈS la ligne spécifiée
+                # list.insert(i, x) insère AVANT l'index i, donc pour insérer APRÈS after_line,
+                # on doit utiliser insert(after_line + 1, content)
+                lines.insert(after_line + 1, normalized_content)
                 
                 # Écrire fichier modifié
                 new_content = ''.join(lines)
