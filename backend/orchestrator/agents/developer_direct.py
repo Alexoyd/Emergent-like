@@ -97,6 +97,7 @@ class DeveloperAgentDirect:
                 file_tree=file_tree_snippet,
                 attempt=attempt,
                 last_error=last_error,
+                file_contents=file_contents,  # 🔥 NOUVEAU
             )
             
             # 3) LLM call
@@ -161,6 +162,7 @@ class DeveloperAgentDirect:
         file_tree: str,
         attempt: int,
         last_error: Optional[str],
+        file_contents: Optional[Dict[str, str]] = None,  # 🔥 NOUVEAU
     ) -> str:
         """
         Construit un prompt pour générer des opérations JSON
@@ -172,6 +174,18 @@ class DeveloperAgentDirect:
         file_tree_block = (
             f"Existing project structure (partial):\n{file_tree.strip()}\n\n" if file_tree else ""
         )
+
+        # 🔥 NOUVEAU: Block avec contenu des fichiers
+        file_contents_block = ""
+        if file_contents:
+            file_contents_block = (
+                "\n📄 CURRENT FILE CONTENTS (for search_replace operations):\n"
+                "⚠️ Use these EXACT strings when doing search_replace operations!\n\n"
+            )
+            for file_path, content in file_contents.items():
+                # Limiter à 800 caractères pour ne pas surcharger le prompt
+                truncated = content if len(content) <= 800 else content[:800] + "\n... (truncated)"
+                file_contents_block += f"### {file_path}\n```\n{truncated}\n```\n\n"
         
         return (
             "You are a senior software developer. Implement the following step by generating file operations.\n\n"

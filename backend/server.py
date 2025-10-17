@@ -2062,6 +2062,10 @@ async def _execute_step_with_agents(
                         "type": "info",
                         "content": f"✅ Step {step_index + 1} changes committed to Git"
                     })
+                    
+                    # 🔥 NOUVEAU: Auto-exécution des migrations Laravel
+                    if files_changed:
+                        await _run_laravel_migrations_if_needed(run_id, str(project_code_path), files_changed)
                 else:
                     await state_manager.add_log(run_id, {
                         "type": "warning",
