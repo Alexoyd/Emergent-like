@@ -42,6 +42,51 @@ class DeveloperAgentDirect:
     Le LLM retourne du JSON structuré que nous validons et exécutons directement.
     Plus fiable que les patches Git.
     """
+
+     # --- AJOUT 1 : méthode utilitaire manquante ---
+    def _read_important_files(self, project_path: str, stack: str) -> Dict[str, str]:
+        """
+        Lit un sous-ensemble de fichiers critiques pour fournir un contexte fiable
+        aux opérations 'search_replace' (contenu exact attendu).
+        """
+        root = Path(project_path)
+        files: Dict[str, str] = {}
+
+        def safe_read(relpath: str, max_bytes: int = 20000) -> None:
+            p = root / relpath
+            try:
+                if p.exists() and p.is_file():
+                    content = p.read_text(encoding="utf-8", errors="replace")
+                    if len(content) > max_bytes:
+                        content = content[:max_bytes] + "\n... (truncated)"
+                    files[relpath] = content
+            except Exception as e:
+                self.log.debug(f"Skip read {relpath}: {e}")
+
+        # Commun
+        safe_read("composer.json")
+        safe_read("routes/web.php")
+        safe_read("routes/api.php")
+        safe_read("config/app.php")
+        safe_read("bootstrap/app.php")
+        safe_read("resources/css/app.css")
+        safe_read("resources/js/app.js")
+        safe_read("database/seeders/DatabaseSeeder.php")
+
+        # Spécifique Laravel
+        if stack == "laravel":
+            # Lire quelques contrôleurs fréquents (si présents)
+            controllers_dir = root / "app" / "Http" / "Controllers"
+            if controllers_dir.exists():
+                count = 0
+                for p in controllers_dir.rglob("*.php"):
+                    rel = str(p.relative_to(root))
+                    safe_read(rel, max_bytes=15000)
+                    count += 1
+                    if count >= 10:  # borne raisonnable pour le prompt
+                        break
+
+        return files
     
     def __init__(
         self,
@@ -88,6 +133,9 @@ class DeveloperAgentDirect:
                 rag_context = []
         
         rag_context = rag_context or []
+        
+        # --- AJOUT 2 : initialiser last_error avant la boucle ---
+        last_error: Optional[str] = None
         
          # 🔧 Read important files for search_replace context
         file_contents: Optional[Dict[str, str]] = {}
@@ -603,23 +651,23 @@ Route::get('/products', [ProductController::class, 'index']);"
                 # Pattern: Si on voit \n mais pas de vrais retours à la ligne
                 if '\\n' in content and '\n' not in content:
                     # C'est du \n littéral, remplacer par de vrais 
-                    content = content.replace('\\n', '\n')
-                    content = content.replace('\\\t', '\t')
-                    content = content.replace('\\n', '\n')
+                    content = content.replace('\n', '\n')
+                    content = content.replace('\\t', '\t')
+                    content = content.replace('\n', '\n')
                     op['content'] = content
                     self.log.warning(f"⚠️ Fixed literal escape sequences in content for {op.get('path', 'unknown')}")
             
             # Nettoyer "search" et "replace" pour search_replace operations
             if 'search' in op and isinstance(op['search'], str):
                 search = op['search']
-                if '\\n' in search and '\n' not in search:
-                    op['search'] = search.replace('\\n', '\n').replace('\\\t', '\t')
+                if '\n' in search and '\n' not in search:
+                    op['search'] = search.replace('\n', '\n').replace('\\t', '\t')
                     self.log.warning(f"⚠️ Fixed literal escapes in search pattern")
             
             if 'replace' in op and isinstance(op['replace'], str):
                 replace = op['replace']
-                if '\\n' in replace and '\n' not in replace:
-                    op['replace'] = replace.replace('\\n', '\n').replace('\\\t', '\t')
+                if '\n' in replace and '\n' not in replace:
+                    op['replace'] = replace.replace('\n', '\n').replace('\\t', '\t')
                     self.log.warning(f"⚠️ Fixed literal escapes in replace pattern")
             
             fixed_operations.append(op)
