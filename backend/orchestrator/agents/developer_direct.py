@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Dict
 import logging
 import json
+import os
+from pathlib import Path
 from pydantic import ValidationError
 
 from ..plan_parser import Step
@@ -87,10 +89,17 @@ class DeveloperAgentDirect:
         
         rag_context = rag_context or []
         
-        # 🔧 Initialize file_contents (for search_replace operations)
+         # 🔧 Read important files for search_replace context
         file_contents: Optional[Dict[str, str]] = {}
+        if project_path:
+            try:
+                file_contents = self._read_important_files(str(project_path), stack)
+                self.log.info(f"📚 Loaded {len(file_contents)} files for context")
+            except Exception as e:
+                self.log.warning(f"Could not read important files: {e}")
+                file_contents = {}
         
-        last_error: Optional[str] = None
+        ast_error: Optional[str] = None
         for attempt in range(1, self.max_attempts + 1):
             # 2) Build JSON prompt
             prompt = self._build_json_prompt(
@@ -182,12 +191,15 @@ class DeveloperAgentDirect:
         file_contents_block = ""
         if file_contents:
             file_contents_block = (
-                "\n📄 CURRENT FILE CONTENTS (for search_replace operations):\n"
-                "⚠️ Use these EXACT strings when doing search_replace operations!\n\n"
+                "\n📄 CURRENT FILE CONTENTS (CRITICAL - READ BEFORE search_replace!):\n"
+                "🚨 These are the ACTUAL current contents of important files.\n"
+                "🚨 When using 'search_replace', copy the EXACT text from below!\n"
+                "🚨 DO NOT guess - use these exact strings!\n"
             )
             for file_path, content in file_contents.items():
-                # Limiter à 800 caractères pour ne pas surcharger le prompt
-                truncated = content if len(content) <= 800 else content[:800] + "\n... (truncated)"
+                # Montrer plus de contenu pour les fichiers clés
+                max_chars = 2000 if file_path in ["routes/web.php", "routes/api.php"] else 800
+                truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated)"
                 file_contents_block += f"### {file_path}\n```\n{truncated}\n```\n\n"
         
         return (
@@ -196,6 +208,7 @@ class DeveloperAgentDirect:
             f"Target stack: {stack}\n\n"
             f"Context from RAG (may include code excerpts, constraints):\n{rag_block}\n\n"
             f"{file_tree_block}"
+            f"{file_contents_block}"  # 🔥 Ajout du contenu des fichiers
             f"Coding standards and constraints for this stack:\n{guidelines}\n\n"
             f"{error_hint}"
             "🔥🔥🔥 CRITICAL INSTRUCTIONS - READ CAREFULLY 🔥🔥🔥\n\n"
