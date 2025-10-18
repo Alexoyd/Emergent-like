@@ -87,6 +87,9 @@ class DeveloperAgentDirect:
         
         rag_context = rag_context or []
         
+        # 🔧 Initialize file_contents (for search_replace operations)
+        file_contents: Optional[Dict[str, str]] = {}
+        
         last_error: Optional[str] = None
         for attempt in range(1, self.max_attempts + 1):
             # 2) Build JSON prompt
