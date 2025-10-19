@@ -91,7 +91,7 @@ class ProjectManager:
                     logger.info(f"✅ {stack.capitalize()} project skeleton created successfully")
                     
                      # Note: install_dependencies expects project_path (parent of code dir)
-                    logger.info(f\"Installing dependencies for {stack} project {project_id}\")
+                    logger.info(f"Installing dependencies for {stack} project {project_id}")
                     install_success = await self.install_dependencies(str(project_path), stack)
                     if install_success:
                         metadata["dependencies_installed"] = True
