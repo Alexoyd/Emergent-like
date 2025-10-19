@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Planner agent implementation.
 
@@ -9,7 +10,6 @@ the LLM router for generation.  The returned plan text is then
 parsed into a structured list of steps via :class:`PlanParser`.
 """
 import logging
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Any
