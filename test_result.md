@@ -745,6 +745,18 @@ agent_communication:
           agent: "main"
           comment: "🔥 PHASE 4 VUE.JS HANDLER CORRIGÉ! Problèmes résolus: 1) ✅ index.html manquant → ajouté à la racine avec <script type='module' src='/src/main.js'> 2) ✅ src/main.js incomplet → version complète avec createApp + mount 3) ✅ vite.config.js manquant → ajouté avec plugin Vue + config test 4) ✅ Scripts dev/build/preview manquants → tous ajoutés dans package.json 5) ✅ Migration vue-cli → Vite moderne (Vue 3.4 + Vite 5.0) 6) ✅ Composant Counter exemple + tests Vitest 7) ✅ ESLint config (.eslintrc.cjs) 8) ✅ Dépendances complètes (Vite, Vitest, ESLint, @vitejs/plugin-vue, jsdom). RÉSULTAT: Projet Vue.js complet, moderne, fonctionnel dès création. npm run dev fonctionne immédiatement."
 
+  - task: \"BUG FIX - Vue.js skeleton files not created (src/App.vue missing)\"
+    implemented: true
+    working: true
+    file: \"/app/backend/orchestrator/project_manager.py\"
+    stuck_count: 0
+    priority: \"critical\"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: \"main\"
+          comment: \"🔧 BUG CRITIQUE CORRIGÉ! Problème: Lors de création projet Vue.js, seule structure minimaliste créée (pas de src/App.vue, vite.config.js, index.html). Cause: project_manager.py ligne 87-114 utilisait handler complet SEULEMENT pour Laravel, tous autres stacks (Vue/React/Node/Python) utilisaient _create_project_structure() minimal. Solution: Tous stacks utilisent maintenant handler.create_project_skeleton() complet. Fix chemin dependencies (directories['code'] → project_path). Tests: ✅ Vue (6/6 fichiers), ✅ React (4/4), ✅ Node (2/2), ✅ Python (3/3). Documentation complète: /app/VUE_SKELETON_BUG_FIX.md. Impact: Bug bloquant résolu, projets Vue maintenant fonctionnels dès création.\"
+
 backend:
   - task: "PHASE 2 - POST /api/runs avec project_mode attach"
     implemented: true

@@ -83,25 +83,15 @@ class ProjectManager:
             
             # Auto-create project structure if enabled
             if self.auto_create_structures:
-                # 🚀 Laravel projects use official Composer installation flow
-                if stack == "laravel":
-                    logger.info(f"🚀 Creating full Laravel project via Composer for {project_id}")
-                    try:
-                        handler = self._new_handler(stack)
-                        await handler.create_project_skeleton(directories["code"], project_name)
-                        metadata["dependencies_installed"] = True
-                        logger.info("✅ Laravel 12 project created successfully")
-                    except Exception as e:
-                        metadata["dependencies_installed"] = False
-                        logger.error(f"❌ Laravel project creation failed: {e}")
-                        raise
-                else:
-                    # Other stacks continue with normal flow
-                    await self._create_project_structure(directories["code"], stack, project_name)
-                
-                    # ✅ Install dependencies automatically after scaffolding (for non-Laravel stacks only)
-                    logger.info(f"Auto-installing dependencies for {stack} project {project_id}")
+                # 🚀 Use stack-specific handler for ALL stacks (not just Laravel)
+                logger.info(f"🚀 Creating {stack} project structure for {project_id}")
                 try:
+                    handler = self._new_handler(stack)
+                    await handler.create_project_skeleton(directories["code"], project_name)
+                    logger.info(f"✅ {stack.capitalize()} project skeleton created successfully")
+                    
+                     # Note: install_dependencies expects project_path (parent of code dir)
+                    logger.info(f\"Installing dependencies for {stack} project {project_id}\")
                     install_success = await self.install_dependencies(str(project_path), stack)
                     if install_success:
                         metadata["dependencies_installed"] = True
@@ -111,9 +101,8 @@ class ProjectManager:
                         logger.warning(f"Dependencies installation failed for {stack} project")
                 except Exception as e:
                     metadata["dependencies_installed"] = False
-                    logger.warning(f"Dependencies installation failed for {stack} project: {e}")
-            
-            logger.info(f"Created workspace for project {project_id} with stack {stack}")
+                    logger.error(f"❌ {stack.capitalize()} project creation failed: {e}")
+                    raise
             return {
                 "project_id": project_id,
                 "project_path": str(project_path),
