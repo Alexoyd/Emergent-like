@@ -79,7 +79,7 @@ class RAGSystem:
             return 0
     
     async def get_relevant_context(self, query: str, max_chunks: int = 5) -> str:
-        """Get relevant context for a query"""
+        """Get relevant context for a query (legacy method - returns string)"""
         try:
             if not self.initialized or self.index.ntotal == 0:
                 return ""
@@ -114,6 +114,40 @@ class RAGSystem:
         except Exception as e:
             logger.error(f"Error getting relevant context: {e}")
             return ""
+    
+    async def get_context(self, query: str | None = None, *, max_chunks: int = 6) -> List[str]:
+        """
+        Adapter for agents - returns List[str] instead of concatenated string.
+        
+        Accepts a textual query and returns a list of relevant passages.
+        This is the preferred method for agent consumption.
+        
+        :param query: Semantic query string (e.g., "How to implement authentication in Laravel?")
+        :param max_chunks: Maximum number of chunks to return
+        :return: List of formatted context passages, each starting with "From <file>:"
+        """
+        # Fallback to generic query if none provided
+        query = (query or "").strip() or "project overview and key files"
+        
+        # Use existing get_relevant_context to get the raw string
+        raw = await self.get_relevant_context(query, max_chunks=max_chunks)
+        
+        if not raw:
+            return []
+        
+        # Split by double newline to separate chunks (format: "From <file>:\n<content>\n\n")
+        parts = [chunk.strip() for chunk in raw.split("\n\n") if chunk.strip()]
+        return parts[:max_chunks]
+    
+    async def get_relevant_chunks(self, query: str, max_chunks: int = 6) -> List[str]:
+        """
+        Alias for get_context() - used by some agents.
+        
+        :param query: Semantic query string
+        :param max_chunks: Maximum number of chunks to return
+        :return: List of relevant context passages
+        """
+        return await self.get_context(query, max_chunks=max_chunks)
     
     async def add_documentation(self, doc_content: str, doc_name: str) -> bool:
         """Add documentation to the index"""

@@ -8,7 +8,7 @@ relevant context from the project's codebase and passes a prompt to
 the LLM router for generation.  The returned plan text is then
 parsed into a structured list of steps via :class:`PlanParser`.
 """
-
+import logging
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -76,19 +76,17 @@ class PlannerAgent:
         context_docs: List[str] = []
         if self.rag_system is not None:
             try:
+                # Build semantic query instead of passing file path
+                stack = (project_context.metadata or {}).get('stack', 'unknown')
+                rag_query = f"Goal: {task.strip()} Stack: {stack}"
+                
                 # Attempt to call a generic method to fetch context
                 if hasattr(self.rag_system, "get_context"):
-                    context_docs = await self.rag_system.get_context(
-                        project_context.code_path
-                    )
+                    context_docs = await self.rag_system.get_context(rag_query)
                 elif hasattr(self.rag_system, "get_relevant_chunks"):
-                    context_docs = await self.rag_system.get_relevant_chunks(
-                        project_context.code_path
-                    )
+                    context_docs = await self.rag_system.get_relevant_chunks(rag_query)
             except Exception as e:
                 # Log but proceed with empty context
-                import logging
-
                 logging.warning(f"Failed to retrieve RAG context: {e}")
 
         # Build prompt instructing the model to produce a structured plan

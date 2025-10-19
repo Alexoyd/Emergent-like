@@ -101,10 +101,16 @@ class DeveloperAgent:
         # 1) RAG context
         if rag_context is None and self.rag_system is not None:
             try:
+                # Build semantic query contextualized by step
+                goal = (project_context.metadata or {}).get("goal", "")
+                rag_query = f"""Run goal: {goal}
+Stack: {stack}
+Current step: {step.description}"""
+                
                 if hasattr(self.rag_system, "get_context"):
-                    rag_context = await self.rag_system.get_context(project_context.code_path)
+                    rag_context = await self.rag_system.get_context(rag_query, max_chunks=8)
                 elif hasattr(self.rag_system, "get_relevant_chunks"):
-                    rag_context = await self.rag_system.get_relevant_chunks(project_context.code_path)
+                    rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=8)
                 else:
                     rag_context = []
             except Exception as e:
