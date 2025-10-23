@@ -459,8 +459,21 @@ class ProjectManager:
             config={},
         )
     
-    async def _run_command(self, command: List[str], cwd: Optional[str] = None):
-        """Run shell command"""
+    async def _run_command(self, command: List[str], cwd: Optional[str] = None, timeout: int = 300):
+        """
+        Run shell command with timeout support
+        
+        Args:
+            command: Command to execute as list
+            cwd: Working directory
+            timeout: Timeout in seconds (default: 300s = 5 min)
+        
+        Returns:
+            CommandResult with returncode, stdout, stderr
+        
+        Raises:
+            Exception: If command times out or fails
+        """
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
@@ -469,7 +482,23 @@ class ProjectManager:
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), 
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                # Kill process gracefully
+                try:
+                    process.kill()
+                    await process.wait()
+                except Exception:
+                    # Ignore errors during cleanup
+                    pass
+                
+                cmd_str = ' '.join(command)
+                logger.error(f"❌ Command timed out after {timeout}s: {cmd_str}")
+                raise Exception(f"Command timed out after {timeout}s: {cmd_str}")
             
             return type('CommandResult', (), {
                 'returncode': process.returncode,
@@ -477,6 +506,9 @@ class ProjectManager:
                 'stderr': stderr.decode('utf-8', errors='ignore')
             })()
             
+        except asyncio.TimeoutError:
+            # Already handled above, but just in case
+            raise
         except Exception as e:
             logger.error(f"Command execution error: {e}")
             raise

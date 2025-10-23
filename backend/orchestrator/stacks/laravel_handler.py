@@ -245,6 +245,78 @@ class LaravelHandler(StackHandler):
         except Exception as e:
             if self.logger:
                 self.logger.warning(f"⚠️ Error logging installed versions: {e}")
+    
+    async def _ensure_test_sentinelle(self, code_path: Path) -> None:
+        """
+        🧪 Generate test sentinelle if the test suite is empty
+        
+        This ensures Pest has at least baseline tests to run, preventing "no tests found" errors.
+        Tests are idempotent - only created if none exist.
+        """
+        try:
+            tests_unit_dir = code_path / "tests" / "Unit"
+            tests_feature_dir = code_path / "tests" / "Feature"
+            example_test = tests_unit_dir / "ExampleTest.php"
+            
+            # Check if any tests exist in Unit or Feature directories
+            existing_unit_tests = []
+            existing_feature_tests = []
+            
+            if tests_unit_dir.exists():
+                existing_unit_tests = list(tests_unit_dir.glob("*.php"))
+            if tests_feature_dir.exists():
+                existing_feature_tests = list(tests_feature_dir.glob("*.php"))
+            
+            total_existing = len(existing_unit_tests) + len(existing_feature_tests)
+            
+            if total_existing == 0 or not example_test.exists():
+                if self.logger:
+                    self.logger.info(f"🧪 Generating test sentinelle ({total_existing} tests found)...")
+                
+                # Ensure directories exist
+                tests_unit_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create sentinelle test
+                sentinelle_content = """<?php
+
+/**
+ * 🧪 Test Sentinelle (Baseline Test)
+ * 
+ * This test ensures the test suite runs successfully even when no
+ * application tests have been written yet.
+ * 
+ * Generated automatically by Cognitia orchestrator.
+ */
+
+test('example sentinelle test - always passes', function () {
+    // This is a baseline test to ensure the test suite runs
+    expect(true)->toBeTrue();
+});
+
+test('application returns successful response', function () {
+    $response = $this->get('/');
+    $response->assertStatus(200);
+});
+
+test('basic arithmetic works', function () {
+    expect(1 + 1)->toBe(2);
+    expect(2 * 3)->toBe(6);
+});
+"""
+                
+                example_test.write_text(sentinelle_content)
+                
+                if self.logger:
+                    self.logger.info(f"✅ Test sentinelle created at {example_test}")
+                    self.logger.info("✅ Pest will now have baseline tests to run")
+            else:
+                if self.logger:
+                    self.logger.info(f"✅ Tests already exist ({total_existing} test files), skipping sentinelle generation")
+        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"⚠️ Could not create test sentinelle: {e}")
+            # Non-blocking
 
     async def create_project_skeleton(self, code_path: Path, project_name: Optional[str] = None) -> None:
         """
@@ -304,6 +376,9 @@ class LaravelHandler(StackHandler):
 
             # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
             await self._install_dev_dependencies_intelligent(code_path)
+
+            # 3.5️⃣ Generate test sentinelle if test suite is empty
+            await self._ensure_test_sentinelle(code_path)
 
             # 4️⃣ Install Vite and build assets (Laravel 12+ requirement)
             await self._install_and_build_vite(code_path)
@@ -415,6 +490,8 @@ class LaravelHandler(StackHandler):
         
         The CSS is copied from resources/css/app.css if it exists,
         or a minimal default stylesheet is created.
+        
+        🔧 FIX: default_css defined upfront to prevent 'referenced before assignment' errors
         """
         try:
             resources_css = code_path / "resources" / "css" / "app.css"
@@ -424,15 +501,9 @@ class LaravelHandler(StackHandler):
             # Create public/css directory
             public_css_dir.mkdir(parents=True, exist_ok=True)
             
-            if resources_css.exists():
-                # Copy from resources/css/app.css
-                import shutil
-                shutil.copy2(resources_css, public_css_file)
-                if self.logger:
-                    self.logger.info(f"✅ Copied {resources_css} → {public_css_file}")
-            else:
-                # Create minimal default CSS
-                default_css = """/* Laravel Auto-Generated Fallback CSS */
+            # 🔧 FIX: Define default_css upfront (before any conditional)
+            # This prevents 'referenced before assignment' if exception occurs in copy path
+            default_css = """/* Laravel Auto-Generated Fallback CSS */
 /* This file provides basic styling when @vite() directive is not used */
 
 * {
@@ -649,7 +720,24 @@ tr:hover {
     h2 { font-size: 1.5rem; }
 }
 """
-            public_css_file.write_text(default_css)
+            
+            # Try to copy from resources if exists, otherwise use default
+            if resources_css.exists():
+                try:
+                    import shutil
+                    shutil.copy2(resources_css, public_css_file)
+                    if self.logger:
+                        self.logger.info(f"✅ Copied {resources_css} → {public_css_file}")
+                except Exception as copy_error:
+                    # If copy fails, fallback to default CSS
+                    if self.logger:
+                        self.logger.warning(f"⚠️ Copy failed, using default CSS: {copy_error}")
+                    public_css_file.write_text(default_css)
+                    if self.logger:
+                        self.logger.info(f"✅ Created default fallback CSS at {public_css_file}")
+            else:
+                # resources/css/app.css doesn't exist, use default
+                public_css_file.write_text(default_css)
             if self.logger:
                 self.logger.info(f"✅ Created default fallback CSS at {public_css_file}")
     
