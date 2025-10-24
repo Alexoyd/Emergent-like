@@ -107,25 +107,45 @@ class PlannerAgent:
 - Each substep should be atomic (completable in 10-15 minutes)
 - Focus ONLY on concrete code implementation (no wireframes, analysis, docs)
 
+🚨 FILE OPERATION COHERENCE RULES (CRITICAL):
+- Each substep must use EXACTLY ONE action verb from this list:
+  * CREATE: Only for NEW files that don't exist yet
+  * MODIFY/UPDATE: For changing existing files
+  * ADD/INSERT: For adding content to existing files
+  * ENSURE: For guaranteeing a file exists with specific content (idempotent)
+  
+- NEVER use CREATE twice for the same file in different steps
+- NEVER use CREATE for a file if a previous step already created it
+- If Step 1 creates file X, then Step 2 must MODIFY/UPDATE/ADD to X, never CREATE X
+- Use descriptive verbs: \"Create routes/web.php\", \"Update routes/web.php to add new route\"
+
+🔥 ANTI-PATTERN EXAMPLES (DO NOT DO THIS):
+❌ Step 1: Create resources/views/kanban.blade.php
+❌ Step 2: Create resources/views/kanban.blade.php with basic structure
+✅ CORRECT:
+✅ Step 1: Create resources/views/kanban.blade.php with basic HTML
+✅ Step 2: Update resources/views/kanban.blade.php to add Kanban board layout
+
 OUTPUT FORMAT REQUIRED:
 1. Main Step: [High-level feature description]
-   1.1. Substep: [Specific code task]
-   1.2. Substep: [Specific code task] 
-   1.3. Substep: [Specific code task]
+   1.1. Substep: [ACTION VERB] [specific file] [purpose]
+   1.2. Substep: [ACTION VERB] [specific file] [purpose]
+   1.3. Substep: [ACTION VERB] [specific file] [purpose]
 
 2. Main Step: [Another high-level feature]
-   2.1. Substep: [Specific code task]
-   2.2. Substep: [Specific code task]
+   2.1. Substep: [ACTION VERB] [specific file] [purpose]
+   2.2. Substep: [ACTION VERB] [specific file] [purpose]
 
 RULES:
-- Each substep must specify exact files to create/modify
+- Each substep must specify exact files to create/modify with CLEAR action verb
 - Each substep must be immediately testable
 - Use hierarchical numbering (1.1, 1.2, 2.1, etc.)
 - Maximum 3 main steps, 3-4 substeps each
+- Verify no file is created twice in your plan before submitting
 
 Task: {task.strip()}
 
-Generate a hierarchical plan following the exact format above.""")
+Generate a hierarchical plan following the exact format above, ensuring NO file is created multiple times.""")
         # Task and format instructions now included in main prompt above
         prompt = "\n\n".join(prompt_parts)
 

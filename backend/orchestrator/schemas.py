@@ -18,6 +18,7 @@ class OperationType(str, Enum):
     SEARCH_REPLACE = "search_replace"
     RENAME = "rename"
     DELETE = "delete"
+    ENSURE = "ensure"  # Opération logique: create si absent, update si présent
 
 
 class CreateOperation(BaseModel):
@@ -111,6 +112,30 @@ class DeleteOperation(BaseModel):
         return v
 
 
+class EnsureOperation(BaseModel):
+    """
+    Opération logique: garantir qu'un fichier existe avec le contenu spécifié
+    
+    Comportement intelligent:
+    - Si le fichier existe déjà → équivaut à 'update'
+    - Si le fichier n'existe pas → équivaut à 'create'
+    
+    Cette opération est idempotente et évite les erreurs "file already exists".
+    Utile quand on veut garantir un état sans se soucier de l'état actuel.
+    """
+    type: Literal["ensure"] = "ensure"
+    path: str = Field(..., description="Chemin relatif du fichier")
+    content: str = Field(..., description="Contenu désiré du fichier")
+    
+    @validator('path')
+    def validate_path(cls, v):
+        if not v or v.startswith('/'):
+            raise ValueError("Path must be relative and non-empty")
+        if '..' in v:
+            raise ValueError("Path cannot contain '..'")
+        return v
+
+
 # Union type pour toutes les opérations
 FileOperation = Union[
     CreateOperation,
@@ -118,7 +143,8 @@ FileOperation = Union[
     InsertOperation,
     SearchReplaceOperation,
     RenameOperation,
-    DeleteOperation
+    DeleteOperation,
+    EnsureOperation
 ]
 
 

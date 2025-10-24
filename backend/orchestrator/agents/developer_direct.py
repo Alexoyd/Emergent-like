@@ -189,6 +189,9 @@ Current step: {step.description}"""
                     self.log.info(f"Attempt {attempt}: {last_error}")
                     continue
 
+                # 🔥 NOUVEAU: Normaliser les opérations avant validation Laravel
+                operations = self._normalize_operations(operations, project_path, stack)
+
                 # 5) Laravel-specific coherence validation (warnings only)
                 if stack == "laravel":
                     warnings = self._validate_laravel_coherence(operations, stack)
@@ -303,12 +306,18 @@ Current step: {step.description}"""
             "    {\n"
             '      "type": "delete",\n'
             '      "path": "relative/path/to/file.ext"\n'
-            "    }\n"
+            "    },\n"
+            "   {\n"
+            '      "type": "ensure",\n'
+            '      "path": "relative/path/to/existing.ext",\n'
+            '      "content": "complete new content"\n'
+            "   }\n"
             "  ]\n"
             "}\n\n"
             "📋 OPERATION TYPES:\n"
             "• create: New file (must not exist)\n"
             "• update: Replace entire file content (must exist)\n"
+            "• ensure: Idempotent operation - creates if missing, updates if exists (RECOMMENDED for robustness)"
             "• insert: Insert text AFTER specific line number (0-indexed lines)\n"
             "  ⚠️ Line numbers are 0-INDEXED! Line 0 is the first line.\n"
             "  ⚠️ after_line=0 means insert AFTER line 0 (first line) → becomes line 1\n"
@@ -679,6 +688,83 @@ Route::get('/products', [ProductController::class, 'index']);"
             fixed_operations.append(op)
         
         return fixed_operations
+    
+    def _normalize_operations(
+        self,
+        operations: List[Dict[str, Any]],
+        project_path: Optional[str],
+        stack: str
+    ) -> List[Dict[str, Any]]:
+        """
+        🛡️ NORMALISATION INTELLIGENTE DES OPÉRATIONS (DÉFENSE NIVEAU 2)
+        
+        Applique des transformations intelligentes pour éviter les erreurs communes:
+        1. Détecte les doublons (2 create sur même path) → garde le premier
+        2. Détecte create sur fichier existant → convertit en update
+        3. Log toutes les conversions pour feedback
+        
+        Cette normalisation rend le système plus robuste face à des plans imparfaits.
+        
+        Args:
+            operations: Liste d'opérations validées par Pydantic
+            project_path: Chemin du projet (pour vérifier existence fichiers)
+            stack: Stack du projet
+            
+        Returns:
+            Liste d'opérations normalisées
+        """
+        if not operations:
+            return operations
+            
+        normalized = []
+        seen_paths = {}  # path → (op_type, index) pour détecter doublons
+        conversions_log = []
+        
+        for i, op in enumerate(operations):
+            op_type = op.get("type")
+            path = op.get("path")
+            
+            # Skip operations sans path (rename a old_path/new_path)
+            if not path and op_type != "rename":
+                normalized.append(op)
+                continue
+            
+            # 1️⃣ Détecter doublons de 'create' sur même path
+            if op_type == "create" and path in seen_paths:
+                prev_type, prev_idx = seen_paths[path]
+                if prev_type == "create":
+                    self.log.warning(
+                        f"🔄 Duplicate create detected for '{path}' (operations {prev_idx} and {i}). "
+                        f"Keeping first, skipping second."
+                    )
+                    conversions_log.append(f"Skipped duplicate create: {path} (kept op#{prev_idx}, skipped op#{i})")
+                    continue  # Skip cette opération
+            
+            # 2️⃣ Convertir 'create' en 'update' si fichier existe déjà
+            if op_type == "create" and project_path:
+                target_file = Path(project_path) / path
+                if target_file.exists():
+                    self.log.warning(
+                        f"🔄 Auto-converted create→update (file exists): {path}"
+                    )
+                    op = {**op, "type": "update"}
+                    conversions_log.append(f"create→update: {path} (file existed)")
+            
+            # Enregistrer ce path pour détecter futurs doublons
+            if path:
+                seen_paths[path] = (op.get("type"), i)
+            
+            normalized.append(op)
+        
+        # Log résumé des conversions
+        if conversions_log:
+            self.log.info(f"📝 Normalization summary: {len(conversions_log)} conversions")
+            for log_entry in conversions_log:
+                self.log.info(f"  - {log_entry}")
+        else:
+            self.log.debug("✅ No normalizations needed - operations are already coherent")
+        
+        return normalized
     
     def _validate_laravel_coherence(self, operations: List[Dict[str, Any]], stack: str) -> List[str]:
         """

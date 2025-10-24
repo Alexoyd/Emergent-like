@@ -94,7 +94,7 @@ class FileWriter:
         """Calcule SHA-256 du contenu"""
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
     
-    async def create_file(self, file_path: str, content: str, project_id: str) -> Dict[str, Any]:
+    async def create_file(self, file_path: str, content: str, project_id: str, auto_convert: bool = True) -> Dict[str, Any]:
         """
         Crée un nouveau fichier avec contenu
         
@@ -102,6 +102,7 @@ class FileWriter:
             file_path: Chemin relatif du fichier à créer
             content: Contenu du fichier
             project_id: ID du projet (pour lock)
+            auto_convert: Si True, convertit automatiquement en update si fichier existe
         
         Returns:
             Dict avec status, path, hash, size
@@ -110,9 +111,14 @@ class FileWriter:
             try:
                 target_path = self._validate_path(file_path)
                 
-                # Vérifier que le fichier n'existe pas déjà
+                # 🛡️ GARDE-FOU ULTIME: Si fichier existe, auto-convertir en update
                 if target_path.exists():
-                    raise FileWriterError(f"File already exists: {file_path}")
+                    if auto_convert:
+                        logger.warning(f"🛡️ Auto-converted create→update (file existed): {file_path}")
+                        # Déléguer à update_file qui gère la mise à jour
+                        return await self.update_file(file_path, content, project_id)
+                    else:
+                        raise FileWriterError(f"File already exists: {file_path}")
                 
                 # Vérifier taille
                 size = len(content.encode('utf-8'))
@@ -435,7 +441,7 @@ class FileWriter:
 def _sort_operations_by_priority(operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Trie les opérations par priorité pour assurer l'ordre correct:
-    1. create (doit venir en premier pour que insert/update/etc puissent fonctionner)
+    1. create, ensure (fichiers doivent exister avant modifications)
     2. update, insert, search_replace (opérations de modification)
     3. rename (peut casser les références)
     4. delete (doit venir en dernier)
@@ -444,6 +450,7 @@ def _sort_operations_by_priority(operations: List[Dict[str, Any]]) -> List[Dict[
     """
     priority_map = {
         "create": 1,
+        "ensure": 1,  # 🔥 NOUVEAU: même priorité que create
         "update": 2,
         "insert": 2,
         "search_replace": 2,
@@ -473,7 +480,7 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
     Exécute une liste d'opérations d'écriture de fichiers
     
     Les opérations sont automatiquement triées par priorité:
-    1. create (en premier)
+    1. create, ensure (en premier)
     2. update, insert, search_replace
     3. rename
     4. delete (en dernier)
@@ -505,8 +512,28 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
                 result = await writer.create_file(
                     operation["path"],
                     operation["content"],
-                    project_id
+                    project_id,
+                    auto_convert=True  # 🛡️ Active la conversion automatique
                 )
+            elif op_type == "ensure":
+                # 🔥 NOUVEAU: Opération 'ensure' - idempotente
+                # Vérifie si le fichier existe pour choisir create ou update
+                target_path = Path(project_path) / operation["path"]
+                if target_path.exists():
+                    logger.info(f"📝 'ensure' operation: file exists, using update for {operation['path']}")
+                    result = await writer.update_file(
+                        operation["path"],
+                        operation["content"],
+                        project_id
+                    )
+                else:
+                    logger.info(f"📝 'ensure' operation: file missing, using create for {operation['path']}")
+                    result = await writer.create_file(
+                        operation["path"],
+                        operation["content"],
+                        project_id,
+                        auto_convert=False  # Pas besoin de conversion, on a déjà vérifié
+                    )
             elif op_type == "update":
                 result = await writer.update_file(
                     operation["path"],
