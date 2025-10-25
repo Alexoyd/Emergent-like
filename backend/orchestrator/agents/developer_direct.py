@@ -155,7 +155,7 @@ Current step: {step.description}"""
         
         ast_error: Optional[str] = None
         for attempt in range(1, self.max_attempts + 1):
-            # 2) Build JSON prompt
+            # 2) Build JSON prompt with enhanced error feedback
             prompt = self._build_json_prompt(
                 step=step,
                 stack=stack,
@@ -177,16 +177,21 @@ Current step: {step.description}"""
                 )
                 llm_text: str = response.content
             except Exception as e:
-                last_error = f"LLM error: {e}"
-                self.log.warning(last_error)
+                last_error = f"LLM API error: {e}"
+                self.log.warning(f"❌ Attempt {attempt}/{self.max_attempts}: {last_error}")
                 continue
             
-            # 4) Extract and validate JSON
+            # 4) Extract and validate JSON with auto-repair
             try:
                 operations = self._extract_and_validate_json(llm_text)
                 if not operations:
-                    last_error = "No valid JSON operations found in LLM response"
-                    self.log.info(f"Attempt {attempt}: {last_error}")
+                    last_error = (
+                        "No valid JSON operations found in LLM response. "
+                        "CRITICAL: Your response MUST be valid JSON starting with {\"operations\": ["
+                    )
+                    self.log.warning(f"❌ Attempt {attempt}/{self.max_attempts}: {last_error}")
+                    # 🔥 NOUVEAU: Log first 500 chars of response for debugging
+                    self.log.debug(f"LLM response preview: {llm_text[:500]}")
                     continue
 
                 # 🔥 NOUVEAU: Normaliser les opérations avant validation Laravel
@@ -202,7 +207,9 @@ Current step: {step.description}"""
                         # Don't fail, just log warnings for debugging
                 
                 # Success!
-                self.log.info(f"✅ Generated {len(operations)} valid file operations")
+                self.log.info(f"✅ Generated {len(operations)} valid file operations on attempt {attempt}/{self.max_attempts}")
+                if attempt > 1:
+                    self.log.info(f"📊 Success after {attempt} attempts (auto-repair may have been applied)")
                 return OperationsResult(
                     step_id=step.id,
                     stack=stack,
@@ -212,8 +219,27 @@ Current step: {step.description}"""
                 )
                 
             except Exception as e:
-                last_error = f"JSON validation error: {e}"
-                self.log.warning(f"Attempt {attempt}: {last_error}")
+                # 🔥 AMÉLIORATION: Feedback détaillé pour le prochain essai
+                error_details = str(e)
+                if "Field required" in error_details:
+                    last_error = (
+                        f"JSON validation error: {error_details}"
+                        f"🚨 CRITICAL: The 'operations' field is REQUIRED!"
+                        f"Your JSON MUST have this exact structure:"
+                        f'{{"operations": [{{"type": "create", "path": "...", "content": "..."}}]}}'
+                        f"DO NOT return just a single operation object. Wrap it in an 'operations' array!")
+                elif "not a dict" in error_details:
+                    last_error = (
+                        f"JSON validation error: {error_details}"
+                        f"🚨 Your response must be a JSON OBJECT starting with {{"
+                        f"NOT a string, NOT an array, NOT plain text.")
+                else:
+                    last_error = f"JSON validation error: {error_details}"
+                
+                self.log.warning(f"❌ Attempt {attempt}/{self.max_attempts}: {last_error}")
+                # Log response preview for last attempt
+                if attempt == self.max_attempts:
+                    self.log.error(f"💀 Final attempt failed. LLM response preview: {llm_text[:500]}")
                 continue
         
         # All attempts exhausted
@@ -619,14 +645,40 @@ Route::get('/products', [ProductController::class, 'index']);"
                         else:
                             self.log.error(f"❌ JSON extraction failed. Original text length: {len(original_text)}")
                             self.log.error(f"First 200 chars: {original_text[:200]}")
-                            raise ValueError(f"Could not parse JSON: {e}")
+                            # 🔥 NOUVEAU: Try auto-repair before failing
+                            repaired_data = self._try_repair_json(original_text)
+                            if repaired_data:
+                                data = repaired_data
+                                self.log.info(f"✅ JSON auto-repaired successfully!")
+                            else:
+                                raise ValueError(f"Could not parse JSON: {e}")
                     else:
                         self.log.error(f"❌ No JSON structure found in response")
                         self.log.error(f"First 200 chars: {original_text[:200]}")
-                        raise ValueError(f"No valid JSON found in response: {e}")
+                        # 🔥 NOUVEAU: Try auto-repair before failing
+                        repaired_data = self._try_repair_json(original_text)
+                        if repaired_data:
+                            data = repaired_data
+                            self.log.info(f"✅ JSON auto-repaired successfully!")
+                        else:
+                            raise ValueError(f"No valid JSON found in response: {e}")
             else:
                 self.log.error(f"❌ No JSON braces found in response")
-                raise ValueError(f"No valid JSON found in response: {e}")
+                # 🔥 NOUVEAU: Try auto-repair before failing
+                repaired_data = self._try_repair_json(original_text)
+                if repaired_data:
+                    data = repaired_data
+                    self.log.info(f"✅ JSON auto-repaired successfully!")
+                else:
+                    raise ValueError(f"No valid JSON found in response: {e}")
+        
+        # 🔥 NOUVEAU: Auto-repair if data is missing \"operations\" wrapper
+        if isinstance(data, dict) and "operations" not in data:
+            self.log.warning(f"⚠️ JSON missing 'operations' wrapper - attempting auto-repair")
+            repaired_data = self._try_repair_missing_wrapper(data)
+            if repaired_data:
+                data = repaired_data
+                self.log.info(f"✅ Auto-wrapped single operation into operations array")
         
         # 6. Validate with Pydantic
         try:
@@ -642,7 +694,137 @@ Route::get('/products', [ProductController::class, 'index']);"
         except ValidationError as e:
             self.log.error(f"❌ JSON validation failed: {e}")
             self.log.error(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+            
+            # 🔥 NOUVEAU: One last repair attempt for validation errors
+            repaired_data = self._try_repair_validation_error(data, str(e))
+            if repaired_data:
+                try:
+                    validated = DeveloperOutput(**repaired_data)
+                    operations = [op.dict() for op in validated.operations]
+                    operations = self._fix_literal_escapes(operations)
+                    self.log.info(f"✅ Validated {len(operations)} operations after repair")
+                    return operations
+                except:
+                    pass
+            
             raise ValueError(f"JSON validation failed: {e}")
+    
+    def _try_repair_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        🔥 NOUVEAU: Tente de réparer automatiquement un JSON mal formé
+        Inspiré d'Emergent.sh - Ne jamais bloquer le développement!
+        
+        Stratégies de réparation:
+        1. Wrapper manquant {"operations": [...]}
+        2. Virgules manquantes
+        3. Quotes mal échappées
+        4. Structure d'objet simple au lieu d'array
+        """
+        try:
+            # Strategy 1: Le LLM a retourné juste un objet au lieu de {"operations": [...]}
+            # Pattern: {"type": "create", "path": "...", ...}
+            if '"type"' in text and '"operations"' not in text:
+                self.log.info("🔧 Attempting repair: wrapping single operation")
+                # Try to parse as single operation
+                start = text.find("{")
+                end = text.rfind("}")
+                if start != -1 and end != -1:
+                    try:
+                        single_op = json.loads(text[start:end+1])
+                        if isinstance(single_op, dict) and "type" in single_op:
+                            # Wrap it
+                            repaired = {"operations": [single_op]}
+                            self.log.info(f"✅ Repaired: wrapped single operation of type '{single_op.get('type')}'")
+                            return repaired
+                    except:
+                        pass
+            
+            # Strategy 2: Trailing comma avant }
+            if text.endswith(",}") or text.endswith(", }"):
+                self.log.info("🔧 Attempting repair: removing trailing comma")
+                cleaned = text.replace(",}", "}").replace(", }", "}")
+                try:
+                    return json.loads(cleaned)
+                except:
+                    pass
+            
+            # Strategy 3: Missing closing braces
+            open_braces = text.count("{")
+            close_braces = text.count("}")
+            if open_braces > close_braces:
+                self.log.info(f"🔧 Attempting repair: adding {open_braces - close_braces} closing braces")
+                repaired_text = text + ("}" * (open_braces - close_braces))
+                try:
+                    return json.loads(repaired_text)
+                except:
+                    pass
+            
+            return None
+        except Exception as e:
+            self.log.debug(f"JSON repair failed: {e}")
+            return None
+    
+    def _try_repair_missing_wrapper(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        🔥 NOUVEAU: Répare un JSON qui manque le wrapper {"operations": [...]}
+        
+        Si le LLM retourne {"type": "create", ...} au lieu de {"operations": [{"type": "create", ...}]}
+        """
+        if not isinstance(data, dict):
+            return None
+        
+        # Check if data looks like a single operation
+        if "type" in data and "path" in data:
+            self.log.info(f"🔧 Auto-wrapping: single operation of type '{data.get('type')}' detected")
+            return {"operations": [data]}
+        
+        # Check if data is already correct format
+        if "operations" in data:
+            return data
+        
+        return None
+    
+    def _try_repair_validation_error(self, data: Dict[str, Any], error_msg: str) -> Optional[Dict[str, Any]]:
+        """
+        🔥 NOUVEAU: Répare des erreurs de validation Pydantic communes
+        
+        Exemples:
+        - Champ requis manquant
+        - Type incorrect
+        - Structure incorrecte
+        """
+        if not isinstance(data, dict):
+            return None
+        
+        try:
+            # Si "operations" manque mais qu'il y a un "operation" (typo)
+            if "operation" in data and "operations" not in data:
+                self.log.info("🔧 Fixing typo: 'operation' → 'operations'")
+                data["operations"] = data.pop("operation")
+                # Ensure it's a list
+                if not isinstance(data["operations"], list):
+                    data["operations"] = [data["operations"]]
+                return data
+            
+            # Si "operations" existe mais n'est pas une liste
+            if "operations" in data and not isinstance(data["operations"], list):
+                self.log.info("🔧 Converting operations to list")
+                data["operations"] = [data["operations"]]
+                return data
+            
+            # Si l'erreur dit "Field required" pour "operations"
+            if "operations" in error_msg and "Field required" in error_msg:
+                # Try to extract any operation-like structure
+                for key in ["operation", "files", "changes"]:
+                    if key in data:
+                        self.log.info(f"🔧 Using '{key}' as operations")
+                        ops = data[key] if isinstance(data[key], list) else [data[key]]
+                        return {"operations": ops}
+            
+            return None
+        except Exception as e:
+            self.log.debug(f"Validation repair failed: {e}")
+            return None
     
     def _fix_literal_escapes(self, operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
