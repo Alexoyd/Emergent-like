@@ -377,6 +377,16 @@ test('basic arithmetic works', function () {
             # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
             await self._install_dev_dependencies_intelligent(code_path)
 
+            # 3.25️⃣ 🔥 FIX CRITIQUE: Setup PHPStan with baseline immediately after installation
+            if self.tool_manager:
+                if self.logger:
+                    self.logger.info("🔧 Setting up PHPStan with permissive config and baseline...")
+                try:
+                    await self.tool_manager._setup_phpstan_for_laravel(str(code_path))
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"⚠️ PHPStan setup failed (non-blocking): {e}")
+
             # 3.5️⃣ Generate test sentinelle if test suite is empty
             await self._ensure_test_sentinelle(code_path)
 
