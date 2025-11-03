@@ -871,6 +871,49 @@ Route::get('/products', [ProductController::class, 'index']);"
         
         return fixed_operations
     
+    
+    def _fix_literal_escapes_in_raw_json(self, text: str) -> str:
+        """
+        🔥 FIX CRITIQUE: Nettoie les échappements littéraux AVANT parsing JSON
+        
+        Problème: Le LLM génère parfois du JSON avec des \\n littéraux au lieu de vrais retours à la ligne
+        Exemple: "content": "use App\\Http\\Controllers\\ProductController;\\n"
+        
+        Cette fonction détecte et corrige ces cas AVANT le parsing JSON.
+        """
+        if not text or not isinstance(text, str):
+            return text
+        
+        # Détecter si le texte contient des échappements littéraux dans du JSON
+        # Pattern: "content": "...\\n..." ou "search": "...\\n..."
+        import re
+        
+        # Chercher les patterns JSON avec des échappements littéraux
+        # Pattern: "field": "value with \\n literal"
+        pattern = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\n([^"]*")'
+        
+        def fix_escapes(match):
+            prefix = match.group(1)  # "content": "text before
+            suffix = match.group(2)  # text after"
+            # Remplacer \\n par \n (vrai retour à la ligne)
+            return prefix + '\n' + suffix
+        
+        # Appliquer la correction
+        fixed_text = re.sub(pattern, fix_escapes, text)
+        
+        # Aussi corriger \\t
+        pattern_tab = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\t([^"]*")'
+        def fix_tabs(match):
+            prefix = match.group(1)
+            suffix = match.group(2)
+            return prefix + '\t' + suffix
+        
+        fixed_text = re.sub(pattern_tab, fix_tabs, fixed_text)
+        
+        if fixed_text != text:
+            self.log.info("🔧 Fixed literal escape sequences in raw JSON before parsing")
+        
+        return fixed_text
     def _normalize_operations(
         self,
         operations: List[Dict[str, Any]],
