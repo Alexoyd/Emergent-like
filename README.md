@@ -144,10 +144,10 @@ and tests.
 ### Quick API Test
 ```bash
 # Test the API is running
-curl -X GET https://directmod.preview.emergentagent.com/api/
+curl -X GET https://repo-analyzer-105.preview.emergentagent.com/api/
 
 # Create a test run
-curl -X POST https://directmod.preview.emergentagent.com/api/runs \
+curl -X POST https://repo-analyzer-105.preview.emergentagent.com/api/runs \
   -H "Content-Type: application/json" \
   -d '{
     "goal": "Create a simple Hello World Laravel route",
@@ -166,7 +166,7 @@ sudo supervisorctl status
 tail -f /var/log/supervisor/backend.*.log
 
 # Check frontend
-curl -I https://directmod.preview.emergentagent.com/
+curl -I https://repo-analyzer-105.preview.emergentagent.com/
 ```
 
 ## 🔧 Configuration
@@ -207,7 +207,7 @@ sudo supervisorctl status
 tail -n 50 /var/log/supervisor/backend.*.log
 
 # Test API connectivity
-curl https://directmod.preview.emergentagent.com/api/
+curl https://repo-analyzer-105.preview.emergentagent.com/api/
 ```
 
 ### Common Issues
