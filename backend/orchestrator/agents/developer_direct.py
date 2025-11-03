@@ -607,6 +607,9 @@ Route::get('/products', [ProductController::class, 'index']);"
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
         
+        # 🔥 FIX CRITIQUE: Nettoyer les échappements littéraux AVANT parsing JSON
+        text = self._fix_literal_escapes_in_raw_json(text)
+        
         # 3. Try to parse JSON directly first
         try:
             data = json.loads(text)
