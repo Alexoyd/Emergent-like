@@ -43,49 +43,83 @@ class DeveloperAgentDirect:
     Plus fiable que les patches Git.
     """
 
-     # --- AJOUT 1 : méthode utilitaire manquante ---
-    def _read_important_files(self, project_path: str, stack: str) -> Dict[str, str]:
+    # --- AJOUT 1 : méthode utilitaire avec LIMITES STRICTES (de developer_direct2.py) ---
+    def _read_important_files(
+        self, 
+        project_path: str, 
+        stack: str,
+        max_files: int = 8,  # 🔧 FIX: Limiter le nombre de fichiers pour éviter dépassement contexte
+        max_bytes_per_file: int = 10000  # 🔧 FIX: Réduire la taille max par fichier
+    ) -> Dict[str, str]:
         """
         Lit un sous-ensemble de fichiers critiques pour fournir un contexte fiable
         aux opérations 'search_replace' (contenu exact attendu).
+        
+        🔧 FIX CRITIQUE: Ajout de limites strictes pour éviter les dépassements de contexte LLM
+        - Max 8 fichiers (vs illimité avant)
+        - Max 10KB par fichier (vs 20KB avant)
+        - Système de priorités (critical files first)
         """
         root = Path(project_path)
         files: Dict[str, str] = {}
+        file_count = 0  # 🔧 Compteur global
 
-        def safe_read(relpath: str, max_bytes: int = 20000) -> None:
+        def safe_read(relpath: str, max_bytes: int = None) -> bool:
+            """Returns True if file was read successfully"""
+            nonlocal file_count
+            if file_count >= max_files:  # 🔧 PROTECTION: Stop si limite atteinte
+                return False
+                
             p = root / relpath
             try:
                 if p.exists() and p.is_file():
+                    limit = max_bytes or max_bytes_per_file
                     content = p.read_text(encoding="utf-8", errors="replace")
-                    if len(content) > max_bytes:
-                        content = content[:max_bytes] + "\n... (truncated)"
+                    if len(content) > limit:
+                        content = content[:limit] + "\n... (truncated)"
                     files[relpath] = content
+                    file_count += 1
+                    return True
             except Exception as e:
                 self.log.debug(f"Skip read {relpath}: {e}")
+            return False
 
-        # Commun
-        safe_read("composer.json")
-        safe_read("routes/web.php")
-        safe_read("routes/api.php")
-        safe_read("config/app.php")
-        safe_read("bootstrap/app.php")
-        safe_read("resources/css/app.css")
-        safe_read("resources/js/app.js")
-        safe_read("database/seeders/DatabaseSeeder.php")
+        # 🎯 PRIORITÉ 1: Fichiers critiques (toujours lire)
+        critical_files = [
+            "routes/web.php",
+            "routes/api.php",
+            "composer.json",
+            "package.json",
+            "config/app.php",
+            "bootstrap/app.php",
+        ]
+        
+        for f in critical_files:
+            if file_count >= max_files:
+                break
+            safe_read(f)
+        
+        # 🎯 PRIORITÉ 2: Assets (si encore de la place)
+        if file_count < max_files:
+            safe_read("resources/css/app.css")
+        if file_count < max_files:
+            safe_read("resources/js/app.js")
+        
+        # 🎯 PRIORITÉ 3: Seeders (si encore de la place)
+        if file_count < max_files:
+            safe_read("database/seeders/DatabaseSeeder.php")
 
-        # Spécifique Laravel
-        if stack == "laravel":
-            # Lire quelques contrôleurs fréquents (si présents)
+        # 🎯 PRIORITÉ 4: Controllers Laravel (si encore de la place)
+        if stack == "laravel" and file_count < max_files:
             controllers_dir = root / "app" / "Http" / "Controllers"
             if controllers_dir.exists():
-                count = 0
                 for p in controllers_dir.rglob("*.php"):
-                    rel = str(p.relative_to(root))
-                    safe_read(rel, max_bytes=15000)
-                    count += 1
-                    if count >= 10:  # borne raisonnable pour le prompt
+                    if file_count >= max_files:  # 🔧 STOP si limite atteinte
                         break
+                    rel = str(p.relative_to(root))
+                    safe_read(rel, max_bytes=8000)  # Controllers plus petits
 
+        self.log.info(f"📚 Loaded {file_count}/{max_files} files for context ({sum(len(c) for c in files.values())} chars total)")
         return files
     
     def __init__(
