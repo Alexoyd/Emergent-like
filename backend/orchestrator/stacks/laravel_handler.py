@@ -377,15 +377,26 @@ test('basic arithmetic works', function () {
             # 3️⃣ Install optional developer tools (PHPStan, Pest, Pint) with intelligent version detection
             await self._install_dev_dependencies_intelligent(code_path)
 
-            # 3.25️⃣ 🔥 FIX CRITIQUE: Setup PHPStan with baseline immediately after installation
-            if self.tool_manager:
-                if self.logger:
-                    self.logger.info("🔧 Setting up PHPStan with permissive config and baseline...")
-                try:
-                    await self.tool_manager._setup_phpstan_for_laravel(str(code_path))
-                except Exception as e:
+            # 3.25️⃣ 🔥 PHASE 1 FIX: Setup PHPStan with baseline (NON-BLOQUANT)
+            try:
+                # Vérifier si tool_manager existe ET est disponible
+                if hasattr(self, 'tool_manager') and self.tool_manager:
                     if self.logger:
-                        self.logger.warning(f"⚠️ PHPStan setup failed (non-blocking): {e}")
+                        self.logger.info("🔧 Setting up PHPStan with permissive config and baseline...")
+                    await self.tool_manager._setup_phpstan_for_laravel(str(code_path))
+                else:
+                    # tool_manager pas disponible, skip silencieusement
+                    if self.logger:
+                        self.logger.debug("⚠️ tool_manager not available, skipping PHPStan auto-setup")
+            except AttributeError as e:
+                # Attribut n'existe pas, skip
+                if self.logger:
+                    self.logger.debug(f"⚠️ PHPStan auto-setup skipped (tool_manager unavailable): {e}")
+            except Exception as e:
+                # Autres erreurs, log warning mais continue (NON-BLOQUANT)
+                if self.logger:
+                    self.logger.warning(f"⚠️ PHPStan setup failed (non-blocking): {e}")
+                    self.logger.info("ℹ️ Continuing without PHPStan auto-setup - you can configure it manually later")
 
             # 3.5️⃣ Generate test sentinelle if test suite is empty
             await self._ensure_test_sentinelle(code_path)
