@@ -103,7 +103,7 @@ class FileWriter:
         Args:
             file_path: Chemin du fichier
             content: Contenu à valider
-            stack: Stack du projet (laravel, react, etc.)
+            stack: Stack du projet (auto-détecté si generic)
         
         Returns:
             (is_valid, error_message)
@@ -111,6 +111,17 @@ class FileWriter:
         import subprocess
         
         file_ext = Path(file_path).suffix.lower()
+        
+        # Auto-détection du stack si generic
+        if stack == "generic":
+            if file_ext == '.php':
+                stack = 'php'
+            elif file_ext in ['.js', '.jsx', '.ts', '.tsx']:
+                stack = 'react'
+            elif file_ext == '.py':
+                stack = 'python'
+            elif file_ext == '.vue':
+                stack = 'vue'
         
         # PHP validation (Laravel, PHP files)
         if file_ext == '.php' and stack in ['laravel', 'php']:
