@@ -164,4 +164,7 @@ projects/
 *.env
 *.env.*
 /Cognitia
-/metadata.json
+/metadata.json-e 
+# Environment files
+*.env
+*.env.*
