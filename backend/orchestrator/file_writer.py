@@ -94,6 +94,90 @@ class FileWriter:
         """Calcule SHA-256 du contenu"""
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
     
+    def _validate_syntax(self, file_path: str, content: str, stack: str = "generic") -> tuple[bool, Optional[str]]:
+        """
+        🔥 PHASE 2 FIX: Validation syntaxe AVANT écriture (technique Emergent.sh)
+        
+        Valide la syntaxe du code selon le type de fichier.
+        
+        Args:
+            file_path: Chemin du fichier
+            content: Contenu à valider
+            stack: Stack du projet (laravel, react, etc.)
+        
+        Returns:
+            (is_valid, error_message)
+        """
+        import subprocess
+        
+        file_ext = Path(file_path).suffix.lower()
+        
+        # PHP validation (Laravel, PHP files)
+        if file_ext == '.php' and stack in ['laravel', 'php']:
+            try:
+                result = subprocess.run(
+                    ['php', '-l'],  # php -l = lint
+                    input=content,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode != 0:
+                    error = result.stderr or result.stdout
+                    return False, f"PHP syntax error: {error}"
+                logger.debug(f"✅ PHP syntax valid: {file_path}")
+            except FileNotFoundError:
+                # PHP not installed, skip validation
+                logger.debug("PHP not available for validation, skipping")
+            except Exception as e:
+                logger.warning(f"PHP validation failed: {e}")
+                # Non-bloquant si validation échoue
+        
+        # JavaScript/JSX basic validation
+        elif file_ext in ['.js', '.jsx'] and stack in ['react', 'node', 'vue']:
+            try:
+                # Quick checks: brackets balance
+                if content.count('{') != content.count('}'):
+                    return False, "Unbalanced braces in JavaScript"
+                if content.count('(') != content.count(')'):
+                    return False, "Unbalanced parentheses in JavaScript"
+                if content.count('[') != content.count(']'):
+                    return False, "Unbalanced brackets in JavaScript"
+                logger.debug(f"✅ JS basic syntax valid: {file_path}")
+            except Exception as e:
+                logger.debug(f"JS validation failed: {e}")
+        
+        # Python validation
+        elif file_ext == '.py' and stack in ['python', 'django', 'fastapi']:
+            try:
+                compile(content, file_path, 'exec')
+                logger.debug(f"✅ Python syntax valid: {file_path}")
+            except SyntaxError as e:
+                return False, f"Python syntax error at line {e.lineno}: {e.msg}"
+            except Exception as e:
+                logger.debug(f"Python validation failed: {e}")
+        
+        # Vue template basic validation
+        elif file_ext == '.vue' and stack in ['vue', 'nuxt']:
+            try:
+                if '<template>' not in content or '</template>' not in content:
+                    return False, "Invalid Vue component: missing template tags"
+                logger.debug(f"✅ Vue template valid: {file_path}")
+            except Exception as e:
+                logger.debug(f"Vue validation failed: {e}")
+        
+        # JSON validation
+        elif file_ext == '.json':
+            try:
+                import json
+                json.loads(content)
+                logger.debug(f"✅ JSON syntax valid: {file_path}")
+            except json.JSONDecodeError as e:
+                return False, f"Invalid JSON at line {e.lineno}: {e.msg}"
+        
+        # Si aucune validation spécifique, considérer valide
+        return True, None
+    
     async def create_file(self, file_path: str, content: str, project_id: str, auto_convert: bool = True) -> Dict[str, Any]:
         """
         Crée un nouveau fichier avec contenu
