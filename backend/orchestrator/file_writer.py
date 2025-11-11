@@ -778,33 +778,38 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
                 raise FileWriterError(f"Unknown operation type: {op_type}")
             
             result["operation_index"] = i
+            # 🔥 PHASE 2 FIX: Log succès immédiatement
+            logger.info(f"✅ [{i+1}/{len(sorted_operations)}] Completed: {op_type} on {op_path}")
             results.append(result)
             
         except FileWriterError as e:
-            # Pour les chemins protégés, on propage l'exception pour retourner 422
-            if "Protected path not writable" in str(e):
-                logger.error(f"🛡️ Protected path violation: {e}")
-                raise  # Propage l'exception pour HTTP 422
-            
-            # Pour les autres erreurs, on continue avec fail-safe
-            logger.error(f"❌ Operation {i} ({op_type}) failed: {e}")
+            # Erreur de FileWriter (protected path, validation, etc.)
+            logger.error(f"❌ [{i+1}/{len(sorted_operations)}] FAILED: {op_type} on {op_path} - {e}")
             results.append({
                 "status": "failed",
                 "operation_index": i,
                 "operation_type": op_type,
+                "path": op_path,
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
             # Continue avec les autres opérations (fail-safe)
         
         except Exception as e:
-            logger.error(f"❌ Operation {i} ({op_type}) unexpected error: {e}")
+            # Erreur inattendue
+            logger.error(f"❌ [{i+1}/{len(sorted_operations)}] UNEXPECTED ERROR: {op_type} on {op_path} - {e}")
             results.append({
                 "status": "failed",
                 "operation_index": i,
                 "operation_type": op_type,
+                "path": op_path,
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
+    
+    # 🔥 PHASE 2 FIX: Résumé final
+    success_count = sum(1 for r in results if r.get("status") not in ["failed", "error"])
+    failed_count = len(results) - success_count
+    logger.info(f"📊 [Phase 2] Operations complete: {success_count} succeeded, {failed_count} failed")
     
     return results
