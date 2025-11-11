@@ -706,10 +706,15 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
     # Trier les opérations par priorité (create avant insert, etc.)
     sorted_operations = _sort_operations_by_priority(operations)
     
-    logger.info(f"📋 Executing {len(sorted_operations)} operations (sorted by priority)")
+    logger.info(f"📋 [Phase 2] Executing {len(sorted_operations)} operations (sorted by priority)")
     
+    # 🔥 PHASE 2 FIX: Feedback opération par opération (technique Emergent.sh)
     for i, operation in enumerate(sorted_operations):
         op_type = operation.get("type")
+        op_path = operation.get("path", "unknown")
+        
+        # Log début de l'opération
+        logger.info(f"🔄 [{i+1}/{len(sorted_operations)}] Starting: {op_type} on {op_path}")
         
         try:
             if op_type == "create":
