@@ -379,8 +379,13 @@ class FileWriter:
                 # Écriture atomique
                 target_path.write_text(content, encoding='utf-8')
                 
-                # Hash nouveau contenu
-                new_hash = self._calculate_hash(content)
+                # 🔥 PHASE 2 FIX: Auto-formatting APRÈS écriture
+                await self._auto_format_file(target_path, stack="generic")
+                
+                # Hash nouveau contenu (après formatting)
+                final_content = target_path.read_text(encoding='utf-8')
+                new_hash = self._calculate_hash(final_content)
+                final_size = len(final_content.encode('utf-8'))
                 
                 logger.info(f"✅ Updated file: {file_path} (hash: {old_hash[:8]}... → {new_hash[:8]}...)")
                 
@@ -389,7 +394,7 @@ class FileWriter:
                     "path": file_path,
                     "old_hash": old_hash,
                     "new_hash": new_hash,
-                    "size": size,
+                    "size": final_size,
                     "timestamp": datetime.now().isoformat()
                 }
                 
