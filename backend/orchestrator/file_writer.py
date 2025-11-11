@@ -333,7 +333,7 @@ class FileWriter:
                     "status": "created",
                     "path": file_path,
                     "hash": file_hash,
-                    "size": size,
+                    "size": final_size,
                     "timestamp": datetime.now().isoformat()
                 }
                 
