@@ -189,6 +189,93 @@ class FileWriter:
         # Si aucune validation spécifique, considérer valide
         return True, None
     
+    async def _auto_format_file(self, file_path: Path, stack: str = "generic") -> bool:
+        """
+        🔥 PHASE 2 FIX: Auto-formatting APRÈS écriture (technique Emergent.sh)
+        
+        Formatte automatiquement le fichier selon son type.
+        
+        Args:
+            file_path: Path object du fichier
+            stack: Stack du projet
+        
+        Returns:
+            True si formaté avec succès, False sinon
+        """
+        import subprocess
+        
+        file_ext = file_path.suffix.lower()
+        
+        # Auto-détection du stack
+        if stack == "generic":
+            if file_ext == '.php':
+                stack = 'laravel'
+            elif file_ext in ['.js', '.jsx', '.ts', '.tsx']:
+                stack = 'react'
+            elif file_ext == '.py':
+                stack = 'python'
+            elif file_ext == '.vue':
+                stack = 'vue'
+        
+        try:
+            # PHP - Laravel Pint
+            if file_ext == '.php' and stack in ['laravel', 'php']:
+                project_root = self.project_path
+                pint_path = project_root / "vendor" / "bin" / "pint"
+                
+                if pint_path.exists():
+                    result = subprocess.run(
+                        [str(pint_path), str(file_path)],
+                        cwd=str(project_root),
+                        timeout=30,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"✨ [Auto-format] Formatted {file_path.name} with Pint")
+                        return True
+                    else:
+                        logger.debug(f"Pint formatting had warnings: {result.stderr}")
+                else:
+                    logger.debug("Pint not available, skipping PHP formatting")
+            
+            # JavaScript/TypeScript/JSX - Prettier
+            elif file_ext in ['.js', '.jsx', '.ts', '.tsx', '.vue']:
+                try:
+                    result = subprocess.run(
+                        ['npx', 'prettier', '--write', str(file_path)],
+                        timeout=30,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"✨ [Auto-format] Formatted {file_path.name} with Prettier")
+                        return True
+                except FileNotFoundError:
+                    logger.debug("Prettier/npx not available, skipping JS formatting")
+            
+            # Python - Black
+            elif file_ext == '.py':
+                try:
+                    result = subprocess.run(
+                        ['black', str(file_path), '--quiet'],
+                        timeout=30,
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"✨ [Auto-format] Formatted {file_path.name} with Black")
+                        return True
+                except FileNotFoundError:
+                    logger.debug("Black not available, skipping Python formatting")
+        
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Formatting timeout for {file_path.name}")
+        except Exception as e:
+            logger.debug(f"Auto-format failed for {file_path.name}: {e}")
+        
+        return False
+    
     async def create_file(self, file_path: str, content: str, project_id: str, auto_convert: bool = True) -> Dict[str, Any]:
         """
         Crée un nouveau fichier avec contenu
