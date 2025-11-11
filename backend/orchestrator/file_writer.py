@@ -319,10 +319,15 @@ class FileWriter:
                 # Écriture atomique UTF-8
                 target_path.write_text(content, encoding='utf-8')
                 
-                # Calculer hash
-                file_hash = self._calculate_hash(content)
+                # 🔥 PHASE 2 FIX: Auto-formatting APRÈS écriture
+                await self._auto_format_file(target_path, stack="generic")
                 
-                logger.info(f"✅ Created file: {file_path} (size: {size}, hash: {file_hash[:8]}...)")
+                # Calculer hash (après formatting pour avoir le hash final)
+                final_content = target_path.read_text(encoding='utf-8')
+                file_hash = self._calculate_hash(final_content)
+                final_size = len(final_content.encode('utf-8'))
+                
+                logger.info(f"✅ Created file: {file_path} (size: {final_size}, hash: {file_hash[:8]}...)")
                 
                 return {
                     "status": "created",
