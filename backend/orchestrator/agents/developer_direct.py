@@ -177,15 +177,38 @@ Current step: {step.description}"""
         # --- AJOUT 2 : initialiser last_error avant la boucle ---
         last_error: Optional[str] = None
         
-         # 🔧 Read important files for search_replace context
+        # 🔥 PHASE 2 FIX: Smart Content Reading (technique Emergent.sh)
+        # Lire les fichiers importants AVANT génération pour contexte précis
         file_contents: Optional[Dict[str, str]] = {}
         if project_path:
             try:
                 file_contents = self._read_important_files(str(project_path), stack)
-                self.log.info(f"📚 Loaded {len(file_contents)} files for context")
+                self.log.info(f"📚 [Smart Reading] Loaded {len(file_contents)} files for precise context")
             except Exception as e:
                 self.log.warning(f"Could not read important files: {e}")
                 file_contents = {}
+        
+        # 🔥 PHASE 2 FIX: Read specific target files if step mentions them
+        # Exemple: "modify routes/web.php" → lire ce fichier spécifiquement
+        if project_path and file_contents is not None:
+            try:
+                # Extraire fichiers mentionnés dans la description du step
+                import re
+                step_desc = step.description.lower()
+                potential_files = re.findall(r'[\w/]+\.(?:php|js|py|vue|tsx|jsx|blade\.php)', step_desc)
+                
+                for file_path in potential_files:
+                    if file_path not in file_contents:
+                        full_path = Path(project_path) / file_path
+                        if full_path.exists():
+                            try:
+                                content = full_path.read_text(encoding='utf-8', errors='replace')
+                                file_contents[file_path] = content[:10000]  # Max 10KB
+                                self.log.info(f"📖 [Smart Reading] Loaded target file: {file_path}")
+                            except:
+                                pass
+            except Exception as e:
+                self.log.debug(f"Target file detection failed: {e}")
         
         ast_error: Optional[str] = None
         for attempt in range(1, self.max_attempts + 1):
