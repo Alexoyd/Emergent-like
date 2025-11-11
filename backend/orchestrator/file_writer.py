@@ -267,6 +267,12 @@ class FileWriter:
                 if size > MAX_FILE_SIZE:
                     raise FileWriterError(f"File too large: {size} bytes (max {MAX_FILE_SIZE})")
                 
+                # 🔥 PHASE 2 FIX: Validation syntaxe AVANT écriture
+                is_valid, error_msg = self._validate_syntax(file_path, content, stack="generic")
+                if not is_valid:
+                    logger.error(f"❌ Syntax validation failed for {file_path}: {error_msg}")
+                    raise FileWriterError(f"Syntax error in {file_path}: {error_msg}")
+                
                 # Écriture atomique
                 target_path.write_text(content, encoding='utf-8')
                 
