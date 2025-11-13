@@ -936,15 +936,17 @@ Route::get('/products', [ProductController::class, 'index']);"
         """
         🔥 FIX CRITIQUE: Nettoie les échappements littéraux AVANT parsing JSON
         
-        Architecture multi-couches inspirée d'Emergent.sh :
-        - COUCHE 1: Nettoyage des triples échappements (\\\" → \")
-        - COUCHE 2: Nettoyage des doubles échappements (\\n → \n, \\t → \t)
+        Architecture multi-couches ITERATIVE inspirée d'Emergent.sh :
+        - COUCHE 1: Nettoyage des triples+ échappements (\\\" → \", passes multiples)
+        - COUCHE 2: Nettoyage des doubles+ échappements (\\n → \n, passes multiples)
         - COUCHE 3: Regex avancées pour cas complexes (système existant)
         
-        Problème résolu: Le LLM génère parfois du JSON avec des échappements multiples
-        Exemples: 
-        - "content": "Hello \\\"World\\\"" (triple échappement)
-        - "content": "use App\\Http\\Controllers\\ProductController;\\n" (double échappement)
+        NOUVEAU: Approche itérative pour gérer les échappements profonds (4, 5, 6+ backslashes)
+        Le LLM peut générer \\\\n (4 backslashes) ou \\\\\\" (5 backslashes)
+        
+        Exemples résolus: 
+        - "content": "Hello \\\\\\"World\\\\\\"" → "Hello \"World\""
+        - "content": "Line1\\\\\\\\nLine2" → "Line1\nLine2"
         """
         if not text or not isinstance(text, str):
             return text
@@ -954,28 +956,58 @@ Route::get('/products', [ProductController::class, 'index']);"
         fixes_applied = []
         
         # ============================================================
-        # COUCHE 1: Nettoyage des TRIPLES échappements (Emergent.sh)
+        # COUCHE 1: Nettoyage ITÉRATIF des échappements de guillemets
         # ============================================================
-        # Pattern: \\\" → \" (guillemets échappés 3 fois)
-        if '\\\\"' in text:
-            text = text.replace('\\\\"', '\\"')
-            fixes_applied.append("triple-escaped quotes")
-            self.log.info("🔧 [Couche 1] Correction des guillemets triple-échappés (\\\\\" → \\\")")
+        # Approche: Répéter jusqu'à stabilisation (max 5 passes)
+        max_iterations = 5
+        iteration = 0
+        
+        while iteration < max_iterations:
+            text_before = text
+            
+            # Réduire les échappements multiples de guillemets
+            # Pattern: \\\\" → \\" (réduit de 1 niveau à chaque passe)
+            if '\\\\"' in text:
+                text = text.replace('\\\\"', '\\"')
+                if iteration == 0:
+                    fixes_applied.append("quote-escaping-reduction")
+            
+            # Si pas de changement, on a terminé
+            if text == text_before:
+                break
+            iteration += 1
+        
+        if iteration > 0:
+            self.log.info(f"🔧 [Couche 1] Guillemets: {iteration} passes de nettoyage (\\\\\" → \\\")")
         
         # ============================================================
-        # COUCHE 2: Nettoyage des DOUBLES échappements (Emergent.sh)
+        # COUCHE 2: Nettoyage ITÉRATIF des échappements de newlines/tabs
         # ============================================================
-        # Pattern: \\n → \n (newlines échappées 2 fois)
-        if '\\\\n' in text:
-            text = text.replace('\\\\n', '\\n')
-            fixes_applied.append("double-escaped newlines")
-            self.log.info("🔧 [Couche 2] Correction des newlines double-échappées (\\\\n → \\n)")
+        iteration = 0
         
-        # Pattern: \\t → \t (tabs échappées 2 fois)
-        if '\\\\t' in text:
-            text = text.replace('\\\\t', '\\t')
-            fixes_applied.append("double-escaped tabs")
-            self.log.info("🔧 [Couche 2] Correction des tabs double-échappées (\\\\t → \\t)")
+        while iteration < max_iterations:
+            text_before = text
+            
+            # Réduire les échappements multiples de \n
+            # Pattern: \\\\n → \\n (réduit de 1 niveau à chaque passe)
+            if '\\\\n' in text:
+                text = text.replace('\\\\n', '\\n')
+                if iteration == 0:
+                    fixes_applied.append("newline-escaping-reduction")
+            
+            # Réduire les échappements multiples de \t
+            if '\\\\t' in text:
+                text = text.replace('\\\\t', '\\t')
+                if iteration == 0:
+                    fixes_applied.append("tab-escaping-reduction")
+            
+            # Si pas de changement, on a terminé
+            if text == text_before:
+                break
+            iteration += 1
+        
+        if iteration > 0:
+            self.log.info(f"🔧 [Couche 2] Newlines/Tabs: {iteration} passes de nettoyage (\\\\\\\\n → \\\\n → \\n)")
         
         # ============================================================
         # COUCHE 3: Regex avancées pour cas complexes (système existant)
