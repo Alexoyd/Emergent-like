@@ -99,19 +99,7 @@ def test_double_escaped_newlines():
     text = '{"operations": [{"type": "create", "path": "test.txt", "content": "Line1\\\\nLine2"}]}'
     print(f"   Entrée: {text}")
     
-    import logging
-    logger = logging.getLogger("test")
-    logger.setLevel(logging.INFO)
-    
-    agent = DeveloperAgentDirect(
-        project_manager=None,
-        tool_manager=None,
-        llm_router=None,
-        rag_retriever=None,
-        log=logger
-    )
-    
-    cleaned = agent._fix_literal_escapes_in_raw_json(text)
+    cleaned = fix_literal_escapes_in_raw_json(text)
     print(f"   Nettoyé: {cleaned}")
     
     try:
@@ -134,19 +122,7 @@ def test_mixed_escapes():
     text = '{"operations": [{"type": "create", "path": "test.php", "content": "<?php\\\\necho \\\\"Hello\\\\";"}]}'
     print(f"   Entrée: {text}")
     
-    import logging
-    logger = logging.getLogger("test")
-    logger.setLevel(logging.INFO)
-    
-    agent = DeveloperAgentDirect(
-        project_manager=None,
-        tool_manager=None,
-        llm_router=None,
-        rag_retriever=None,
-        log=logger
-    )
-    
-    cleaned = agent._fix_literal_escapes_in_raw_json(text)
+    cleaned = fix_literal_escapes_in_raw_json(text)
     print(f"   Nettoyé: {cleaned}")
     
     try:
@@ -167,19 +143,7 @@ def test_no_escapes_needed():
     text = '{"operations": [{"type": "create", "path": "test.txt", "content": "Hello World"}]}'
     print(f"   Entrée: {text}")
     
-    import logging
-    logger = logging.getLogger("test")
-    logger.setLevel(logging.INFO)
-    
-    agent = DeveloperAgentDirect(
-        project_manager=None,
-        tool_manager=None,
-        llm_router=None,
-        rag_retriever=None,
-        log=logger
-    )
-    
-    cleaned = agent._fix_literal_escapes_in_raw_json(text)
+    cleaned = fix_literal_escapes_in_raw_json(text)
     print(f"   Nettoyé: {cleaned}")
     
     try:
