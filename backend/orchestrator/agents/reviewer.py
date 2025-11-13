@@ -422,28 +422,52 @@ Respond in JSON format:
 }}
 """
         
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            response = await self._call_llm(run, messages)
-            
-            # Parse JSON response
-            import json
-            result = json.loads(response)
-            
-            return {
-                "feedback": result.get("feedback", "Please review test failures and adjust implementation"),
-                "confidence": result.get("confidence", 0.7),
-                "suggestions": result.get("suggestions", [])
-            }
-            
-        except Exception as e:
-            self.log.warning(f"Error generating retry feedback: {e}")
-            # Fallback to basic feedback
-            return {
-                "feedback": f"Tests failed. Please review the following failures and adjust your implementation:\n{failures_text[:500]}",
-                "confidence": 0.5,
-                "suggestions": ["Review test failures", "Check syntax and logic", "Ensure proper imports"]
-            }
+        # 🔥 SOLUTION 4: Defensive parsing with retry
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            try:
+                messages = [{"role": "user", "content": prompt}]
+                response = await self._call_llm(run, messages)
+                
+                # ✅ Defensive JSON parsing
+                result = defensive_json_parse(response, "retry feedback", self.log)
+                
+                if result is None:
+                    if attempt < max_retries - 1:
+                        self.log.warning(f"⚠️ Retry feedback generation failed (attempt {attempt+1}/{max_retries}), retrying...")
+                        await asyncio.sleep(1)
+                        # Add clarification to prompt for retry
+                        prompt += "\n\n🚨 PREVIOUS ATTEMPT FAILED: Please return VALID JSON only! No explanations."
+                        continue
+                    else:
+                        # Final attempt failed, use fallback
+                        self.log.warning("⚠️ All attempts failed, using basic feedback fallback")
+                        return {
+                            "feedback": f"Tests failed. Please review the following failures and adjust your implementation:\n{failures_text[:500]}",
+                            "confidence": 0.5,
+                            "suggestions": ["Review test failures", "Check syntax and logic", "Ensure proper imports"]
+                        }
+                
+                # ✅ Success - parse and return
+                return {
+                    "feedback": result.get("feedback", "Please review test failures and adjust implementation"),
+                    "confidence": result.get("confidence", 0.7),
+                    "suggestions": result.get("suggestions", [])
+                }
+                
+            except Exception as e:
+                self.log.error(f"❌ Unexpected error generating retry feedback (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    # Fallback on final error
+                    return {
+                        "feedback": f"Tests failed. Please review the following failures and adjust your implementation:\n{failures_text[:500]}",
+                        "confidence": 0.5,
+                        "suggestions": ["Review test failures", "Check syntax and logic", "Ensure proper imports"]
+                    }
     
     async def _call_llm(self, run: Any, messages: List[Dict[str, str]], task_type: str = "review") -> str:
         """Helper method to call LLM with error handling."""
