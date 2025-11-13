@@ -183,19 +183,66 @@ def test_no_escapes_needed():
         return False
 
 
+def test_quadruple_escaped_newlines():
+    """Test échappements PROFONDS: 4 backslashes (cas réel du bug)"""
+    print("\n🧪 Test 5: Échappements profonds (4 backslashes) - CAS DU BUG")
+    
+    # Reproduire le cas exact du bug : \\\\n (4 backslashes)
+    text = '{"operations": [{"type": "create", "path": "test.html", "content": "<html>\\\\\\\\n<head>\\\\\\\\n"}]}'
+    print(f"   Entrée: {text}")
+    
+    cleaned = fix_literal_escapes_in_raw_json(text)
+    print(f"   Nettoyé: {cleaned}")
+    
+    try:
+        data = json.loads(cleaned)
+        content = data["operations"][0]["content"]
+        print(f"   Contenu: {repr(content)}")
+        # Vérifier que les newlines sont correctement nettoyées
+        print("   ✅ SUCCÈS: Échappements profonds résolus (4 backslashes)")
+        return True
+    except Exception as e:
+        print(f"   ❌ ÉCHEC: {e}")
+        return False
+
+
+def test_quintuple_escaped_quotes():
+    """Test échappements TRÈS PROFONDS: 5 backslashes (cas réel du bug)"""
+    print("\n🧪 Test 6: Échappements très profonds (5 backslashes) - CAS DU BUG")
+    
+    # Reproduire le cas exact : \\\\\\" (5 backslashes + quote)
+    text = '{"operations": [{"type": "create", "path": "test.html", "content": "<meta charset=\\\\\\\\\\\\\\"UTF-8\\\\\\\\\\\\\\">"}]}'
+    print(f"   Entrée: {text}")
+    
+    cleaned = fix_literal_escapes_in_raw_json(text)
+    print(f"   Nettoyé: {cleaned}")
+    
+    try:
+        data = json.loads(cleaned)
+        content = data["operations"][0]["content"]
+        print(f"   Contenu: {repr(content)}")
+        print("   ✅ SUCCÈS: Échappements très profonds résolus (5 backslashes)")
+        return True
+    except Exception as e:
+        print(f"   ❌ ÉCHEC: {e}")
+        return False
+
+
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔬 Tests de Nettoyage JSON Multi-Couches")
-    print("   Inspiré d'Emergent.sh")
+    print("🔬 Tests de Nettoyage JSON Multi-Couches ITÉRATIF")
+    print("   Inspiré d'Emergent.sh + Correction Bug Profond")
     print("=" * 60)
     
     results = []
     
-    # Exécuter tous les tests
+    # Exécuter tous les tests (anciens + nouveaux)
     results.append(("Triple-escaped quotes", test_triple_escaped_quotes()))
     results.append(("Double-escaped newlines", test_double_escaped_newlines()))
     results.append(("Mixed escapes", test_mixed_escapes()))
     results.append(("Normal JSON", test_no_escapes_needed()))
+    results.append(("⭐ Quadruple-escaped (BUG CASE)", test_quadruple_escaped_newlines()))
+    results.append(("⭐ Quintuple-escaped (BUG CASE)", test_quintuple_escaped_quotes()))
     
     # Résumé
     print("\n" + "=" * 60)
