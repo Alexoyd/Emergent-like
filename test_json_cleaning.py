@@ -257,9 +257,10 @@ if __name__ == "__main__":
     passed_count = sum(1 for _, p in results if p)
     
     print(f"\n   Total: {passed_count}/{total} tests réussis")
+    print("   ⭐ = Tests pour les bugs réels détectés en production")
     
     if passed_count == total:
-        print("\n🎉 TOUS LES TESTS PASSENT!")
+        print("\n🎉 TOUS LES TESTS PASSENT! Le bug des échappements profonds est résolu!")
         sys.exit(0)
     else:
         print(f"\n⚠️  {total - passed_count} test(s) échoué(s)")
