@@ -62,6 +62,13 @@ def fix_literal_escapes_in_raw_json(text: str) -> str:
     if iteration > 0:
         print(f"      🔧 [Couche 2] Newlines/Tabs: {iteration} passes de nettoyage")
     
+    # COUCHE 2.5: Normalisation FINALE des quotes dans attributs HTML
+    if '=\\\\"' in text or '=\\"' in text:
+        text = re.sub(r'=\\\\"([^"]*)\\\\"', r'=\"\1\"', text)
+        text = re.sub(r'=\\"([^"]*)\\"', r'=\"\1\"', text)
+        fixes_applied.append("html-attribute-normalization")
+        print("      🔧 [Couche 2.5] Normalisation quotes attributs HTML")
+    
     # COUCHE 3: Regex avancées pour cas complexes
     pattern = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\n([^"]*")'
     
