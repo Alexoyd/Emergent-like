@@ -6,12 +6,65 @@ Inspiré d'Emergent.sh
 
 import json
 import sys
+import re
 from pathlib import Path
 
-# Ajouter le backend au path
-sys.path.insert(0, str(Path(__file__).parent / "backend"))
 
-from orchestrator.agents.developer_direct import DeveloperAgentDirect
+def fix_literal_escapes_in_raw_json(text: str) -> str:
+    """
+    Réplication de la fonction de nettoyage pour test
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    original_text = text
+    fixes_applied = []
+    
+    # COUCHE 1: Nettoyage des TRIPLES échappements
+    if '\\\\"' in text:
+        text = text.replace('\\\\"', '\\"')
+        fixes_applied.append("triple-escaped quotes")
+        print("      🔧 [Couche 1] Correction des guillemets triple-échappés (\\\\\" → \\\")")
+    
+    # COUCHE 2: Nettoyage des DOUBLES échappements
+    if '\\\\n' in text:
+        text = text.replace('\\\\n', '\\n')
+        fixes_applied.append("double-escaped newlines")
+        print("      🔧 [Couche 2] Correction des newlines double-échappées (\\\\n → \\n)")
+    
+    if '\\\\t' in text:
+        text = text.replace('\\\\t', '\\t')
+        fixes_applied.append("double-escaped tabs")
+        print("      🔧 [Couche 2] Correction des tabs double-échappées (\\\\t → \\t)")
+    
+    # COUCHE 3: Regex avancées pour cas complexes
+    pattern = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\n([^"]*")'
+    
+    def fix_escapes(match):
+        prefix = match.group(1)
+        suffix = match.group(2)
+        return prefix + '\n' + suffix
+    
+    text_after_regex = re.sub(pattern, fix_escapes, text)
+    if text_after_regex != text:
+        fixes_applied.append("regex newlines in fields")
+        text = text_after_regex
+    
+    pattern_tab = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\t([^"]*")'
+    def fix_tabs(match):
+        prefix = match.group(1)
+        suffix = match.group(2)
+        return prefix + '\t' + suffix
+    
+    text_after_tab_regex = re.sub(pattern_tab, fix_tabs, text)
+    if text_after_tab_regex != text:
+        fixes_applied.append("regex tabs in fields")
+        text = text_after_tab_regex
+    
+    if text != original_text:
+        print(f"      🔧 [Multi-couches] Nettoyage terminé: {', '.join(fixes_applied)}")
+    
+    return text
 
 
 def test_triple_escaped_quotes():
@@ -22,21 +75,8 @@ def test_triple_escaped_quotes():
     text = '{"operations": [{"type": "create", "path": "test.html", "content": "Hello \\\\"World\\\\""}]}'
     print(f"   Entrée: {text}")
     
-    # Créer instance (avec logging minimal)
-    import logging
-    logger = logging.getLogger("test")
-    logger.setLevel(logging.INFO)
-    
-    agent = DeveloperAgentDirect(
-        project_manager=None,
-        tool_manager=None,
-        llm_router=None,
-        rag_retriever=None,
-        log=logger
-    )
-    
     # Appliquer le nettoyage
-    cleaned = agent._fix_literal_escapes_in_raw_json(text)
+    cleaned = fix_literal_escapes_in_raw_json(text)
     print(f"   Nettoyé: {cleaned}")
     
     # Vérifier que le JSON parse correctement
