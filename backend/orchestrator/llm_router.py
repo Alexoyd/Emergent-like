@@ -13,9 +13,32 @@ import collections
 import re
 import tempfile
 from datetime import datetime
+from threading import Lock
 from .prompt_cache import PromptCacheManager
 
 logger = logging.getLogger(__name__)
+
+
+class LLMRateLimiter:
+    """
+    Rate limiter to prevent bursts of LLM requests that cause 429 errors.
+    Inspired by Emergent.sh: sequential calls with minimum delay between them.
+    """
+    def __init__(self, min_delay_seconds: float = 0.5):
+        self.min_delay = min_delay_seconds
+        self.last_call_time = 0
+        self.lock = Lock()
+    
+    def wait_if_needed(self):
+        """Ensure minimum delay between consecutive LLM calls"""
+        with self.lock:
+            now = time.time()
+            elapsed = now - self.last_call_time
+            if elapsed < self.min_delay and self.last_call_time > 0:
+                wait_time = self.min_delay - elapsed
+                logger.debug(f"⏱️ Rate limiter: waiting {wait_time:.2f}s before next LLM call")
+                time.sleep(wait_time)
+            self.last_call_time = time.time()
 
 class ModelTier(Enum):
     LOCAL = "local"
