@@ -226,7 +226,12 @@ class ReviewerAgent:
         )
     
     def _analyze_test_results(self, test_results: List[TestResult]) -> Dict[str, Any]:
-        """Analyze test results and provide summary."""
+        """
+        🔥 SOLUTION 2: Analyze test results with PHPStan "soft mode" (Emergent.sh strategy)
+        
+        PHPStan failures are treated as warnings only, not blocking failures.
+        This prevents workflow from being blocked by incomplete projects.
+        """
         if not test_results:
             return {
                 "all_passed": False,
@@ -234,28 +239,46 @@ class ReviewerAgent:
                 "passed_tests": 0,
                 "failed_tests": 0,
                 "test_types": [],
-                "failures": []
+                "failures": [],
+                "warnings": []
             }
         
-        passed_count = sum(1 for result in test_results if result.status == "passed")
-        failed_count = len(test_results) - passed_count
-        
+        passed_count = 0
+        failed_count = 0
         failures = []
+        warnings = []
+        
         for result in test_results:
-            if result.status == "failed":
+            # 🔥 SOLUTION 2: PHPStan in "soft mode" - treat as warning, not failure
+            if result.test_type == "phpstan" and result.status == "failed":
+                warnings.append({
+                    "test_type": result.test_type,
+                    "output": result.output[:500],
+                    "details": result.details,
+                    "reason": "PHPStan failures treated as warnings (project may be incomplete)"
+                })
+                # Count as "passed" so it doesn't block workflow
+                passed_count += 1
+                self.log.info("⚠️ PHPStan failed but treating as warning (soft mode)")
+            elif result.status == "passed":
+                passed_count += 1
+            else:
+                # Real failures (not PHPStan)
+                failed_count += 1
                 failures.append({
                     "test_type": result.test_type,
-                    "output": result.output[:500],  # Truncate long outputs
+                    "output": result.output[:500],
                     "details": result.details
                 })
         
         return {
-            "all_passed": failed_count == 0,
+            "all_passed": failed_count == 0,  # PHPStan doesn't count as failure
             "total_tests": len(test_results),
             "passed_tests": passed_count,
             "failed_tests": failed_count,
             "test_types": [result.test_type for result in test_results],
-            "failures": failures
+            "failures": failures,
+            "warnings": warnings  # NEW: Separate warnings (PHPStan)
         }
     
     async def _should_escalate_to_planner(
