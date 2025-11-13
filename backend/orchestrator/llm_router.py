@@ -82,6 +82,11 @@ class LLMRouter:
         # ✅ Development mode for testing without API keys
         self.development_mode = os.getenv("DEVELOPMENT_MODE", "true").lower() == "true"
         
+        # 🔥 SOLUTION 1: Rate Limiter (Emergent.sh strategy)
+        rate_limit_delay = float(os.getenv("LLM_MIN_DELAY_SECONDS", "0.5"))
+        self.rate_limiter = LLMRateLimiter(min_delay_seconds=rate_limit_delay)
+        logger.info(f"✅ LLM Rate Limiter initialized with {rate_limit_delay}s minimum delay")
+        
          # Initialize prompt cache manager
         self.prompt_cache = PromptCacheManager()
         
