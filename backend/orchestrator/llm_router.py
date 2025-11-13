@@ -132,6 +132,9 @@ class LLMRouter:
     async def generate(self, prompt: str, task_type: str, current_cost: float, budget_limit: float, run_id: str = None) -> LLMResponse:
         """Generate response with improved automatic model selection and escalation"""
         try:
+            # 🔥 SOLUTION 1: Apply rate limiting BEFORE any LLM call
+            self.rate_limiter.wait_if_needed()
+            
             # ✅ Development mode fallback if no API keys available
             if self.development_mode and not self._has_any_api_keys():
                 logger.warning("🧪 Development mode: No API keys available, using mock responses")
