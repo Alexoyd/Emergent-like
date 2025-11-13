@@ -161,8 +161,8 @@ Générer automatiquement du code fonctionnel pour différents stacks (Laravel, 
 
 | Service  | Port  | URL                                                    |
 |----------|-------|--------------------------------------------------------|
-| Backend  | 8001  | https://repo-analyzer-105.preview.emergentagent.com/api |
-| Frontend | 3000  | https://repo-analyzer-105.preview.emergentagent.com  |
+| Backend  | 8001  | https://cognitia-fixer.preview.emergentagent.com/api |
+| Frontend | 3000  | https://cognitia-fixer.preview.emergentagent.com  |
 | MongoDB  | 27017 | localhost:27017 (interne)                              |
 
 **IMPORTANT:** Tous les endpoints backend doivent utiliser le préfixe `/api` pour respecter les règles d'ingress Kubernetes.
@@ -2354,8 +2354,8 @@ tail -n 50 /app/projects/{project_id}/logs/pest_20250115_103000.log
 
 **Test API:**
 ```bash
-curl https://repo-analyzer-105.preview.emergentagent.com/api/
-curl https://repo-analyzer-105.preview.emergentagent.com/api/admin/stats
+curl https://cognitia-fixer.preview.emergentagent.com/api/
+curl https://cognitia-fixer.preview.emergentagent.com/api/admin/stats
 ```
 
 **MongoDB queries:**
@@ -2450,7 +2450,7 @@ sudo supervisorctl status
 
 **Test santé API:**
 ```bash
-curl https://repo-analyzer-105.preview.emergentagent.com/api/
+curl https://cognitia-fixer.preview.emergentagent.com/api/
 ```
 
 ---

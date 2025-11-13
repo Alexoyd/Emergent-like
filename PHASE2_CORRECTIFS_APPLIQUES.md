@@ -359,7 +359,7 @@ Critères succès:
 ### Commandes de Vérification
 ```bash
 # Backend status
-curl https://repo-analyzer-105.preview.emergentagent.com/api/
+curl https://cognitia-fixer.preview.emergentagent.com/api/
 # Résultat: {"message":"AI Agent Orchestrator API v1.0.0","status":"running"}
 
 # Logs backend
