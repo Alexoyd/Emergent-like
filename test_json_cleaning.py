@@ -12,7 +12,7 @@ from pathlib import Path
 
 def fix_literal_escapes_in_raw_json(text: str) -> str:
     """
-    Réplication de la fonction de nettoyage pour test
+    Réplication de la fonction de nettoyage ITERATIVE pour test
     """
     if not text or not isinstance(text, str):
         return text
@@ -20,22 +20,47 @@ def fix_literal_escapes_in_raw_json(text: str) -> str:
     original_text = text
     fixes_applied = []
     
-    # COUCHE 1: Nettoyage des TRIPLES échappements
-    if '\\\\"' in text:
-        text = text.replace('\\\\"', '\\"')
-        fixes_applied.append("triple-escaped quotes")
-        print("      🔧 [Couche 1] Correction des guillemets triple-échappés (\\\\\" → \\\")")
+    # COUCHE 1: Nettoyage ITÉRATIF des guillemets
+    max_iterations = 5
+    iteration = 0
     
-    # COUCHE 2: Nettoyage des DOUBLES échappements
-    if '\\\\n' in text:
-        text = text.replace('\\\\n', '\\n')
-        fixes_applied.append("double-escaped newlines")
-        print("      🔧 [Couche 2] Correction des newlines double-échappées (\\\\n → \\n)")
+    while iteration < max_iterations:
+        text_before = text
+        
+        if '\\\\"' in text:
+            text = text.replace('\\\\"', '\\"')
+            if iteration == 0:
+                fixes_applied.append("quote-escaping-reduction")
+        
+        if text == text_before:
+            break
+        iteration += 1
     
-    if '\\\\t' in text:
-        text = text.replace('\\\\t', '\\t')
-        fixes_applied.append("double-escaped tabs")
-        print("      🔧 [Couche 2] Correction des tabs double-échappées (\\\\t → \\t)")
+    if iteration > 0:
+        print(f"      🔧 [Couche 1] Guillemets: {iteration} passes de nettoyage")
+    
+    # COUCHE 2: Nettoyage ITÉRATIF des newlines/tabs
+    iteration = 0
+    
+    while iteration < max_iterations:
+        text_before = text
+        
+        if '\\\\n' in text:
+            text = text.replace('\\\\n', '\\n')
+            if iteration == 0:
+                fixes_applied.append("newline-escaping-reduction")
+        
+        if '\\\\t' in text:
+            text = text.replace('\\\\t', '\\t')
+            if iteration == 0:
+                fixes_applied.append("tab-escaping-reduction")
+        
+        if text == text_before:
+            break
+        iteration += 1
+    
+    if iteration > 0:
+        print(f"      🔧 [Couche 2] Newlines/Tabs: {iteration} passes de nettoyage")
     
     # COUCHE 3: Regex avancées pour cas complexes
     pattern = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\n([^"]*")'
