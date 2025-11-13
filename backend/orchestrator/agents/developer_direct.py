@@ -1010,6 +1010,19 @@ Route::get('/products', [ProductController::class, 'index']);"
             self.log.info(f"🔧 [Couche 2] Newlines/Tabs: {iteration} passes de nettoyage (\\\\\\\\n → \\\\n → \\n)")
         
         # ============================================================
+        # COUCHE 2.5: Normalisation FINALE des quotes dans attributs HTML/XML
+        # ============================================================
+        # Problème: Après nettoyage itératif, il peut rester \\" dans du HTML
+        # Exemple: charset=\\"UTF-8\\" doit devenir charset=\"UTF-8\"
+        # Pattern: = suivi de \\" dans du contenu HTML/XML
+        if '=\\\\"' in text or '=\\"' in text:
+            # Normaliser les attributs HTML: attr=\\"value\\" → attr=\"value\"
+            text = re.sub(r'=\\\\"([^"]*)\\\\"', r'=\"\1\"', text)
+            text = re.sub(r'=\\"([^"]*)\\"', r'=\"\1\"', text)
+            fixes_applied.append("html-attribute-normalization")
+            self.log.info("🔧 [Couche 2.5] Normalisation quotes attributs HTML (attr=\\\\\"val\\\\\" → attr=\"val\")")
+        
+        # ============================================================
         # COUCHE 3: Regex avancées pour cas complexes (système existant)
         # ============================================================
         # Chercher les patterns JSON avec des échappements littéraux dans les champs spécifiques
