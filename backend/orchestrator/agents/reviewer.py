@@ -313,30 +313,55 @@ Respond in JSON format:
 }}
 """
         
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            response = await self._call_llm(run, messages)
-            
-            # Parse JSON response
-            import json
-            result = json.loads(response)
-            
-            return {
-                "should_escalate": result.get("should_escalate", False),
-                "confidence": result.get("confidence", 0.5),
-                "feedback": result.get("feedback", "Unable to determine escalation need"),
-                "suggestions": result.get("suggestions", [])
-            }
-            
-        except Exception as e:
-            self.log.warning(f"Error in escalation analysis: {e}")
-            # Default to not escalating on error
-            return {
-                "should_escalate": False,
-                "confidence": 0.3,
-                "feedback": f"Unable to analyze escalation need due to error: {e}",
-                "suggestions": []
-            }
+        # 🔥 SOLUTION 4: Defensive parsing with retry
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            try:
+                messages = [{"role": "user", "content": prompt}]
+                response = await self._call_llm(run, messages)
+                
+                # ✅ Defensive JSON parsing
+                result = defensive_json_parse(response, "escalation analysis", self.log)
+                
+                if result is None:
+                    if attempt < max_retries - 1:
+                        self.log.warning(f"⚠️ Escalation analysis failed (attempt {attempt+1}/{max_retries}), retrying...")
+                        await asyncio.sleep(1)
+                        # Add clarification to prompt for retry
+                        prompt += "\n\n🚨 PREVIOUS ATTEMPT FAILED: Please return VALID JSON only! No explanations."
+                        continue
+                    else:
+                        # Final attempt failed, use fallback
+                        self.log.warning("⚠️ All attempts failed, using fallback (no escalation)")
+                        return {
+                            "should_escalate": False,
+                            "confidence": 0.3,
+                            "feedback": "Unable to determine escalation need (JSON parsing failed)",
+                            "suggestions": []
+                        }
+                
+                # ✅ Success - parse and return
+                return {
+                    "should_escalate": result.get("should_escalate", False),
+                    "confidence": result.get("confidence", 0.5),
+                    "feedback": result.get("feedback", "Unable to determine escalation need"),
+                    "suggestions": result.get("suggestions", [])
+                }
+                
+            except Exception as e:
+                self.log.error(f"❌ Unexpected error in escalation analysis (attempt {attempt+1}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    # Fallback on final error
+                    return {
+                        "should_escalate": False,
+                        "confidence": 0.3,
+                        "feedback": f"Unable to analyze escalation need due to error: {e}",
+                        "suggestions": []
+                    }
     
     async def _generate_retry_feedback(
         self,
