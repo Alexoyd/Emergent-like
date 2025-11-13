@@ -936,19 +936,51 @@ Route::get('/products', [ProductController::class, 'index']);"
         """
         🔥 FIX CRITIQUE: Nettoie les échappements littéraux AVANT parsing JSON
         
-        Problème: Le LLM génère parfois du JSON avec des \\n littéraux au lieu de vrais retours à la ligne
-        Exemple: "content": "use App\\Http\\Controllers\\ProductController;\\n"
+        Architecture multi-couches inspirée d'Emergent.sh :
+        - COUCHE 1: Nettoyage des triples échappements (\\\" → \")
+        - COUCHE 2: Nettoyage des doubles échappements (\\n → \n, \\t → \t)
+        - COUCHE 3: Regex avancées pour cas complexes (système existant)
         
-        Cette fonction détecte et corrige ces cas AVANT le parsing JSON.
+        Problème résolu: Le LLM génère parfois du JSON avec des échappements multiples
+        Exemples: 
+        - "content": "Hello \\\"World\\\"" (triple échappement)
+        - "content": "use App\\Http\\Controllers\\ProductController;\\n" (double échappement)
         """
         if not text or not isinstance(text, str):
             return text
         
-        # Détecter si le texte contient des échappements littéraux dans du JSON
-        # Pattern: "content": "...\\n..." ou "search": "...\\n..."
         import re
+        original_text = text
+        fixes_applied = []
         
-        # Chercher les patterns JSON avec des échappements littéraux
+        # ============================================================
+        # COUCHE 1: Nettoyage des TRIPLES échappements (Emergent.sh)
+        # ============================================================
+        # Pattern: \\\" → \" (guillemets échappés 3 fois)
+        if '\\\\"' in text:
+            text = text.replace('\\\\"', '\\"')
+            fixes_applied.append("triple-escaped quotes")
+            self.log.info("🔧 [Couche 1] Correction des guillemets triple-échappés (\\\\\" → \\\")")
+        
+        # ============================================================
+        # COUCHE 2: Nettoyage des DOUBLES échappements (Emergent.sh)
+        # ============================================================
+        # Pattern: \\n → \n (newlines échappées 2 fois)
+        if '\\\\n' in text:
+            text = text.replace('\\\\n', '\\n')
+            fixes_applied.append("double-escaped newlines")
+            self.log.info("🔧 [Couche 2] Correction des newlines double-échappées (\\\\n → \\n)")
+        
+        # Pattern: \\t → \t (tabs échappées 2 fois)
+        if '\\\\t' in text:
+            text = text.replace('\\\\t', '\\t')
+            fixes_applied.append("double-escaped tabs")
+            self.log.info("🔧 [Couche 2] Correction des tabs double-échappées (\\\\t → \\t)")
+        
+        # ============================================================
+        # COUCHE 3: Regex avancées pour cas complexes (système existant)
+        # ============================================================
+        # Chercher les patterns JSON avec des échappements littéraux dans les champs spécifiques
         # Pattern: "field": "value with \\n literal"
         pattern = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\n([^"]*")'
         
@@ -958,22 +990,29 @@ Route::get('/products', [ProductController::class, 'index']);"
             # Remplacer \\n par \n (vrai retour à la ligne)
             return prefix + '\n' + suffix
         
-        # Appliquer la correction
-        fixed_text = re.sub(pattern, fix_escapes, text)
+        # Appliquer la correction regex pour \n
+        text_after_regex = re.sub(pattern, fix_escapes, text)
+        if text_after_regex != text:
+            fixes_applied.append("regex newlines in fields")
+            text = text_after_regex
         
-        # Aussi corriger \\t
+        # Aussi corriger \\t avec regex
         pattern_tab = r'("(?:content|search|replace)"\s*:\s*"[^"]*?)\\\\t([^"]*")'
         def fix_tabs(match):
             prefix = match.group(1)
             suffix = match.group(2)
             return prefix + '\t' + suffix
         
-        fixed_text = re.sub(pattern_tab, fix_tabs, fixed_text)
+        text_after_tab_regex = re.sub(pattern_tab, fix_tabs, text)
+        if text_after_tab_regex != text:
+            fixes_applied.append("regex tabs in fields")
+            text = text_after_tab_regex
         
-        if fixed_text != text:
-            self.log.info("🔧 Fixed literal escape sequences in raw JSON before parsing")
+        # Log final si corrections appliquées
+        if text != original_text:
+            self.log.info(f"🔧 [Multi-couches] Nettoyage JSON terminé: {', '.join(fixes_applied)}")
         
-        return fixed_text
+        return text
     def _normalize_operations(
         self,
         operations: List[Dict[str, Any]],
