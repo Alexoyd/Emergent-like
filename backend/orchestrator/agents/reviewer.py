@@ -18,8 +18,56 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Dict
 from enum import Enum
 import logging
+import json
+import asyncio
 
 from ..plan_parser import Step
+
+
+def defensive_json_parse(content: str, context: str = "response", logger = None) -> Optional[Dict]:
+    """
+    🔥 SOLUTION 4: Defensive JSON parsing with validation (Emergent.sh strategy)
+    
+    Validates and parses JSON with 3 levels of checks:
+    1. Check if content exists and is non-empty
+    2. Attempt to parse JSON
+    3. Validate basic structure
+    
+    Args:
+        content: String content to parse
+        context: Context description for logging
+        logger: Logger instance for warnings
+        
+    Returns:
+        Parsed JSON dict or None if parsing fails
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # ✅ Check 1: Content exists and is non-empty
+    if not content:
+        logger.warning(f"⚠️ Empty {context} from LLM")
+        return None
+    
+    content_stripped = content.strip()
+    if len(content_stripped) == 0:
+        logger.warning(f"⚠️ Empty {context} content from LLM (whitespace only)")
+        return None
+    
+    # ✅ Check 2: Valid JSON parsing
+    try:
+        data = json.loads(content_stripped)
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ JSON parsing failed for {context}: {e}")
+        logger.error(f"Response preview (first 200 chars): {content_stripped[:200]}")
+        return None
+    
+    # ✅ Check 3: Basic structure validation (should be a dict)
+    if not isinstance(data, dict):
+        logger.warning(f"⚠️ {context} is not a JSON object (dict), got {type(data)}")
+        return None
+    
+    return data
 
 
 class ReviewDecision(Enum):
