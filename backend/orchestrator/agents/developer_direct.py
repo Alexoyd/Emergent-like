@@ -758,6 +758,25 @@ Route::get('/products', [ProductController::class, 'index']);"
         original_text = text
         text = text.strip()
         
+        # 🔥 FIX: Détecter explicitement le cas BEGIN_PATCH (fallback dev-mode)
+        if text.startswith("BEGIN_PATCH"):
+            self.log.error(
+                "❌ Received patch-style dev-mode response (BEGIN_PATCH...) instead of JSON "
+                "for DeveloperAgentDirect. This usually means:\n"
+                "  1. llm_router is in dev-mode/mock mode AND returned a patch for task_type='coding'\n"
+                "  2. OR OpenAI returned 429 TPM (tokens per minute exceeded) and fallback returned patch\n"
+                "  3. The prompt is too large (>30K tokens) and needs to be reduced\n\n"
+                "SOLUTIONS:\n"
+                "  - Reduce prompt size (less RAG chunks, shorter guidelines, less file context)\n"
+                "  - Disable dev-mode patches for task_type='coding' in llm_router\n"
+                "  - Check OpenAI rate limits and TPM quota\n"
+            )
+            raise ValueError(
+                "Dev-mode patch received instead of JSON operations. "
+                "Cannot parse BEGIN_PATCH format for coding operations. "
+                "See logs for detailed explanation."
+            )
+        
         # 1. Remove markdown code fences (multiple variants)
         if text.startswith("```json"):
             text = text[7:]
