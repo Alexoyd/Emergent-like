@@ -342,20 +342,59 @@ Current step: {step.description}"""
             f"Existing project structure (partial):\n{file_tree.strip()}\n\n" if file_tree else ""
         )
 
-        # 🔥 NOUVEAU: Block avec contenu des fichiers
+        # 🔥 RADICAL REDESIGN: Block avec contenu ET instructions ultra-explicites
         file_contents_block = ""
         if file_contents:
             file_contents_block = (
-                "\n📄 CURRENT FILE CONTENTS (CRITICAL - READ BEFORE search_replace!):\n"
-                "🚨 These are the ACTUAL current contents of important files.\n"
-                "🚨 When using 'search_replace', copy the EXACT text from below!\n"
-                "🚨 DO NOT guess - use these exact strings!\n"
+                "\n" + "="*80 + "\n"
+                "📄 CURRENT FILE CONTENTS - MANDATORY READING\n"
+                "="*80 + "\n\n"
+                "🚨🚨🚨 CRITICAL INSTRUCTIONS FOR search_replace OPERATIONS 🚨🚨🚨\n\n"
+                "IF YOU USE 'search_replace' WITHOUT READING THIS, YOUR OPERATION WILL FAIL!\n\n"
+                "RULES (FOLLOW EXACTLY OR OPERATION FAILS):\n"
+                "1. ✅ DO: Copy the EXACT text from the file contents below\n"
+                "2. ✅ DO: Include surrounding lines for context (5-10 lines)\n"
+                "3. ✅ DO: Preserve ALL whitespace, indentation, quotes exactly\n"
+                "4. ❌ DON'T: Invent or guess what the file contains\n"
+                "5. ❌ DON'T: Paraphrase or summarize the content\n"
+                "6. ❌ DON'T: Use partial matches or fragments\n\n"
+                "⚠️ CONSEQUENCE: If your 'search' text doesn't match EXACTLY → Operation FAILS\n\n"
+                "📖 EXAMPLE OF CORRECT search_replace:\n"
+                "Given file content:\n"
+                "```php\n"
+                "Route::get('/', function () {\n"
+                "    return view('welcome');\n"
+                "});\n"
+                "```\n\n"
+                "✅ CORRECT search_replace:\n"
+                "{\n"
+                '  "type": "search_replace",\n'
+                '  "path": "routes/web.php",\n'
+                '  "search": "Route::get(\'/\', function () {\\n    return view(\'welcome\');\\n});",\n'
+                '  "replace": "Route::get(\'/\', function () {\\n    return view(\'dashboard\');\\n});"\n'
+                "}\n\n"
+                "❌ WRONG (will FAIL):\n"
+                "{\n"
+                '  "type": "search_replace",\n'
+                '  "search": "return view(\'welcome\')",  // ❌ Missing context\n'
+                '  "replace": "return view(\'dashboard\')"\n'
+                "}\n\n"
+                "NOW READ THE ACTUAL FILE CONTENTS BELOW:\n"
+                "="*80 + "\n\n"
             )
             for file_path, content in file_contents.items():
-                # Montrer plus de contenu pour les fichiers clés
-                max_chars = 2000 if file_path in ["routes/web.php", "routes/api.php"] else 800
-                truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated)"
-                file_contents_block += f"### {file_path}\n```\n{truncated}\n```\n\n"
+                # Montrer PLUS de contenu pour tous les fichiers
+                max_chars = 5000  # Augmenté de 2000 à 5000
+                truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated - but you have enough context)"
+                
+                file_contents_block += (
+                    f"FILE: {file_path}\n"
+                    f"{'─'*80}\n"
+                    f"CONTENT (Use this EXACT text for search_replace):\n"
+                    f"```\n{truncated}\n```\n"
+                    f"{'─'*80}\n"
+                    f"⚠️ To modify this file, copy lines from above EXACTLY!\n\n"
+                )
         
         # 🔥 SOLUTION 3: Block pour fichiers manquants (Emergent.sh strategy)
         missing_files_block = ""
