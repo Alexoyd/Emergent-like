@@ -234,6 +234,7 @@ Current step: {step.description}"""
                 attempt=attempt,
                 last_error=last_error,
                 file_contents=file_contents,  # 🔥 NOUVEAU
+                missing_files=missing_files,  # 🔥 SOLUTION 3
             )
             
             # 3) LLM call
