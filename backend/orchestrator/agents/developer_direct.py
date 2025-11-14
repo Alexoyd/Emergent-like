@@ -166,8 +166,8 @@ Current step: {step.description}"""
                     # 🔥 FIX TPM: Reduced from 8→3→2 to avoid 429 TPM errors (still hitting 31K tokens)
                     rag_context = await self.rag_system.get_context(rag_query, max_chunks=2)
                 elif hasattr(self.rag_system, "get_relevant_chunks"):
-                    # 🔥 FIX TPM: Reduced from 8 to 3 to avoid 429 TPM errors
-                    rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=3)
+                    # 🔥 FIX TPM: Reduced from 8→3→2 to avoid 429 TPM errors (still hitting 31K tokens)
+                    rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=2)
                 else:
                     rag_context = []
             except Exception as e:
