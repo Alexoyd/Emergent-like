@@ -577,155 +577,19 @@ Current step: {step.description}"""
 - PSR-12, dependency injection, FormRequests, Eloquent
 - Create: controllers → routes → views (in this order!)
 
-🎨 ASSETS (CRITICAL - Will break if wrong!):
-  ✅ Use @vite(['resources/css/app.css']) in Blade
-  ❌ NEVER {{ asset('css/app.css') }}
+📝 DB & Migrations:
+  - migrations in database/migrations/
+  - Use Schema:: for table operations
+  
+🧪 TESTS:
+  - Pest (modern) or PHPUnit: tests/Feature, tests/Unit
+  - Run: php artisan test
 
-🚨 ROUTES (routes/web.php):
-  ⛔ NEVER insert before <?php tag
-  ✅ Use search_replace (read file first!)
-  ✅ Add imports after existing "use" statements
-  ✅ Add routes at end
-
-🎯 CONTROLLERS & ROUTES (CRITICAL ORDER):
-  ⚠️ MANDATORY: Create controllers BEFORE referencing in routes
-  1️⃣ FIRST: Create controller file in app/Http/Controllers/
-  2️⃣ THEN: Add route that references the controller
-  3️⃣ FINALLY: Create corresponding Blade views
-  📝 Controller naming: PascalCase + 'Controller' suffix (e.g., ProductController)
-  📝 Controller template:
-     <?php
-     namespace App\Http\Controllers;
-     use Illuminate\Http\Request;
-     class YourController extends Controller {
-         public function index() {
-             return view('your_view');
-         }
-     }
-  ✅ Each route action MUST have corresponding controller method
-  ✅ Use resource controllers for CRUD: Route::resource('products', ProductController::class)
-
-🚨 ROUTES FILE MODIFICATION (routes/web.php) - CRITICAL RULES:
-  ⛔ NEVER insert before <?php tag - file will be corrupted!
-  ⛔ NEVER insert at line 0 or 1 - this puts code before <?php
-  ✅ ALWAYS use "search_replace" operation for routes/web.php
-  ✅ ALWAYS read the ENTIRE file first to see existing structure
-  ✅ Use search_replace to add new "use" imports after existing ones
-  ✅ Use search_replace to add new routes after existing routes or at EOF
-  
-  📝 CORRECT Example for adding a route:
-  {
-    "type": "search_replace",
-    "path": "routes/web.php",
-    "search": "use Illuminate\Support\Facades\Route;",
-    "replace": "use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ProductController;"
-  }
-  Then add the route itself at the end:
-  {
-    "type": "search_replace", 
-    "path": "routes/web.php",
-    "search": "Route::get('/', function () {
-    return view('welcome');
-});",
-    "replace": "Route::get('/', function () {
-    return view('welcome');
-});
-
-Route::get('/products', [ProductController::class, 'index']);"
-  }
-  
-  ❌ WRONG Example (NEVER DO THIS):
-  {
-    "type": "insert",
-    "path": "routes/web.php", 
-    "after_line": 0,  // ❌ This inserts BEFORE <?php tag!
-    "content": "use App\Http\Controllers\ProductController;"
-  }
-
-🏠 DEFAULT ROUTE HANDLING (MANDATORY):
-  🚨 CRITICAL: When building ANY application, ALWAYS modify the '/' route!
-  
-  ⛔ NEVER leave the default Laravel welcome page as entry point
-  ⛔ Users should see YOUR application, not "Let's get started"
-  
-  ✅ REQUIRED: Replace or redirect the '/' route in routes/web.php:
-  
-  Option 1 - Direct replacement (PREFERRED):
-  {
-    "type": "search_replace",
-    "path": "routes/web.php",
-    "search": "Route::get('/', function () {
-    return view('welcome');
-});",
-    "replace": "Route::get('/', [ProductController::class, 'index']);"
-  }
-  
-  Option 2 - Redirect to main feature:
-  {
-    "type": "search_replace",
-    "path": "routes/web.php",
-    "search": "Route::get('/', function () {
-    return view('welcome');
-});",
-    "replace": "Route::redirect('/', '/products');"
-  }
-  
-  📝 Examples:
-  - Product listing app → Route::get('/', [ProductController::class, 'index']);
-  - Dashboard app → Route::get('/', [DashboardController::class, 'index']);
-  - Multi-feature → Route::redirect('/', '/main-feature');
-  
-  🎯 Goal: User visits http://localhost:8000 and sees YOUR app, not Laravel default
-
-🗄️ DATABASE & SEEDERS (Laravel 12):
-  📋 Default DatabaseSeeder.php content (Laravel 12):
-  <?php
-  namespace Database\Seeders;
-  use Illuminate\Database\Seeder;
-  
-  class DatabaseSeeder extends Seeder {
-      public function run(): void {
-          // User::factory(10)->create();
-          // User::factory()->create(['name' => 'Test User', 'email' => 'test@example.com']);
-      }
-  }
-  
-  ✅ To call custom seeders, use search_replace:
-  {
-    "type": "search_replace",
-    "path": "database/seeders/DatabaseSeeder.php",
-    "search": "    public function run(): void
-    {
-        // User::factory(10)->create();",
-    "replace": "    public function run(): void
-    {
-        $this->call(CharacterSeeder::class);
-        // User::factory(10)->create();"
-  }
-  
-  ⚠️ CRITICAL: Match EXACT indentation (4 spaces in Laravel 12)
-  ⚠️ Include enough context to make search unique
-  ⚠️ Always check RAG context for actual file content before search_replace
-
-✅ VALIDATION & SECURITY:
-  - Always use FormRequest classes for complex validation
-  - Include @csrf token in all forms
-  - Use route model binding when appropriate
-  - Implement authorization policies for sensitive actions
-
-🧪 TESTING:
-  - Write Pest tests for new features (Laravel 12 default)
-  - Test controller actions, validation rules, database operations
-  - Location: tests/Feature/ and tests/Unit/
-
-📦 COMMON PATTERNS:
-  - API responses: return response()->json($data)
-  - Redirects with data: return redirect()->route('name')->with('status', 'Success!')
-  - Flash messages: session()->flash('message', 'Saved successfully')
-  - Validation: $request->validate(['field' => 'required|string|max:255'])
+✅ VALIDATION:
+  - FormRequest classes for complex validation
+  - $request->validate(['field' => 'required|string'])
 """
-        )
+            )
         if stack == "react":
             return (
                 "- React 18, functional components, hooks.\n"
