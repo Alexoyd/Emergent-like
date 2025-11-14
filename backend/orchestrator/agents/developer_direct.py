@@ -329,9 +329,10 @@ Current step: {step.description}"""
         attempt: int,
         last_error: Optional[str],
         file_contents: Optional[Dict[str, str]] = None,  # 🔥 NOUVEAU
+        missing_files: List[str] = None,  # 🔥 SOLUTION 3
     ) -> str:
         """
-        Construit un prompt pour générer des opérations JSON
+        🔥 SOLUTION 3: Construit un prompt avec information sur fichiers existants/manquants
         """
         guidelines = self._stack_guidelines(stack)
         rag_block = "\n".join(rag_context[:8]) if rag_context else "(no additional context)"
@@ -355,6 +356,19 @@ Current step: {step.description}"""
                 max_chars = 2000 if file_path in ["routes/web.php", "routes/api.php"] else 800
                 truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated)"
                 file_contents_block += f"### {file_path}\n```\n{truncated}\n```\n\n"
+        
+        # 🔥 SOLUTION 3: Block pour fichiers manquants (Emergent.sh strategy)
+        missing_files_block = ""
+        if missing_files and len(missing_files) > 0:
+            missing_files_block = (
+                "\n❌ MISSING FILES (DO NOT EXIST YET):\n"
+                "🚨 The following files DO NOT exist in the project:\n"
+                "🚨 You MUST use 'create' operation (NOT 'search_replace' or 'update')!\n"
+                "🚨 Using 'search_replace' on these files WILL FAIL!\n\n"
+            )
+            for file_path in missing_files:
+                missing_files_block += f"  • {file_path} - DOES NOT EXIST (use 'create')\n"
+            missing_files_block += "\n"
         
         return (
             "You are a senior software developer. Implement the following step by generating file operations.\n\n"
