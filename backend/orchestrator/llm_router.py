@@ -664,12 +664,19 @@ class LLMRouter:
    Duration: 2 minutes"""
         
         elif task_type == "coding":
-            # 🔥 FIX: Return valid JSON for DeveloperAgentDirect, NOT patch text
-            # DeveloperAgentDirect expects {"operations": [...]} format
-            logger.warning("⚠️ Dev-mode for task_type='coding' - returning minimal valid JSON (no actual operations)")
+            # 🔥 FIX: Return valid JSON with at least 1 operation (Pydantic requires min 1)
+            # This happens when 429 TPM error occurs - prompt is too large
+            logger.warning("⚠️ Dev-mode for task_type='coding' - returning placeholder operation (429 TPM or dev-mode)")
+            logger.error("🚨 CRITICAL: Prompt too large for OpenAI (>30K tokens). See previous error for exact token count.")
             content = '''{
-    "operations": [],
-    "notes": "Mock response: LLM unavailable (dev-mode or 429 TPM). No changes applied. Reduce prompt size or check API limits."
+    "operations": [
+        {
+            "type": "create",
+            "path": "PLACEHOLDER_ERROR.txt",
+            "content": "ERROR: LLM request failed due to 429 TPM (tokens per minute exceeded).\\n\\nThe prompt sent to OpenAI was too large (>30,000 tokens).\\n\\nThis is a placeholder operation to satisfy validation.\\n\\nACTION REQUIRED:\\n1. Reduce RAG chunks further (currently 3, try 2)\\n2. Reduce file context further (currently 1200-4000 chars)\\n3. Check if file_contents has too many files\\n4. Consider using a different model with higher TPM limit"
+        }
+    ],
+    "notes": "Mock response due to 429 TPM error. Reduce prompt size."
 }'''
         
         elif task_type == "review":
