@@ -163,7 +163,8 @@ Stack: {stack}
 Current step: {step.description}"""
                 
                 if hasattr(self.rag_system, "get_context"):
-                    rag_context = await self.rag_system.get_context(rag_query, max_chunks=8)
+                    # 🔥 FIX TPM: Reduced from 8 to 3 to avoid 429 TPM errors
+                    rag_context = await self.rag_system.get_context(rag_query, max_chunks=3)
                 elif hasattr(self.rag_system, "get_relevant_chunks"):
                     rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=8)
                 else:
