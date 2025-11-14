@@ -48,8 +48,8 @@ class DeveloperAgentDirect:
         self, 
         project_path: str, 
         stack: str,
-        max_files: int = 8,  # 🔧 FIX: Limiter le nombre de fichiers pour éviter dépassement contexte
-        max_bytes_per_file: int = 10000  # 🔧 FIX: Réduire la taille max par fichier
+        max_files: int = 4,  # 🔥 ULTRA REDUCED: 8→4 (still hitting 31K tokens TPM)
+        max_bytes_per_file: int = 6000  # 🔥 REDUCED: 10KB→6KB to fit under 30K TPM
     ) -> Dict[str, str]:
         """
         Lit un sous-ensemble de fichiers critiques pour fournir un contexte fiable
