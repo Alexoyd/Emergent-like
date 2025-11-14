@@ -385,9 +385,17 @@ Current step: {step.description}"""
                 "="*80 + "\n\n"
             )
             for file_path, content in file_contents.items():
-                # Montrer PLUS de contenu pour tous les fichiers
-                max_chars = 5000  # Augmenté de 2000 à 5000
-                truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated - but you have enough context)"
+                # 🔥 FIX TPM: Réduire contenu SAUF pour fichiers clés (avoid 429 TPM)
+                # Key files get more context, others get less to reduce prompt size
+                KEY_FILES = [
+                    "routes/web.php",
+                    "routes/api.php",
+                    "resources/views/dashboard.blade.php",
+                    "app/Http/Controllers/QuestionnaireController.php",
+                    "app/Http/Controllers/DashboardController.php",
+                ]
+                max_chars = 4000 if file_path in KEY_FILES else 1200  # Réduit de 5000/800 à 4000/1200
+                truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated - use 'update' if need full file)"
                 
                 file_contents_block += (
                     f"FILE: {file_path}\n"
