@@ -564,32 +564,28 @@ Current step: {step.description}"""
         )
     
     def _stack_guidelines(self, stack: str) -> str:
-        """Guidelines par stack (réutilise la logique existante)"""
+        """
+        🔥 FIX TPM: Guidelines drastiquement condensées pour éviter 429 TPM
+        Version complète était >200 lignes → réduit à ~40 lignes
+        """
         stack = (stack or "").lower()
         if stack == "laravel":
             return (
-            """🎯 TARGET: Laravel 12+ (PHP 8.3+, Vite assets, modern conventions)
+            """🎯 Laravel 12 (PHP 8.3+, Vite, Modern)
 
-📋 CORE PRINCIPLES:
-- PHP 8.3+, PSR-12 coding standards, Laravel 12 conventions
-- Prefer dependency injection, FormRequests validation, Eloquent models
-- Update routes, controllers, tests (Pest/PHPUnit)
-- Provide migrations/seeders/factories when schema changes
+📋 ESSENTIALS:
+- PSR-12, dependency injection, FormRequests, Eloquent
+- Create: controllers → routes → views (in this order!)
 
-🎨 ASSETS & VITE (Laravel 10+/11+/12+):
-  ⚠️ CRITICAL: Laravel 12 uses Vite for asset compilation
-  ✅ ALWAYS use @vite() directive in Blade templates:
-     @vite(['resources/css/app.css', 'resources/js/app.js'])
-  ❌ NEVER use {{ asset('css/app.css') }} for main stylesheets
-  ✅ Assets location: resources/css/ and resources/js/ (NOT public/)
-  ✅ Compiled output goes to public/build/ automatically
-  📝 Example Blade head section:
-     <head>
-         <meta charset="UTF-8">
-         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-         <title>{{ $title ?? 'Laravel App' }}</title>
-         @vite(['resources/css/app.css', 'resources/js/app.js'])
-     </head>
+🎨 ASSETS (CRITICAL - Will break if wrong!):
+  ✅ Use @vite(['resources/css/app.css']) in Blade
+  ❌ NEVER {{ asset('css/app.css') }}
+
+🚨 ROUTES (routes/web.php):
+  ⛔ NEVER insert before <?php tag
+  ✅ Use search_replace (read file first!)
+  ✅ Add imports after existing "use" statements
+  ✅ Add routes at end
 
 🎯 CONTROLLERS & ROUTES (CRITICAL ORDER):
   ⚠️ MANDATORY: Create controllers BEFORE referencing in routes
