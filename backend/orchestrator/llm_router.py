@@ -664,52 +664,13 @@ class LLMRouter:
    Duration: 2 minutes"""
         
         elif task_type == "coding":
-            # Extract target files from prompt for realistic patch
-            if "python" in prompt.lower() or "main.py" in prompt.lower():
-                content = '''BEGIN_PATCH
-diff --git a/main.py b/main.py
-new file mode 100644
-index 0000000..b376c99
---- /dev/null
-+++ b/main.py
-@@ -0,0 +1,7 @@
-+#!/usr/bin/env python3
-+"""Simple Hello World application"""
-+
-+def main():
-+    print("Hello World!")
-+
-+if __name__ == "__main__":
-+    main()
-END_PATCH'''
-            
-            elif "laravel" in prompt.lower():
-                content = '''BEGIN_PATCH
-diff --git a/routes/web.php b/routes/web.php
-new file mode 100644
-index 0000000..b3d9bbc
---- /dev/null
-+++ b/routes/web.php
-@@ -0,0 +1,7 @@
-+<?php
-+
-+use Illuminate\\Support\\Facades\\Route;
-+
-+Route::get('/', function () {
-+    return 'Hello World!';
-+});
-END_PATCH'''
-            
-            else:
-                content = '''BEGIN_PATCH
-diff --git a/hello.txt b/hello.txt
-new file mode 100644
-index 0000000..b376c99
---- /dev/null
-+++ b/hello.txt
-@@ -0,0 +1 @@
-+Hello World!
-END_PATCH'''
+            # 🔥 FIX: Return valid JSON for DeveloperAgentDirect, NOT patch text
+            # DeveloperAgentDirect expects {"operations": [...]} format
+            logger.warning("⚠️ Dev-mode for task_type='coding' - returning minimal valid JSON (no actual operations)")
+            content = '''{
+    "operations": [],
+    "notes": "Mock response: LLM unavailable (dev-mode or 429 TPM). No changes applied. Reduce prompt size or check API limits."
+}'''
         
         elif task_type == "review":
             content = '''{
