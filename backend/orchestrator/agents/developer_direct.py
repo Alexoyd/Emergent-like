@@ -188,14 +188,23 @@ Current step: {step.description}"""
                 self.log.warning(f"Could not read important files: {e}")
                 file_contents = {}
         
-        # 🔥 PHASE 2 FIX: Read specific target files if step mentions them
+        # 🔥 SOLUTION 3: Smart Content Reading + File Existence Detection (Emergent.sh strategy)
         # Exemple: "modify routes/web.php" → lire ce fichier spécifiquement
+        # NOUVEAU: Détecter fichiers manquants et en informer le LLM
+        missing_files = []
         if project_path and file_contents is not None:
             try:
                 # Extraire fichiers mentionnés dans la description du step
                 import re
                 step_desc = step.description.lower()
                 potential_files = re.findall(r'[\w/]+\.(?:php|js|py|vue|tsx|jsx|blade\.php)', step_desc)
+                
+                # Also check common Laravel files
+                if stack == "laravel":
+                    potential_files.extend(["routes/web.php", "routes/api.php", "routes/channels.php"])
+                
+                # Remove duplicates
+                potential_files = list(set(potential_files))
                 
                 for file_path in potential_files:
                     if file_path not in file_contents:
@@ -207,6 +216,10 @@ Current step: {step.description}"""
                                 self.log.info(f"📖 [Smart Reading] Loaded target file: {file_path}")
                             except:
                                 pass
+                        else:
+                            # File doesn't exist - track it
+                            missing_files.append(file_path)
+                            self.log.info(f"❌ [Smart Reading] File does NOT exist: {file_path}")
             except Exception as e:
                 self.log.debug(f"Target file detection failed: {e}")
         
