@@ -377,6 +377,7 @@ Current step: {step.description}"""
             f"Context from RAG (may include code excerpts, constraints):\n{rag_block}\n\n"
             f"{file_tree_block}"
             f"{file_contents_block}"  # 🔥 Ajout du contenu des fichiers
+            f"{missing_files_block}"  # 🔥 SOLUTION 3: Fichiers manquants
             f"Coding standards and constraints for this stack:\n{guidelines}\n\n"
             f"{error_hint}"
             "🔥🔥🔥 CRITICAL INSTRUCTIONS - READ CAREFULLY 🔥🔥🔥\n\n"
