@@ -1,0 +1,35 @@
+🎯 Laravel 12 (PHP 8.3+, Vite, Modern)
+
+📋 CORE:
+- PSR-12, dependency injection, FormRequests, Eloquent
+- Routes → controllers → tests (Pest/PHPUnit)
+
+🎨 ASSETS (CRITICAL):
+- ✅ @vite(['resources/css/app.css']) in Blade
+- ❌ NEVER {{ asset('css/app.css') }}
+- Files in resources/css, resources/js
+
+🎯 CONTROLLERS (ORDER):
+1. Create controller in app/Http/Controllers/
+2. Add route referencing controller
+3. Create Blade views
+
+🚨 ROUTES (routes/web.php):
+- ✅ Use search_replace (read file first!)
+- ⛔ NEVER insert before <?php
+- ✅ Add imports after existing "use" statements
+- ✅ Add routes at end of file
+
+📝 DB:
+- migrations: database/migrations/
+- Use Schema:: for table changes
+- Seeders: database/seeders/
+
+🧪 TESTS:
+- Pest (modern): tests/Feature, tests/Unit
+- PHPUnit: legacy support
+- php artisan test
+
+✅ VALIDATION:
+- FormRequest classes
+- Validation: $request->validate(['field' => 'required|string'])
