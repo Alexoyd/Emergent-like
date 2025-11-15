@@ -162,12 +162,18 @@ class DeveloperAgentDirect:
 Stack: {stack}
 Current step: {step.description}"""
                 
-                if hasattr(self.rag_system, "get_context"):
-                    # 🔥 FIX TPM: Reduced from 8→3→2 to avoid 429 TPM errors (still hitting 31K tokens)
-                    rag_context = await self.rag_system.get_context(rag_query, max_chunks=2)
+                # 🔥 FIX TPM: Disable RAG for Step 1 (empty project, no context needed)
+                # Step 1 is always project initialization, doesn't need RAG
+                if step.id == 1:
+                    self.log.info("📚 RAG disabled for Step 1 (empty project)")
+                    rag_context = []
+                elif hasattr(self.rag_system, "get_context"):
+                    # 🔥 FIX TPM: Reduced from 8→3→2 to avoid 429 TPM errors
+                    # Still hitting ~30K tokens, may need to reduce to 1
+                    rag_context = await self.rag_system.get_context(rag_query, max_chunks=1)
                 elif hasattr(self.rag_system, "get_relevant_chunks"):
-                    # 🔥 FIX TPM: Reduced from 8→3→2 to avoid 429 TPM errors (still hitting 31K tokens)
-                    rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=2)
+                    # 🔥 FIX TPM: Reduced from 8→3→2→1
+                    rag_context = await self.rag_system.get_relevant_chunks(rag_query, max_chunks=1)
                 else:
                     rag_context = []
             except Exception as e:
