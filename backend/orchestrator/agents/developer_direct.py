@@ -400,7 +400,7 @@ Current step: {step.description}"""
                     "app/Http/Controllers/QuestionnaireController.php",
                     "app/Http/Controllers/DashboardController.php",
                 ]
-                max_chars = 3000 if file_path in KEY_FILES else 800  # Further reduced: 4000→3000, 1200→800 (still 31K tokens)
+                max_chars = 2000 if file_path in KEY_FILES else 500  # DESPERATE: 3000→2000, 800→500 (MUST get under 30K)
                 truncated = content if len(content) <= max_chars else content[:max_chars] + "\n... (truncated - use 'update' if need full file)"
                 
                 file_contents_block += (
