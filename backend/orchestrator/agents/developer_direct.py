@@ -48,8 +48,8 @@ class DeveloperAgentDirect:
         self, 
         project_path: str, 
         stack: str,
-        max_files: int = 4,  # 🔥 ULTRA REDUCED: 8→4 (still hitting 31K tokens TPM)
-        max_bytes_per_file: int = 6000  # 🔥 REDUCED: 10KB→6KB to fit under 30K TPM
+        max_files: int = 2,  # 🔥 DESPERATE: 8→4→2 (STILL hitting 30K tokens!)
+        max_bytes_per_file: int = 4000  # 🔥 DESPERATE: 10KB→6KB→4KB
     ) -> Dict[str, str]:
         """
         Lit un sous-ensemble de fichiers critiques pour fournir un contexte fiable
