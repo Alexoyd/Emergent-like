@@ -703,6 +703,20 @@ async def execute_operations(operations: List[Dict[str, Any]], project_path: str
     writer = FileWriter(project_path)
     results = []
     
+    # 🔥 CRITICAL FIX: Block operations on PLACEHOLDER_ERROR.txt (fake success prevention)
+    # This file is created by 429 TPM fallback and should NEVER be a valid operation
+    placeholder_ops = [op for op in operations if "PLACEHOLDER_ERROR" in op.get("path", "")]
+    if placeholder_ops:
+        logger.error("🚨 CRITICAL: Operations on PLACEHOLDER_ERROR.txt detected!")
+        logger.error("🚨 This indicates 429 TPM fallback - NO REAL CODE was generated")
+        logger.error("🚨 REFUSING to execute these operations (would create false success)")
+        raise FileWriterError(
+            "Operations on PLACEHOLDER_ERROR.txt are not allowed. "
+            "This file is created by 429 TPM fallback and indicates LLM failure. "
+            "The step should fail, not succeed with placeholder operations. "
+            "ACTION: Reduce prompt size or use gpt-4o-mini model."
+        )
+    
     # Trier les opérations par priorité (create avant insert, etc.)
     sorted_operations = _sort_operations_by_priority(operations)
     
