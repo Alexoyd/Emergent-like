@@ -174,6 +174,31 @@ class ReviewerAgent:
                 should_escalate=False
             )
         
+        # 🔥 CRITICAL FIX: Feature-level validation before accepting
+        # Tests passing doesn't mean the feature is implemented
+        # Check for "placeholder only" scenario (fake success)
+        if patch_text and "PLACEHOLDER_ERROR" in patch_text:
+            self.log.warning("⚠️ Patch contains PLACEHOLDER_ERROR - likely 429 TPM fallback")
+            self.log.warning("⚠️ This indicates NO REAL CODE was generated")
+            return ReviewResult(
+                decision=ReviewDecision.RETRY,
+                feedback=(
+                    "Step appears to have failed due to 429 TPM error. "
+                    "Only placeholder operations were generated. "
+                    "No real feature code was implemented. "
+                    "ACTION: Reduce prompt size or use gpt-4o-mini model."
+                ),
+                confidence=0.3,
+                test_summary=test_summary,
+                suggestions=[
+                    "Reduce RAG chunks to 0-1",
+                    "Reduce file context (max_files=2, max_chars=500)",
+                    "Use gpt-4o-mini model (higher TPM limit)",
+                    "Split step into smaller sub-steps"
+                ],
+                should_escalate=False
+            )
+        
         # If all tests passed, accept the step
         if all_tests_passed:
             return ReviewResult(
