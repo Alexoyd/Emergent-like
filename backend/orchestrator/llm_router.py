@@ -363,8 +363,15 @@ class LLMRouter:
                 task_type, final_user_prompt, conversation_history
             )
             
-            # Use GPT-4o with native caching if available
-            model = "gpt-4o"  # Supports better caching
+            # 🔥 CRITICAL FIX: Use gpt-4o-mini for coding to avoid 429 TPM
+            # gpt-4o has very low TPM limit (30K), causing frequent 429 errors
+            # gpt-4o-mini has MUCH higher TPM limit and similar coding performance
+            if task_type == "coding":
+                model = "gpt-4o-mini"  # Higher TPM limit, ~70% cheaper, good for coding
+                logger.info("🎯 Using gpt-4o-mini for coding task (higher TPM limit)")
+            else:
+                model = "gpt-4o"  # Supports better caching
+            
             extra_params = {}
             
             # 🔥 FIX: Force JSON response format for coding tasks
