@@ -833,3 +833,7 @@ backend:
           agent: "main"
           comment: "🔥 PHASE 3 COGNITIA REPAIRED! 1) Correction CRITIQUE dans llm_router.py: Le mode Mock pour task_type='coding' retourne maintenant un JSON valide au lieu de lever une exception bloquante. Cela permet de valider l'orchestration même sans clés API. 2) Amélioration developer_direct.py: Logs d'erreur augmentés (1000 chars) pour meilleur diagnostic. 3) Fix manuel du projet 'login-project' (Forum) pour prouver que la stack Laravel fonctionne (Auth implémentée: Controller, Vues, Routes). Système prêt pour nouveau test end-to-end."
 
+
+        - working: true
+          agent: "main"
+          comment: "🔥 PHASE 4 COGNITIA PLANNING FIXES! 1) PlannerAgent: Prompt durci pour interdire les sections 'Risks'/'Dependencies' qui créaient des étapes fantômes (9-15). 2) DeveloperAgentDirect: Guidelines Laravel renforcées avec 'CRUD PROTOCOL (MANDATORY)'. Exige explicitement la création des 5 fichiers (Model, Migration, Controller, Routes, Views) pour chaque feature. Cela résout le problème du 'CRUD incomplet' où seul le contrôleur était généré."
