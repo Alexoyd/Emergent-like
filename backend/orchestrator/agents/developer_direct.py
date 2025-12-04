@@ -579,21 +579,24 @@ Current step: {step.description}"""
             return (
             """🎯 Laravel 12 (PHP 8.3+, Vite, Modern)
 
-📋 ESSENTIALS:
-- PSR-12, dependency injection, FormRequests, Eloquent
-- Create: controllers → routes → views (in this order!)
+📋 CRUD/FEATURE PROTOCOL (MANDATORY):
+   When implementing a Feature or CRUD (e.g., "Game management"), you MUST create ALL 5 components:
+   1. 🧱 MIGRATION: Create 'database/migrations/xxxx_create_games_table.php' (Schema::create)
+   2. 🧠 MODEL: Create 'app/Models/Game.php' (protected $fillable)
+   3. 🎮 CONTROLLER: Create 'app/Http/Controllers/GameController.php' (index, create, store methods)
+   4. 🛣️ ROUTES: Update 'routes/web.php' (Route::resource or Route::get/post)
+   5. 👁️ VIEWS: Create 'resources/views/games/index.blade.php', 'create.blade.php' (Tailwind CSS)
 
-📝 DB & Migrations:
-  - migrations in database/migrations/
-  - Use Schema:: for table operations
-  
-🧪 TESTS:
-  - Pest (modern) or PHPUnit: tests/Feature, tests/Unit
-  - Run: php artisan test
+🚨 FAILURE CONDITION:
+   - If you create a Controller but NO Model/Migration -> FAILED
+   - If you create Routes but NO Views -> FAILED
+   - YOU MUST OUTPUT MULTIPLE OPERATIONS in a single step to create all these files.
 
-✅ VALIDATION:
-  - FormRequest classes for complex validation
-  - $request->validate(['field' => 'required|string'])
+📝 CODE STANDARDS:
+   - Use Route::resource() where possible
+   - Use FormRequest for validation
+   - Use Eloquent (Game::create($validated))
+   - Return view('games.index', compact('games'))
 """
             )
         if stack == "react":
