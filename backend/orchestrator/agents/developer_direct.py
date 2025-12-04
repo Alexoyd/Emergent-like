@@ -318,7 +318,7 @@ Current step: {step.description}"""
                 self.log.warning(f"❌ Attempt {attempt}/{self.max_attempts}: {last_error}")
                 # Log response preview for last attempt
                 if attempt == self.max_attempts:
-                    self.log.error(f"💀 Final attempt failed. LLM response preview: {llm_text[:500]}")
+                    self.log.error(f"💀 Final attempt failed. LLM response preview: {llm_text[:1000]}")  # Log 1000 chars instead of 500
                 continue
         
         # All attempts exhausted
