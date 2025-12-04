@@ -137,6 +137,7 @@ OUTPUT FORMAT REQUIRED:
    2.2. Substep: [ACTION VERB] [specific file] [purpose]
 
 RULES:
+- OUTPUT ONLY THE PLAN. DO NOT include "Dependencies", "Risks", "Notes" sections.
 - Each substep must specify exact files to create/modify with CLEAR action verb
 - Each substep must be immediately testable
 - Use hierarchical numbering (1.1, 1.2, 2.1, etc.)
@@ -145,7 +146,8 @@ RULES:
 
 Task: {task.strip()}
 
-Generate a hierarchical plan following the exact format above, ensuring NO file is created multiple times.""")
+Generate a hierarchical plan following the exact format above, ensuring NO file is created multiple times.
+DO NOT add any text, analysis, or "Dependencies" lists after the steps. END YOUR RESPONSE AFTER THE LAST STEP.""")
         # Task and format instructions now included in main prompt above
         prompt = "\n\n".join(prompt_parts)
 
