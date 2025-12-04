@@ -336,10 +336,10 @@ tail -f /var/log/supervisor/backend.out.log | grep "FIX CRITIQUE"
 ### Tester l'API
 ```bash
 # Health check
-curl https://cognitia-fixer.preview.emergentagent.com/api/
+curl https://forum-executor.preview.emergentagent.com/api/
 
 # Créer un test run
-curl -X POST https://cognitia-fixer.preview.emergentagent.com/api/runs \
+curl -X POST https://forum-executor.preview.emergentagent.com/api/runs \
   -H "Content-Type: application/json" \
   -d '{
     "goal": "Create a simple Laravel route that returns Hello World",
