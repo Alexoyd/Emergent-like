@@ -210,7 +210,7 @@ Required JSON format:
 """
 
 
-def validate_and_complete_crud(
+async def validate_and_complete_crud(
     operations: List[Dict[str, Any]],
     step_description: str,
     llm_callback: callable,
@@ -228,7 +228,7 @@ def validate_and_complete_crud(
     Args:
         operations: Opérations initiales générées
         step_description: Description du step
-        llm_callback: Fonction pour appeler le LLM (signature: prompt → operations)
+        llm_callback: Fonction async pour appeler le LLM (signature: prompt → operations)
         max_retries: Nombre max de tentatives de complétion
         logger: Logger optionnel
     
@@ -262,8 +262,14 @@ def validate_and_complete_crud(
         )
         
         try:
-            # Appeler le LLM pour compléter
-            additional_ops = llm_callback(completion_prompt)
+            # Appeler le LLM pour compléter (support async)
+            import asyncio
+            import inspect
+            
+            if inspect.iscoroutinefunction(llm_callback):
+                additional_ops = await llm_callback(completion_prompt)
+            else:
+                additional_ops = llm_callback(completion_prompt)
             
             if additional_ops:
                 if logger:
