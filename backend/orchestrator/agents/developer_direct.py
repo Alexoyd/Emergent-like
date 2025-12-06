@@ -303,8 +303,8 @@ Current step: {step.description}"""
                                 step.id
                             )
                         
-                        # Validation + complétion si nécessaire
-                        operations = validate_and_complete_crud(
+                        # Validation + complétion si nécessaire (AWAIT car async)
+                        operations = await validate_and_complete_crud(
                             operations=operations,
                             step_description=step.description,
                             llm_callback=llm_completion_callback,
