@@ -1258,6 +1258,57 @@ Current step: {step.description}"""
                     f"⚠️ View '{view_op.get('path')}' uses {{ asset('css/...') }} which may not work with Vite. "
                     f"Consider using @vite(['resources/css/app.css']) instead."
                 )
+    
+    async def _generate_completion_ops(
+        self,
+        prompt: str,
+        run: Any,
+        step_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Génère des opérations supplémentaires pour compléter un CRUD incomplet.
+        
+        Utilisé par le validateur CRUD pour demander au LLM les fichiers manquants.
+        
+        Args:
+            prompt: Prompt de complétion généré par le validateur
+            run: Objet run courant (pour cost tracking)
+            step_id: ID du step en cours
+        
+        Returns:
+            Liste d'opérations JSON pour les fichiers manquants
+        """
+        try:
+            self.log.info(f"🔄 [CRUD Completion] Requesting missing files from LLM...")
+            
+            response = await self.llm_router.generate(
+                prompt=prompt,
+                task_type="coding",
+                current_cost=run.cost_used_eur,
+                budget_limit=run.daily_budget_eur,
+                run_id=run.id,
+            )
+            
+            llm_text = response.content
+            
+            # Extraction et validation
+            operations = self._extract_and_validate_json(llm_text)
+            
+            if operations:
+                self.log.info(
+                    f"✅ [CRUD Completion] Generated {len(operations)} additional operations"
+                )
+                return operations
+            else:
+                self.log.warning(
+                    "⚠️ [CRUD Completion] LLM returned no valid operations"
+                )
+                return []
+        
+        except Exception as e:
+            self.log.error(f"❌ [CRUD Completion] Failed: {e}")
+            return []
+
             
             if "{{ asset('js/" in content or '{{ asset("js/' in content:
                 warnings.append(
