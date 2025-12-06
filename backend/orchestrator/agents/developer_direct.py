@@ -289,6 +289,35 @@ Current step: {step.description}"""
                 self.log.info(f"✅ Generated {len(operations)} valid file operations on attempt {attempt}/{self.max_attempts}")
                 if attempt > 1:
                     self.log.info(f"📊 Success after {attempt} attempts (auto-repair may have been applied)")
+                
+                # 🔥 NOUVEAU PHASE 2: Validation et complétion CRUD automatique
+                if stack == "laravel":
+                    try:
+                        from ..validators import validate_and_complete_crud
+                        
+                        # Wrapper pour générer les opérations supplémentaires
+                        async def llm_completion_callback(completion_prompt: str) -> List[Dict[str, Any]]:
+                            return await self._generate_completion_ops(
+                                completion_prompt, 
+                                run, 
+                                step.id
+                            )
+                        
+                        # Validation + complétion si nécessaire
+                        operations = validate_and_complete_crud(
+                            operations=operations,
+                            step_description=step.description,
+                            llm_callback=llm_completion_callback,
+                            max_retries=2,
+                            logger=self.log
+                        )
+                        
+                        self.log.info(f"✅ CRUD validation complete: {len(operations)} total operations")
+                    
+                    except Exception as e:
+                        self.log.warning(f"⚠️ CRUD validation failed (continuing anyway): {e}")
+                        # Continue avec les operations originales
+                
                 return OperationsResult(
                     step_id=step.id,
                     stack=stack,
