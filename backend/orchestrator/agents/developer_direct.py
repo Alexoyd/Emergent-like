@@ -571,34 +571,47 @@ Current step: {step.description}"""
     
     def _stack_guidelines(self, stack: str) -> str:
         """
-        🔥 FIX TPM: Guidelines drastiquement condensées pour éviter 429 TPM
-        Version complète était >200 lignes → réduit à ~40 lignes
+        🔥 EMERGENT.SH STYLE: Guidelines ultra-complètes pour génération CRUD complète
+        
+        Intégration des templates Laravel pour garantir une application fonctionnelle
+        dès la première génération (philosophie "Zero Config").
         """
         stack = (stack or "").lower()
         if stack == "laravel":
-            return (
-            """🎯 Laravel 12 (PHP 8.3+, Vite, Modern)
+            # Importer les guidelines depuis le module templates
+            try:
+                from ..templates.laravel_crud_templates import get_crud_guidelines_for_prompt
+                return get_crud_guidelines_for_prompt()
+            except ImportError:
+                # Fallback si module pas disponible
+                return (
+                """🎯 Laravel 12 (PHP 8.3+, Vite, Modern)
 
 📋 CRUD/FEATURE PROTOCOL (MANDATORY):
-   When implementing a Feature or CRUD (e.g., "Game management"), you MUST create ALL 5 components:
-   1. 🧱 MIGRATION: Create 'database/migrations/xxxx_create_games_table.php' (Schema::create)
-   2. 🧠 MODEL: Create 'app/Models/Game.php' (protected $fillable)
-   3. 🎮 CONTROLLER: Create 'app/Http/Controllers/GameController.php' (index, create, store methods)
-   4. 🛣️ ROUTES: Update 'routes/web.php' (Route::resource or Route::get/post)
-   5. 👁️ VIEWS: Create 'resources/views/games/index.blade.php', 'create.blade.php' (Tailwind CSS)
+   When implementing a Feature or CRUD (e.g., "Game management"), you MUST create ALL 9 components:
+   1. 🧱 MIGRATION: database/migrations/xxxx_create_[table]_table.php
+   2. 🧠 MODEL: app/Models/[ModelName].php (with $fillable)
+   3. 🎮 CONTROLLER: app/Http/Controllers/[ModelName]Controller.php
+      → MUST have ALL 7 methods: index, create, store, show, edit, update, destroy
+   4. 🛣️ ROUTES: routes/web.php (Route::resource('[plural]', [Controller]::class))
+   5. 🏗️ LAYOUT: resources/views/layouts/app.blade.php (Tailwind, navigation, flash messages)
+   6. 📄 VIEW INDEX: resources/views/[plural]/index.blade.php (list + pagination)
+   7. ➕ VIEW CREATE: resources/views/[plural]/create.blade.php (form)
+   8. ✏️ VIEW EDIT: resources/views/[plural]/edit.blade.php (form)
+   9. 👁️ VIEW SHOW: resources/views/[plural]/show.blade.php (details)
 
-🚨 FAILURE CONDITION:
-   - If you create a Controller but NO Model/Migration -> FAILED
-   - If you create Routes but NO Views -> FAILED
-   - YOU MUST OUTPUT MULTIPLE OPERATIONS in a single step to create all these files.
-
-📝 CODE STANDARDS:
-   - Use Route::resource() where possible
-   - Use FormRequest for validation
-   - Use Eloquent (Game::create($validated))
-   - Return view('games.index', compact('games'))
+🚨 CRITICAL RULES:
+   ❌ Controller without Model/Migration → FAILED
+   ❌ Controller without 4 views → FAILED
+   ❌ Controller with less than 7 methods → FAILED
+   ❌ Routes without Route::resource() → FAILED
+   ✅ ALL 9 operations MUST be in your JSON response
+   ✅ Controller MUST have index, create, store, show, edit, update, destroy
+   ✅ Views MUST use Tailwind CSS
+   ✅ Use pagination: ->paginate(10) in index()
+   ✅ Flash messages after create/update/delete
 """
-            )
+                )
         if stack == "react":
             return (
                 "- React 18, functional components, hooks.\n"
