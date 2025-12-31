@@ -280,10 +280,10 @@ const AdminPanel = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
         {/* GitHub Tab */}
-        <TabsContent value="github" className="space-y-4">
+        {activeTab === 'github' && (
           <Card>
             <CardHeader>
               <CardTitle>Intégration GitHub</CardTitle>
@@ -338,10 +338,10 @@ const AdminPanel = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
 
         {/* Settings Tab */}
-        <TabsContent value="settings" className="space-y-4">
+        {activeTab === 'settings' && (
           <Card>
             <CardHeader>
               <CardTitle>Paramètres Système</CardTitle>
@@ -399,8 +399,8 @@ const AdminPanel = () => {
               </Alert>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 };
