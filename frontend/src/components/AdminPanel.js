@@ -5,22 +5,30 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Progress } from './ui/progress';
 import { Alert, AlertDescription } from './ui/alert';
-import { Trash2, Eye, GitBranch, Download, Upload, Cpu } from 'lucide-react';
+import { Trash2, Eye, GitBranch, Download, Cpu, Settings, FolderOpen, RefreshCw } from 'lucide-react';
 import LLMSettingsPanel from './LLMSettingsPanel';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+
+// Tab configuration
+const TABS = [
+  { id: 'overview', label: "Vue d'ensemble", icon: null },
+  { id: 'llm', label: 'LLM', icon: Cpu },
+  { id: 'projects', label: 'Projets', icon: FolderOpen },
+  { id: 'github', label: 'GitHub', icon: GitBranch },
+  { id: 'settings', label: 'Paramètres', icon: Settings },
+];
+
 const AdminPanel = () => {
+  const [activeTab, setActiveTab] = useState('overview');
   const [stats, setStats] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [githubToken, setGithubToken] = useState('');
   const [repos, setRepos] = useState([]);
-  const [activeTab, setActiveTab] = useState('overview');
-
-  const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
   useEffect(() => {
     loadAdminData();
@@ -29,30 +37,29 @@ const AdminPanel = () => {
   const loadAdminData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Load admin stats
-      const statsResponse = await axios.get(`${backendUrl}/api/admin/stats`);
-      setStats(statsResponse.data);
+      const [statsRes, projectsRes] = await Promise.all([
+        axios.get(`${BACKEND_URL}/api/admin/stats`),
+        axios.get(`${BACKEND_URL}/api/projects`)
+      ]);
       
-      // Load projects
-      const projectsResponse = await axios.get(`${backendUrl}/api/projects`);
-      setProjects(projectsResponse.data.projects);
-      
+      setStats(statsRes.data);
+      setProjects(projectsRes.data.projects || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.detail || err.message);
     } finally {
       setLoading(false);
     }
   };
 
   const loadGithubRepos = async () => {
+    if (!githubToken) return;
     try {
-      if (!githubToken) return;
-      
-      const response = await axios.get(`${backendUrl}/api/github/repositories`, {
+      const response = await axios.get(`${BACKEND_URL}/api/github/repositories`, {
         params: { access_token: githubToken }
       });
-      setRepos(response.data.repositories);
+      setRepos(response.data.repositories || []);
     } catch (err) {
       setError('Erreur lors du chargement des repos GitHub');
     }
@@ -60,13 +67,12 @@ const AdminPanel = () => {
 
   const cloneRepository = async (repoUrl) => {
     try {
-      const response = await axios.post(`${backendUrl}/api/github/clone`, {
+      const response = await axios.post(`${BACKEND_URL}/api/github/clone`, {
         repo_url: repoUrl,
         access_token: githubToken
       });
-      
       alert(`Repository cloné avec succès: ${response.data.project_id}`);
-      loadAdminData(); // Reload projects
+      loadAdminData();
     } catch (err) {
       setError('Erreur lors du clonage du repository');
     }
@@ -74,132 +80,126 @@ const AdminPanel = () => {
 
   const deleteProject = async (projectId) => {
     if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')) return;
-    
     try {
-      await axios.delete(`${backendUrl}/api/projects/${projectId}`);
-      loadAdminData(); // Reload projects
+      await axios.delete(`${BACKEND_URL}/api/projects/${projectId}`);
+      loadAdminData();
     } catch (err) {
       setError('Erreur lors de la suppression du projet');
     }
   };
 
+  // Tab Button Component
+  const TabButton = ({ tab }) => {
+    const isActive = activeTab === tab.id;
+    const Icon = tab.icon;
+    
+    return (
+      <button
+        onClick={() => setActiveTab(tab.id)}
+        className={`
+          flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md
+          transition-all duration-200 ease-in-out
+          ${isActive 
+            ? 'bg-white text-gray-900 shadow-sm' 
+            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }
+        `}
+      >
+        {Icon && <Icon className="h-4 w-4" />}
+        {tab.label}
+      </button>
+    );
+  };
+
+  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
       </div>
     );
   }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
         <Button onClick={loadAdminData} variant="outline">
+          <RefreshCw className="h-4 w-4 mr-2" />
           Actualiser
         </Button>
       </div>
 
+      {/* Error Alert */}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      {/* Custom Tabs Implementation */}
-      <div className="space-y-4">
-        <div className="grid w-full grid-cols-5 bg-muted p-1 rounded-lg">
-          <button 
-            onClick={() => setActiveTab('overview')}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'overview' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
-          >
-            Vue d'ensemble
-          </button>
-          <button 
-            onClick={() => setActiveTab('llm')}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-all flex items-center justify-center ${activeTab === 'llm' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
-          >
-            <Cpu className="h-4 w-4 mr-1" />
-            LLM
-          </button>
-          <button 
-            onClick={() => setActiveTab('projects')}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'projects' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
-          >
-            Projets
-          </button>
-          <button 
-            onClick={() => setActiveTab('github')}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'github' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
-          >
-            GitHub
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
-          >
-            Paramètres
-          </button>
-        </div>
+      {/* Tab Navigation */}
+      <div className="bg-gray-100 p-1 rounded-lg inline-flex gap-1">
+        {TABS.map(tab => (
+          <TabButton key={tab.id} tab={tab} />
+        ))}
+      </div>
 
+      {/* Tab Content */}
+      <div className="mt-4">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
-          <>
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Runs</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {stats?.run_stats?.status_distribution?.completed || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Runs terminés
-                </p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Runs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {stats?.run_stats?.status_distribution?.completed || 0}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Runs terminés</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Coût Quotidien</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  €{stats?.daily_cost?.total_cost?.toFixed(2) || '0.00'}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Aujourd'hui
-                </p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Coût Quotidien</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    €{stats?.daily_cost?.total_cost?.toFixed(2) || '0.00'}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Aujourd'hui</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Projets Actifs</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats?.project_count || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  Total projets
-                </p>
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Projets Actifs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats?.project_count || 0}</div>
+                  <p className="text-xs text-muted-foreground">Total projets</p>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Budget Quotidien</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  €{stats?.settings?.default_daily_budget || 5}
-                </div>
-                <Progress 
-                  value={(stats?.daily_cost?.total_cost || 0) / (stats?.settings?.default_daily_budget || 5) * 100} 
-                  className="mt-2"
-                />
-              </CardContent>
-            </Card>
-          </div>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Budget Quotidien</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    €{stats?.settings?.default_daily_budget || 5}
+                  </div>
+                  <Progress 
+                    value={(stats?.daily_cost?.total_cost || 0) / (stats?.settings?.default_daily_budget || 5) * 100} 
+                    className="mt-2"
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
             <Card>
               <CardHeader>
@@ -222,14 +222,12 @@ const AdminPanel = () => {
                 </div>
               </CardContent>
             </Card>
-          </>
+          </div>
         )}
 
         {/* LLM Settings Tab */}
         {activeTab === 'llm' && (
-          <div className="space-y-4">
-            <LLMSettingsPanel />
-          </div>
+          <LLMSettingsPanel />
         )}
 
         {/* Projects Tab */}
