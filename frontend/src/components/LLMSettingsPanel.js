@@ -30,7 +30,6 @@ import {
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
 const LLMSettingsPanel = ({ projectId = null }) => {
-  console.log("🔥 LLMSettingsPanel rendered with projectId:", projectId);
   const [settings, setSettings] = useState(null);
   const [providers, setProviders] = useState({});
   const [models, setModels] = useState([]);
