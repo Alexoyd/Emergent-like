@@ -106,21 +106,45 @@ const AdminPanel = () => {
         </Alert>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Vue d'ensemble</TabsTrigger>
-          <TabsTrigger value="llm">
+      {/* Custom Tabs Implementation */}
+      <div className="space-y-4">
+        <div className="grid w-full grid-cols-5 bg-muted p-1 rounded-lg">
+          <button 
+            onClick={() => setActiveTab('overview')}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'overview' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
+          >
+            Vue d'ensemble
+          </button>
+          <button 
+            onClick={() => setActiveTab('llm')}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-all flex items-center justify-center ${activeTab === 'llm' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
+          >
             <Cpu className="h-4 w-4 mr-1" />
             LLM
-          </TabsTrigger>
-          <TabsTrigger value="projects">Projets</TabsTrigger>
-          <TabsTrigger value="github">GitHub</TabsTrigger>
-          <TabsTrigger value="settings">Paramètres</TabsTrigger>
-        </TabsList>
+          </button>
+          <button 
+            onClick={() => setActiveTab('projects')}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'projects' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
+          >
+            Projets
+          </button>
+          <button 
+            onClick={() => setActiveTab('github')}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'github' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
+          >
+            GitHub
+          </button>
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-background text-foreground shadow' : 'text-muted-foreground'}`}
+          >
+            Paramètres
+          </button>
+        </div>
 
         {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {activeTab === 'overview' && (
+          <div className="space-y-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Runs</CardTitle>
