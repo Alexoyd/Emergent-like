@@ -106,8 +106,12 @@ const AdminPanel = () => {
       )}
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Vue d'ensemble</TabsTrigger>
+          <TabsTrigger value="llm">
+            <Cpu className="h-4 w-4 mr-1" />
+            LLM
+          </TabsTrigger>
           <TabsTrigger value="projects">Projets</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="settings">Paramètres</TabsTrigger>
