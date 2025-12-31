@@ -8,7 +8,8 @@ import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Progress } from './ui/progress';
 import { Alert, AlertDescription } from './ui/alert';
-import { Trash2, Eye, GitBranch, Download, Upload } from 'lucide-react';
+import { Trash2, Eye, GitBranch, Download, Upload, Cpu } from 'lucide-react';
+import LLMSettingsPanel from './LLMSettingsPanel';
 
 const AdminPanel = () => {
   const [stats, setStats] = useState(null);
