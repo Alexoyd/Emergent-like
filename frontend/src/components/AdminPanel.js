@@ -233,7 +233,7 @@ const AdminPanel = () => {
         )}
 
         {/* Projects Tab */}
-        <TabsContent value="projects" className="space-y-4">
+        {activeTab === 'projects' && (
           <Card>
             <CardHeader>
               <CardTitle>Gestion des Projets</CardTitle>
