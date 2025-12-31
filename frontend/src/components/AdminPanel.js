@@ -18,6 +18,7 @@ const AdminPanel = () => {
   const [error, setError] = useState(null);
   const [githubToken, setGithubToken] = useState('');
   const [repos, setRepos] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
 
   const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
