@@ -1079,6 +1079,323 @@ async def get_file_write_mode():
         "deny_list": PROTECTED_PATHS
     }
 
+
+# =============================================================================
+# 🔥 MULTI-LLM SETTINGS API - Provider-Agnostic Architecture
+# =============================================================================
+
+from orchestrator.llm_settings import (
+    LLMSettingsManager, GlobalLLMSettings, ProjectLLMSettings, RunLLMSettings,
+    LLMProvider, LLMModel, RoleModelAssignment, LLMUsageRecord, LLMUsageStats,
+    ProviderType, AgentRole, ModelCapability,
+    get_default_global_settings, get_default_providers, get_default_models
+)
+
+# Initialize settings manager
+llm_settings_manager = LLMSettingsManager(db)
+
+
+@api_router.get("/llm/settings")
+async def get_llm_settings(project_id: str = None):
+    """
+    Get LLM settings with hierarchical resolution.
+    If project_id is provided, returns effective settings for that project.
+    Otherwise returns global settings.
+    """
+    try:
+        if project_id:
+            effective = await llm_settings_manager.get_effective_settings(project_id=project_id)
+            return {"settings": effective, "scope": "project", "project_id": project_id}
+        else:
+            global_settings = await llm_settings_manager.get_global_settings()
+            return {"settings": global_settings.dict(), "scope": "global"}
+    except Exception as e:
+        logging.error(f"Error getting LLM settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.put("/llm/settings")
+async def update_llm_settings(settings_update: Dict[str, Any], project_id: str = None):
+    """
+    Update LLM settings. If project_id is provided, updates project-level settings.
+    Otherwise updates global settings.
+    """
+    try:
+        if project_id:
+            # Get existing project settings or create new
+            existing = await llm_settings_manager.get_project_settings(project_id)
+            if existing:
+                # Merge updates
+                updated_data = {**existing.dict(), **settings_update}
+                updated_settings = ProjectLLMSettings(**updated_data)
+            else:
+                # Create new project settings
+                updated_settings = ProjectLLMSettings(project_id=project_id, **settings_update)
+            
+            saved = await llm_settings_manager.save_project_settings(updated_settings)
+            return {"settings": saved.dict(), "scope": "project", "project_id": project_id}
+        else:
+            # Update global settings
+            global_settings = await llm_settings_manager.get_global_settings()
+            updated_data = {**global_settings.dict(), **settings_update}
+            updated_settings = GlobalLLMSettings(**updated_data)
+            saved = await llm_settings_manager.save_global_settings(updated_settings)
+            return {"settings": saved.dict(), "scope": "global"}
+    except Exception as e:
+        logging.error(f"Error updating LLM settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/llm/providers")
+async def get_llm_providers():
+    """Get all available LLM providers with their status and models"""
+    try:
+        global_settings = await llm_settings_manager.get_global_settings()
+        providers = global_settings.providers
+        
+        # Check provider health/status
+        for provider_id, provider in providers.items():
+            provider.status = await _check_provider_status(provider_id)
+        
+        return {"providers": {k: v.dict() for k, v in providers.items()}}
+    except Exception as e:
+        logging.error(f"Error getting LLM providers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/llm/providers/{provider_id}/test")
+async def test_llm_provider(provider_id: str):
+    """Test connection to a specific LLM provider"""
+    try:
+        status = await _check_provider_status(provider_id, do_test_call=True)
+        return {
+            "provider_id": provider_id,
+            "status": status,
+            "message": "Connection successful" if status == "connected" else f"Connection failed: {status}"
+        }
+    except Exception as e:
+        logging.error(f"Error testing provider {provider_id}: {e}")
+        return {
+            "provider_id": provider_id,
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@api_router.get("/llm/models")
+async def get_llm_models(provider: str = None, capability: str = None):
+    """Get available LLM models, optionally filtered by provider or capability"""
+    try:
+        global_settings = await llm_settings_manager.get_global_settings()
+        all_models = []
+        
+        for provider_id, provider_config in global_settings.providers.items():
+            if provider and provider_id != provider:
+                continue
+            
+            for model in provider_config.models:
+                if capability:
+                    # Filter by capability
+                    cap_enum = ModelCapability(capability) if capability in [c.value for c in ModelCapability] else None
+                    if cap_enum and cap_enum not in model.capabilities:
+                        continue
+                
+                all_models.append({
+                    **model.dict(),
+                    "provider_enabled": provider_config.enabled,
+                    "provider_status": provider_config.status
+                })
+        
+        return {"models": all_models}
+    except Exception as e:
+        logging.error(f"Error getting LLM models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.put("/llm/models/{model_id}/enable")
+async def enable_llm_model(model_id: str, enabled: bool = True):
+    """Enable or disable a specific model"""
+    try:
+        global_settings = await llm_settings_manager.get_global_settings()
+        
+        model_found = False
+        for provider_id, provider in global_settings.providers.items():
+            for model in provider.models:
+                if model.id == model_id:
+                    model.enabled = enabled
+                    model_found = True
+                    break
+            if model_found:
+                break
+        
+        if not model_found:
+            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+        
+        await llm_settings_manager.save_global_settings(global_settings)
+        return {"model_id": model_id, "enabled": enabled}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error enabling model {model_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/llm/role-assignments")
+async def get_role_assignments(project_id: str = None):
+    """Get model assignments for each agent role"""
+    try:
+        if project_id:
+            effective = await llm_settings_manager.get_effective_settings(project_id=project_id)
+            assignments = effective.get("role_assignments", {})
+        else:
+            global_settings = await llm_settings_manager.get_global_settings()
+            assignments = global_settings.role_assignments
+        
+        return {"role_assignments": assignments}
+    except Exception as e:
+        logging.error(f"Error getting role assignments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.put("/llm/role-assignments/{role}")
+async def update_role_assignment(
+    role: str,
+    provider: str,
+    model_id: str,
+    fallback_provider: str = None,
+    fallback_model_id: str = None,
+    project_id: str = None
+):
+    """Update model assignment for a specific agent role"""
+    try:
+        # Validate role
+        try:
+            role_enum = AgentRole(role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+        
+        # Validate provider
+        try:
+            provider_enum = ProviderType(provider)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid provider: {provider}")
+        
+        assignment = RoleModelAssignment(
+            role=role_enum,
+            provider=provider_enum,
+            model_id=model_id,
+            fallback_provider=ProviderType(fallback_provider) if fallback_provider else None,
+            fallback_model_id=fallback_model_id
+        )
+        
+        if project_id:
+            # Update project-level assignment
+            project_settings = await llm_settings_manager.get_project_settings(project_id)
+            if not project_settings:
+                project_settings = ProjectLLMSettings(project_id=project_id)
+            project_settings.role_assignments[role] = assignment
+            await llm_settings_manager.save_project_settings(project_settings)
+            return {"role": role, "assignment": assignment.dict(), "scope": "project"}
+        else:
+            # Update global assignment
+            global_settings = await llm_settings_manager.get_global_settings()
+            global_settings.role_assignments[role] = assignment
+            await llm_settings_manager.save_global_settings(global_settings)
+            return {"role": role, "assignment": assignment.dict(), "scope": "global"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating role assignment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/llm/usage")
+async def get_llm_usage(
+    period: str = "day",
+    project_id: str = None,
+    run_id: str = None
+):
+    """Get LLM usage statistics"""
+    try:
+        stats = await llm_settings_manager.get_usage_stats(
+            period=period,
+            project_id=project_id,
+            run_id=run_id
+        )
+        return {"usage": stats.dict()}
+    except Exception as e:
+        logging.error(f"Error getting LLM usage: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/llm/settings/reset")
+async def reset_llm_settings(scope: str = "global", project_id: str = None):
+    """Reset LLM settings to defaults"""
+    try:
+        if scope == "project" and project_id:
+            # Delete project settings to fall back to global
+            await db.llm_settings.delete_one({"project_id": project_id, "id": {"$ne": "global"}})
+            llm_settings_manager.invalidate_cache(project_id)
+            return {"message": f"Project {project_id} LLM settings reset to global defaults"}
+        else:
+            # Reset global to defaults
+            default_settings = get_default_global_settings()
+            await llm_settings_manager.save_global_settings(default_settings)
+            llm_settings_manager.invalidate_cache()
+            return {"message": "Global LLM settings reset to defaults"}
+    except Exception as e:
+        logging.error(f"Error resetting LLM settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _check_provider_status(provider_id: str, do_test_call: bool = False) -> str:
+    """Check the status of a provider"""
+    try:
+        if provider_id == "ollama":
+            # Check if Ollama is reachable
+            import httpx
+            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{ollama_url}/api/tags")
+                if response.status_code == 200:
+                    return "connected"
+                return "error"
+        
+        elif provider_id == "openai":
+            if not os.getenv("OPENAI_API_KEY"):
+                return "unconfigured"
+            if do_test_call and llm_router.openai_client:
+                # Do a minimal test call
+                try:
+                    response = await asyncio.to_thread(
+                        llm_router.openai_client.models.list
+                    )
+                    return "connected"
+                except Exception as e:
+                    logger.warning(f"OpenAI test failed: {e}")
+                    return "error"
+            return "disconnected"
+        
+        elif provider_id == "anthropic":
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                return "unconfigured"
+            if os.getenv("ENABLE_ANTHROPIC", "true").lower() != "true":
+                return "disabled"
+            return "disconnected"
+        
+        elif provider_id == "google":
+            if not os.getenv("GOOGLE_API_KEY"):
+                return "unconfigured"
+            return "disconnected"
+        
+        return "unknown"
+        
+    except Exception as e:
+        logger.error(f"Error checking provider status for {provider_id}: {e}")
+        return "error"
+
+
 @api_router.get("/admin/global-stats")
 async def get_global_admin_stats():
     """Get global admin statistics for main admin panel"""
