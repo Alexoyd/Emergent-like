@@ -359,7 +359,7 @@ Critères succès:
 ### Commandes de Vérification
 ```bash
 # Backend status
-curl https://forum-executor.preview.emergentagent.com/api/
+curl https://codecopilot-3.preview.emergentagent.com/api/
 # Résultat: {"message":"AI Agent Orchestrator API v1.0.0","status":"running"}
 
 # Logs backend
