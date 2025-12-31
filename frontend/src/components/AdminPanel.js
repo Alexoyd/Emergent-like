@@ -201,28 +201,28 @@ const AdminPanel = () => {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuration Système</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between">
-                <span>Tentatives Locales Max:</span>
-                <Badge variant="secondary">{stats?.settings?.max_local_retries}</Badge>
-              </div>
-              <div className="flex justify-between">
-                <span>Étapes Max par Run:</span>
-                <Badge variant="secondary">{stats?.settings?.max_steps_per_run}</Badge>
-              </div>
-              <div className="flex justify-between">
-                <span>Auto-création Structures:</span>
-                <Badge variant={stats?.settings?.auto_create_structures ? "default" : "secondary"}>
-                  {stats?.settings?.auto_create_structures ? 'Activé' : 'Désactivé'}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuration Système</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Tentatives Locales Max:</span>
+                  <Badge variant="secondary">{stats?.settings?.max_local_retries}</Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>Étapes Max par Run:</span>
+                  <Badge variant="secondary">{stats?.settings?.max_steps_per_run}</Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>Auto-création Structures:</span>
+                  <Badge variant={stats?.settings?.auto_create_structures ? "default" : "secondary"}>
+                    {stats?.settings?.auto_create_structures ? 'Activé' : 'Désactivé'}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </>
         )}
 
         {/* LLM Settings Tab */}
