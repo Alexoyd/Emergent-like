@@ -222,12 +222,15 @@ const AdminPanel = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+        )}
 
         {/* LLM Settings Tab */}
-        <TabsContent value="llm" className="space-y-4">
-          <LLMSettingsPanel />
-        </TabsContent>
+        {activeTab === 'llm' && (
+          <div className="space-y-4">
+            <LLMSettingsPanel />
+          </div>
+        )}
 
         {/* Projects Tab */}
         <TabsContent value="projects" className="space-y-4">
