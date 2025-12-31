@@ -735,21 +735,7 @@ const Dashboard = () => {
                 </TabsContent>
 
                 <TabsContent value="admin" className="mt-6">
-                  {currentRun ? (
-                    <AdminPanel />
-                  ) : (
-                    <Card className="border-0 shadow-xl bg-white/70 backdrop-blur-sm">
-                      <CardContent className="flex items-center justify-center h-64">
-                        <div className="text-center space-y-4">
-                          <Settings className="w-16 h-16 text-gray-300 mx-auto" />
-                          <h3 className="text-xl font-semibold text-gray-900">Aucun Run Sélectionné</h3>
-                          <p className="text-gray-600">
-                            Sélectionnez un run pour accéder à son panneau d'administration
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                  <AdminPanel />
                 </TabsContent>
               </Tabs>
             </div>
