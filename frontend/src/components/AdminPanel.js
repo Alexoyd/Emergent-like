@@ -199,6 +199,11 @@ const AdminPanel = () => {
           </Card>
         </TabsContent>
 
+        {/* LLM Settings Tab */}
+        <TabsContent value="llm" className="space-y-4">
+          <LLMSettingsPanel />
+        </TabsContent>
+
         {/* Projects Tab */}
         <TabsContent value="projects" className="space-y-4">
           <Card>
